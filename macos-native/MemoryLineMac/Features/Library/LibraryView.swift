@@ -25,12 +25,17 @@ struct LibraryView: View {
                     Button("Try Again") { load() }
                 }
             } else if captures.isEmpty {
+                // Says what is actually true. This used to promise that
+                // "captures recorded on a paired device will appear here once
+                // they sync", which is not something this screen can deliver:
+                // MacSyncCoordinator applies `capture_status` and the timeline
+                // projection, and ignores `capture` and `capture_artifact`
+                // entirely. Recordings made on the phone are not in this list
+                // and will not arrive until the Mac can download their audio.
                 ContentUnavailableView {
-                    Label("No captures yet", systemImage: "waveform")
+                    Label("No recordings yet", systemImage: "waveform")
                 } description: {
-                    Text(environment.isPaired
-                         ? "Captures recorded on a paired device will appear here once they sync."
-                         : "Pair this Mac with your sync server in Settings to see captures from your other devices.")
+                    Text("Recordings you make on this Mac appear here. Captures from your iPhone go straight to your PC — this Mac does not download their audio.")
                 }
             } else {
                 List(captures) { capture in
@@ -39,6 +44,7 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
+        .safeAreaInset(edge: .bottom) { uploadStatusBar }
         .toolbar {
             ToolbarItem {
                 Button {
@@ -75,6 +81,65 @@ struct LibraryView: View {
             // A completed pull may have written new status rows.
             load()
         }
+    }
+
+    /// Upload state, which nothing rendered until now.
+    ///
+    /// `MacUploadCoordinator` has published `state`, `pendingCount`,
+    /// `isDraining` and `lastUploadedAt` since it was written, and no view read
+    /// any of them — its own doc comment describes an "Upload now" button that
+    /// did not exist. The consequence was worse than a missing feature: the
+    /// coordinator has a `.failed` state, so a recording that could not reach
+    /// the server failed *silently* on this Mac. A capture app that loses
+    /// audio without saying so is the one failure that must never be quiet.
+    ///
+    /// Hidden entirely when there is nothing to say — no pending work, no
+    /// failure — so it does not become permanent chrome.
+    @ViewBuilder
+    private var uploadStatusBar: some View {
+        if environment.uploads.pendingCount > 0 || isUploadFailed {
+            HStack(spacing: 8) {
+                if case .failed(let message) = environment.uploads.state {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(message)
+                } else if environment.uploads.state == .uploading {
+                    ProgressView().controlSize(.small)
+                    Text(pendingLabel)
+                } else {
+                    Image(systemName: "arrow.up.circle")
+                        .foregroundStyle(.secondary)
+                    Text(pendingLabel)
+                }
+
+                Spacer()
+
+                Button("Upload Now") {
+                    Task { await environment.uploads.drainPendingUploads() }
+                }
+                .controlSize(.small)
+                // Disabled for the whole pass, not just while bytes move: there
+                // is a stretch after the drain takes its guard and before
+                // `state` becomes `.uploading`, and a second press in that
+                // window would be a no-op the user reads as a broken button.
+                .disabled(environment.uploads.isDraining || !environment.sync.canSync)
+            }
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial)
+        }
+    }
+
+    private var isUploadFailed: Bool {
+        if case .failed = environment.uploads.state { return true }
+        return false
+    }
+
+    private var pendingLabel: String {
+        let count = environment.uploads.pendingCount
+        return count == 1 ? "1 recording waiting to upload" : "\(count) recordings waiting to upload"
     }
 
     private func load() {

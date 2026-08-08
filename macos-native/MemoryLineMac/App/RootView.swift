@@ -4,7 +4,7 @@ import SwiftUI
 /// navigation so the two heads stay conceptually aligned.
 ///
 /// Capture and Library are this Mac's own: it records, and it holds the
-/// recordings it made. Timeline, Search, Review and People render the read-only
+/// recordings it made. Timeline, Eras, Search, Review and People render the read-only
 /// projection Windows publishes — this Mac shows a copy of that archive and
 /// never edits it, with one exception: Review sends approve/reject verdicts,
 /// the single write the contract admits from a companion. Ask is still a
@@ -21,6 +21,7 @@ struct RootView: View {
         case capture = "Capture"
         case library = "Library"
         case timeline = "Timeline"
+        case eras = "Eras"
         case search = "Search"
         case review = "Review"
         case people = "People"
@@ -33,6 +34,7 @@ struct RootView: View {
             case .capture: return "mic.circle"
             case .library: return "waveform"
             case .timeline: return "calendar.day.timeline.left"
+            case .eras: return "square.stack.3d.down.right"
             case .search: return "magnifyingglass"
             case .review: return "checkmark.circle"
             case .people: return "person.2"
@@ -70,6 +72,8 @@ struct RootView: View {
                 LibraryView()
             case .timeline:
                 ArchiveTimelineView()
+            case .eras:
+                ErasView()
             case .search:
                 SearchView()
             case .review:

@@ -398,7 +398,53 @@ public class BackupService : IBackupService
                 ex);
         }
 
-        // (5) Restart recommendation: singleton caches (settings, view-model
+        // (5) Drop the restored sync identity, so this installation re-pairs as
+        // itself rather than impersonating the machine the backup came from.
+        //
+        // This is not tidiness. `sync_device_id` lives in `app_settings`, which
+        // lives in the database file step (3) just overwrote — so restoring a
+        // backup makes this machine authenticate as the machine that made it.
+        // "Set my new computer up from a backup" is the most natural way there
+        // is to end up with two machines holding one device id, and the sync
+        // system then fails silently in two compounding ways:
+        //
+        //  - Pull filters out the caller's own changes
+        //    (`SyncChangeService.PullAsync`: SourceDeviceId != caller.DeviceId),
+        //    so two machines sharing an id become permanently invisible to each
+        //    other while both believe they are syncing.
+        //  - A push receipt is keyed (DeviceId, ClientSequence), and
+        //    ClientSequence is the local outbox row id
+        //    (`LocalOutboxPublisher`). Two machines mint the same ids, the
+        //    service short-circuits on the receipt BEFORE validating anything
+        //    and answers Accepted=true/Duplicate=true, and the client treats
+        //    Duplicate exactly like Accepted and marks the row delivered. Real
+        //    edits are dropped with a green sync status and nothing logged.
+        //
+        // Clearing the same four keys as `SyncSettingsStore.ClearRegistrationAsync`,
+        // duplicated rather than called because that type lives in
+        // MemoryTimeline.Sync and Core must not depend on it. Best-effort: a
+        // restore that has already replaced the database must not be reported
+        // as failed because a settings row would not delete, but an
+        // installation left holding a foreign identity has to be loud about it.
+        try
+        {
+            await _settingsService.DeleteSettingAsync(SettingKeys.SyncDeviceId);
+            await _settingsService.DeleteSettingAsync(SettingKeys.SyncAccessToken);
+            await _settingsService.DeleteSettingAsync(SettingKeys.SyncRefreshToken);
+            await _settingsService.DeleteSettingAsync(SettingKeys.SyncCursor);
+            await _settingsService.SetSettingAsync(SettingKeys.SyncEnabled, false);
+            _logger.LogInformation(
+                "Sync registration cleared after restore; this installation must re-pair before it syncs again.");
+        }
+        catch (Exception syncEx)
+        {
+            _logger.LogError(syncEx,
+                "Archive restored, but the sync registration from the backup could NOT be cleared. "
+                + "This installation may now share a device id with the machine that made the backup. "
+                + "Unpair and re-pair in Settings before enabling sync.");
+        }
+
+        // (6) Restart recommendation: singleton caches (settings, view-model
         // state) still reflect the pre-restore database.
         _logger.LogWarning(
             "Archive restored from {Path}. Restart the app so all views and caches load the restored data.",

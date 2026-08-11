@@ -259,7 +259,7 @@ final class MacSyncCoordinatorTests: XCTestCase {
     func testPendingEventDecisionIsNotAppliedAsAProjection() async throws {
         let f = try makeFixture()
         var decision = eventChange(changeId: 1, eventId: "pending-1", title: "ignored")
-        decision.entityType = TimelineProjectionEntityType.pendingEventDecision
+        decision.entityType = SyncChangeEntityType.pendingEventDecision
 
         let api = FakeSyncAPI(pages: [
             SyncPullResponse(changes: [decision], nextCursor: 1, hasMore: false)
@@ -317,7 +317,7 @@ final class MacSyncCoordinatorTests: XCTestCase {
 
         return SyncChangeDto(
             changeId: changeId,
-            entityType: TimelineProjectionEntityType.event,
+            entityType: SyncChangeEntityType.event,
             entityId: eventId,
             operation: "upsert",
             revision: 1,

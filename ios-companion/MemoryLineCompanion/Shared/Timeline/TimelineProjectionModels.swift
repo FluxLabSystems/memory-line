@@ -11,7 +11,7 @@ import Foundation
 /// that decoder's custom date strategy accepts. Decoding one of these with a
 /// stock `JSONDecoder` fails on every date in the payload.
 ///
-/// **Direction.** Windows publishes, this Mac consumes. There is no merge policy
+/// **Direction.** Windows publishes, this device consumes. There is no merge policy
 /// in this file and none is needed — a companion rendering a timeline from these
 /// payloads holds a copy, not shared ownership. The only reconciliation is
 /// last-write-wins on `updatedAtUtc`, which `TimelineProjectionApplier` applies.
@@ -31,9 +31,10 @@ import Foundation
 /// file is ever logged; the applier and the store log ids and counts only.
 ///
 /// **Not mirrored here:** `PendingEventDecisionPayload`. It is the one payload
-/// that travels *toward* Windows, so it belongs with an outbox rather than with
-/// the projections a companion consumes, and this Mac has no review surface to
-/// author one yet.
+/// that travels *toward* Windows, so it belongs with the outbox that authors it
+/// rather than with the projections a companion consumes. The macOS app declares
+/// it beside its review queue; anything that grows a second review surface should
+/// move that declaration here rather than write a second one.
 
 /// One archived event, denormalised for drawing.
 ///
@@ -154,7 +155,7 @@ struct PersonProjectionPayload: Codable, Equatable, Sendable {
 
 /// An extracted event awaiting review, projected so a companion can show the
 /// queue. The verdict itself is a different entity travelling the other way —
-/// see `TimelineProjectionEntityType.pendingEventDecision`.
+/// see `SyncChangeEntityType.pendingEventDecision`.
 struct PendingEventProjectionPayload: Codable, Equatable, Sendable {
     var pendingEventId: String
 
@@ -191,41 +192,8 @@ struct PendingEventProjectionPayload: Codable, Equatable, Sendable {
     var updatedAtUtc: Date
 }
 
-/// The `entityType` discriminators this feature reads, mirroring
-/// `SyncChangeEntityType` in `SyncChangeContracts.cs`.
-///
-/// Declared here rather than added to the Swift `SyncChangeEntityType` in
-/// `Shared/Networking/DTOs.swift`, for two reasons. That enum is the *phone's*
-/// list — it carries only the three capture-side types the companion consumes —
-/// and `Shared/` compiles into both apps, so an extension written in this target
-/// would give the type members in one app and not the other. Worse, the day the
-/// phone grows a timeline those constants land in `DTOs.swift` properly, and an
-/// extension here would become an invalid redeclaration that breaks the macOS
-/// build for a change that touched only iOS. When that day comes, delete this
-/// enum and point at the shared one.
-enum TimelineProjectionEntityType {
-    static let event = "event"
-    static let era = "era"
-    static let person = "person"
-    static let pendingEvent = "pending_event"
-
-    /// A companion's approve/reject verdict on a pending event. Listed for
-    /// completeness and deliberately absent from `projected`: it is the one
-    /// entity a non-Windows device *authors*, so seeing it on the pull feed
-    /// means reading back a decision some companion sent. Applying it as a
-    /// projection would fabricate a pending event out of a verdict, and would
-    /// also undo the contract's guarantee that Windows performs every approval.
-    static let pendingEventDecision = "pending_event_decision"
-
-    /// The entity types `TimelineProjectionApplier` writes to the local store.
-    static let projected: Set<String> = [event, era, person, pendingEvent]
-}
-
-/// `operation` values on a sync change, mirroring `SyncOperation`
-/// (`SyncChangeContracts.cs`). Same reasoning as `TimelineProjectionEntityType`
-/// for why they are not in `Shared/`: the phone's DTOs never needed them,
-/// because `capture_status` changes are only ever upserts.
-enum TimelineProjectionOperation {
-    static let upsert = "upsert"
-    static let delete = "delete"
-}
+// The `entityType` and `operation` constants this feature reads used to live
+// here, in the macOS target, with a note to move them into `DTOs.swift` the day
+// the phone grew a timeline. They now live there — see `SyncChangeEntityType`
+// and `SyncOperation` — because this file compiles into both apps and a second
+// declaration would be a redeclaration rather than a convenience.

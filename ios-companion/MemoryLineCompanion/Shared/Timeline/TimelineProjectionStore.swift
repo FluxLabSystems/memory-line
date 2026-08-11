@@ -79,21 +79,25 @@ protocol TimelineProjectionStore: AnyObject, Sendable {
 /// reason documented there: that array is the seam `SQLiteCaptureStore.swift`
 /// owns and `PRAGMA user_version` counts its entries, so bumping the version
 /// from a second array would make the next `AppDatabase.open` reject the file as
-/// "newer than this app supports". The rule matters more here than it did for
-/// `capture_status`, because these tables are macOS-only for now: appending them
-/// to the shared migration array would advance `user_version` on a database the
-/// iOS companion also opens with its own, shorter array, and would brick the
-/// phone on the next launch.
+/// "newer than this app supports".
+///
+/// This file was macOS-only when it was written, and the rule then read as "do
+/// not advance `user_version` on a database the phone also opens with a shorter
+/// migration array, or the phone bricks on next launch". Now that both apps
+/// compile it the hazard is gone — but the rule stays, and for a better reason:
+/// `user_version` counts one array, and a schema applied from `init` can be
+/// added to either app at any time without either having to agree about a number.
+/// That is exactly the property that let this move from one target to two without
+/// a migration.
 ///
 /// Table names are prefixed `timeline_` because this schema shares a database
-/// file with `captures`, `settings` and `capture_status`, which are owned by the
-/// shared iOS sources. An unprefixed `events` table would be a landmine the day
-/// that code wants the name.
+/// file with `captures`, `settings` and `capture_status`. An unprefixed `events`
+/// table would be a landmine the day that code wants the name.
 enum TimelineProjectionSchema {
     /// No foreign keys between these tables, and none to `captures`. Pages
     /// arrive in cursor order, so an event legitimately precedes the people and
     /// the era it references, and a pending event can outlive the capture it was
-    /// extracted from (deleted locally, or never present on this Mac at all). A
+    /// extracted from (deleted locally, or never present on this device at all). A
     /// constraint would reject rows the feed is entitled to send in that order;
     /// the dangling reference is a property of the feed, not a corruption of the
     /// store, and the UI resolves it or shows the id.

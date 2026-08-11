@@ -8,6 +8,7 @@ final class StatusSyncCoordinatorTests: XCTestCase {
     private var captures: SQLiteCaptureStore!
     private var settings: SQLiteSettingsStore!
     private var statuses: SQLiteCaptureStatusStore!
+    private var projections: SQLiteTimelineProjectionStore!
     private var api: StubSyncAPI!
     private var notifier: SpyStatusNotifier!
     private var coordinator: StatusSyncCoordinator!
@@ -18,6 +19,7 @@ final class StatusSyncCoordinatorTests: XCTestCase {
         captures = SQLiteCaptureStore(database: database)
         settings = SQLiteSettingsStore(database: database)
         statuses = try SQLiteCaptureStatusStore(database: database)
+        projections = try SQLiteTimelineProjectionStore(database: database)
         api = StubSyncAPI()
         notifier = SpyStatusNotifier()
         coordinator = StatusSyncCoordinator(
@@ -25,12 +27,14 @@ final class StatusSyncCoordinatorTests: XCTestCase {
             settings: settings,
             api: api,
             statusStore: statuses,
+            projectionStore: projections,
             notifier: notifier)
         StatusSyncTestData.markPaired(settings)
     }
 
     override func tearDownWithError() throws {
         coordinator = nil
+        projections = nil
         statuses = nil
         settings = nil
         captures = nil
@@ -478,6 +482,7 @@ final class StatusSyncCoordinatorTests: XCTestCase {
             settings: settings,
             api: api,
             statusStore: FailingCaptureStatusStore(),
+            projectionStore: projections,
             notifier: notifier)
         try captures.insert(TestSupport.makeCapture(id: "cap-1", state: .uploaded))
         api.pullResults = [StatusSyncTestData.page([
@@ -564,6 +569,121 @@ final class StatusSyncCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(api.pullCursors.isEmpty)
     }
+
+    // MARK: - Timeline projection
+
+    /// The pass makes two disjoint sweeps over one page. This is the test that
+    /// would have caught the phone's original behaviour: pulling the timeline
+    /// feed, dropping every event, and reporting a healthy sync.
+    func testAppliesTimelineProjectionAlongsideCaptureStatus() async throws {
+        try captures.insert(TestSupport.makeCapture(id: "cap-1", state: .uploaded))
+        api.pullResults = [StatusSyncTestData.page([
+            try StatusSyncTestData.change(changeId: 1, payload: StatusSyncTestData.payload(
+                captureId: "cap-1", status: SyncCaptureStatus.completed)),
+            try eventChange(changeId: 2, eventId: "evt-1", title: "Moved to Halifax")
+        ], nextCursor: 2)]
+
+        await coordinator.pullNow()
+
+        XCTAssertNil(coordinator.lastPullError)
+        XCTAssertEqual(try statuses.status(captureId: "cap-1")?.status, SyncCaptureStatus.completed)
+
+        let stored = try projections.event(eventId: "evt-1")
+        XCTAssertEqual(stored?.title, "Moved to Halifax")
+        XCTAssertEqual(stored?.tags, ["move"], "denormalised lists must survive the round trip")
+        XCTAssertEqual(stored?.displayDate, "September 2001",
+                       "the precision-honest string is Windows' to format, not ours to re-derive")
+    }
+
+    /// A verdict some device authored comes back down the shared feed. Applying
+    /// it as a projection would fabricate a review-queue entry out of an answer
+    /// to one.
+    func testPendingEventDecisionIsNotAppliedAsAProjection() async throws {
+        var decision = try eventChange(changeId: 1, eventId: "pending-1", title: "ignored")
+        decision.entityType = SyncChangeEntityType.pendingEventDecision
+        api.pullResults = [StatusSyncTestData.page([decision], nextCursor: 1)]
+
+        await coordinator.pullNow()
+
+        XCTAssertEqual(try projections.allPendingEvents().count, 0)
+        XCTAssertEqual(api.ackedCursors, [1], "ignoring a change still consumes it")
+    }
+
+    /// A page whose projection cannot be written must hold the cursor, exactly
+    /// as a failing status write does — otherwise the events in it are skipped
+    /// permanently while sync reports success.
+    func testProjectionPersistenceFailureHoldsTheCursor() async throws {
+        let failing = StatusSyncCoordinator(
+            store: captures,
+            settings: settings,
+            api: api,
+            statusStore: statuses,
+            projectionStore: FailingTimelineProjectionStore(),
+            notifier: notifier)
+        api.pullResults = [StatusSyncTestData.page([
+            try eventChange(changeId: 4, eventId: "evt-1", title: "Moved to Halifax")
+        ], nextCursor: 4)]
+
+        await failing.pullNow()
+
+        XCTAssertNil(settings.string(SyncCursorKey.pullCursor))
+        XCTAssertTrue(api.ackedCursors.isEmpty)
+    }
+
+    private func eventChange(
+        changeId: Int64,
+        eventId: String,
+        title: String,
+        updatedAt: Date = Date(timeIntervalSince1970: 1_754_500_500.5)
+    ) throws -> SyncChangeDto {
+        let payload = EventProjectionPayload(
+            eventId: eventId,
+            title: title,
+            startDate: Date(timeIntervalSince1970: 1_000_000_000),
+            datePrecision: "day",
+            displayDate: "September 2001",
+            tags: ["move"],
+            updatedAtUtc: updatedAt)
+        let data = try SyncJSON.encoder.encode(payload)
+        return SyncChangeDto(
+            changeId: changeId,
+            entityType: SyncChangeEntityType.event,
+            entityId: eventId,
+            operation: SyncOperation.upsert,
+            revision: 1,
+            changedAtUtc: Date(timeIntervalSince1970: 1_754_500_500),
+            sourceDeviceId: "windows-1",
+            payloadJson: String(decoding: data, as: UTF8.self))
+    }
+}
+
+/// `TimelineProjectionStore` whose writes always fail, standing in for a full
+/// disk or a corrupt database. Reads return nil rather than throwing so the
+/// applier reaches the write it is supposed to fail on.
+private final class FailingTimelineProjectionStore: TimelineProjectionStore {
+    private var error: SQLiteError { SQLiteError(code: 13, message: "database or disk is full") }
+
+    func upsertEvent(_ event: EventProjectionPayload) throws { throw error }
+    func deleteEvent(eventId: String) throws { throw error }
+    func event(eventId: String) throws -> EventProjectionPayload? { nil }
+    func events(from: Date, to: Date) throws -> [EventProjectionPayload] { [] }
+
+    func upsertEra(_ era: EraProjectionPayload) throws { throw error }
+    func deleteEra(eraId: String) throws { throw error }
+    func era(eraId: String) throws -> EraProjectionPayload? { nil }
+    func allEras() throws -> [EraProjectionPayload] { [] }
+
+    func upsertPerson(_ person: PersonProjectionPayload) throws { throw error }
+    func deletePerson(personId: String) throws { throw error }
+    func person(personId: String) throws -> PersonProjectionPayload? { nil }
+    func allPeople() throws -> [PersonProjectionPayload] { [] }
+
+    func upsertPendingEvent(_ pendingEvent: PendingEventProjectionPayload) throws { throw error }
+    func deletePendingEvent(pendingEventId: String) throws { throw error }
+    func pendingEvent(pendingEventId: String) throws -> PendingEventProjectionPayload? { nil }
+    func allPendingEvents() throws -> [PendingEventProjectionPayload] { [] }
+
+    func deleteAll() throws { throw error }
 }
 
 /// `CaptureStatusStore` whose writes always fail, standing in for a full disk

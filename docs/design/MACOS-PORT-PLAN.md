@@ -6,6 +6,14 @@
 
 ---
 
+> **Scope changed 2026-08-08.** This plan was written for macOS as a *companion* to a
+> Windows-owned archive. The target is now **parity**: Windows and macOS are peers, either
+> can be a user's desktop, and the iOS companion feeds whichever one they have. A companion
+> can be read-only; a main app cannot. Sections written under the old scope are being
+> corrected in place rather than deleted — §3.3 is done, §5 is next, and anything still
+> phrased as "the Mac shows a copy of the Windows archive" should be read with that shift in
+> mind.
+
 ## 1. What we are building, and what we are not
 
 Memory Line's primary product is the **Windows Native** app (.NET 10 / WinUI 3) under
@@ -105,25 +113,48 @@ passed no `kSecUseDataProtectionKeychain`. Both are fixed:
    `keychain-access-groups` entitlement, already declared in
    `macos-native/Config/MemoryLineMac.entitlements`.
 
-### 3.3 The C# business layer does not come to macOS — but it stayed portable anyway
+### 3.3 The C# business layer DOES come to macOS — this section was wrong
+
+> **Corrected 2026-08-08.** This section previously said "the C# business layer does not
+> come to macOS," and reasoned from there that every Core service — extraction, RAG, ask,
+> narrative, resurfacing, recall prompts, export/import, timeline math — would need a Swift
+> equivalent. That was written when the Mac was scoped as a *companion*. The target has
+> since changed: macOS is to be a **peer of Windows**, a desktop app the iOS companion
+> feeds, because a user's desktop may be either machine.
+>
+> The old text is left described rather than deleted because it mis-scoped a review as
+> recently as this week: readers who trusted it sized the port as a reimplementation of
+> logic that already runs on the target platform.
 
 `MemoryTimeline.Core`, `.Data` and `.Sync` were decoupled from WinUI and retargeted from
-`net10.0-windows10.0.26100.0` to plain `net10.0`. That work is **done and in the tree**.
+`net10.0-windows10.0.26100.0` to plain `net10.0`. That work is **done and in the tree**, and
+it turns out to have been the expensive half of this port, already paid.
 
-The SwiftUI decision means the Mac app does not consume those assemblies. The retarget was
-still worth doing, and stays worth maintaining, for three reasons:
+**They do not merely compile off Windows — they run.**
+`windows-native/src/MemoryTimeline.Portability.Tests/ArchiveStackRunsOffWindowsTests.cs`
+raises the full 25-table archive through the real `SchemaUpgrader`, writes and reads back an
+event through the real `EventService` and repository, and checks `DateDisplay.FormatPrecise`
+returns `"Summer 2003"` — on a non-Windows machine, against a real SQLite file. The macOS CI
+job runs it (`.github/workflows/macos-native-build.yml`). A red run there is an
+architectural finding, not a flaky test.
 
-- It enforces the layering rule the project already had on paper — Core must not know
-  about brushes, `Visibility`, or `Windows.Storage`.
-- It keeps a headless option open: the extraction/RAG/narrative services can run on macOS
-  or Linux (a sync-side worker, a batch tool) without a Windows machine.
-- It makes Core testable off Windows.
+`grep -rn "^using Windows\.\|^using Microsoft\.UI" MemoryTimeline.Core MemoryTimeline.Data`
+returns nothing. The layering rule holds in fact, not just on paper.
+
+**The consequence for macOS:** the services that would have been ruinous to reimplement —
+extraction prompts, date-precision inference, `EventRevisionWriter`'s changed-field diff,
+`PersonService`'s alias and tombstone chain, hybrid retrieval, timeline coordinate math —
+do not need reimplementing at all. The Mac can run the same assemblies. What genuinely
+needs new native code is the small set of platform seams Core already declares as
+interfaces (`ISpeechToTextService`, `IThumbnailGenerator`, `INotificationService`, file
+pickers) plus the SwiftUI presentation layer, which no option avoids.
+
+**What stays unproven:** hosting those assemblies inside a sandboxed `.app`. Running them
+under `dotnet test` on a CI Mac is not the same as launching them from a signed, sandboxed
+bundle. That is the one spike that must succeed before the rest of this plan is safe to
+build on — see §5.
 
 The rule is written up in [`claude.md`](../../claude.md) under "Keeping Core portable".
-
-**The real consequence for macOS:** every service in `MemoryTimeline.Core` — extraction,
-RAG, ask, narrative, resurfacing, recall prompts, export/import, timeline math — has no
-Swift equivalent. §5 is mostly about that.
 
 ---
 
@@ -295,10 +326,10 @@ that renders a platform label — worth doing before the Mac ships, not worth do
   their publish calls live in `ErasViewModel` and `ImportService` writes eras that nothing
   publishes. This is also why eras have no write-path test: nothing in this repo loads a
   ViewModel into the test host. See a4bb149.
-- **There is no iOS CI.** `.github/workflows/` builds Windows, macOS, the sync service and
-  the docs site — nothing builds the iOS companion. The macOS job compiles everything under
-  `ios-companion/…/Shared/` into the Mac target, so shared code is covered by accident, but
-  the phone's own `App/` and `Features/` are not built anywhere.
+- **May the phone author review verdicts?** The Mac may (§5 phase 4), because that was asked
+  and answered. The contract admits a decision from any companion, and the Mac's
+  queue-to-disk outbox would share cleanly — but nobody has decided whether a phone should
+  approve memories into an archive, so the iOS timeline is read-only.
 
 **Answered since this list was written:**
 
@@ -306,3 +337,7 @@ that renders a platform label — worth doing before the Mac ships, not worth do
   and menu-bar quick capture.
 - ~~How does the C# business logic reach the Mac?~~ It does not; Windows publishes results
   as projections instead. See "the decision that gated phases 3–5" in §5.
+- ~~There is no iOS CI.~~ There is now — `.github/workflows/ios-companion-build.yml`. It
+  needed a committed shared scheme first: Xcode writes schemes per-user under `xcuserdata/`,
+  which is not in git, so `xcodebuild -scheme` had nothing to resolve and CI could not have
+  been added without one.

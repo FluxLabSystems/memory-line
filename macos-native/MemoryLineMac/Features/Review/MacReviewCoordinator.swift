@@ -243,9 +243,9 @@ final class MacReviewCoordinator {
 
         return SyncPushEntry(
             clientSequence: record.clientSequence,
-            entityType: TimelineProjectionEntityType.pendingEventDecision,
+            entityType: SyncChangeEntityType.pendingEventDecision,
             entityId: record.pendingEventId,
-            operation: TimelineProjectionOperation.upsert,
+            operation: SyncOperation.upsert,
             payloadJson: text,
             changedAtUtc: record.decidedAt)
     }

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Plain net10.0, and NOT part of MemoryTimeline.sln's normal test project.
+
+    MemoryTimeline.Tests targets net10.0-windows10.0.26100.0, so it can only ever
+    run on a Windows runner — which makes it structurally incapable of proving
+    the one thing this project exists to prove: that the archive stack runs off
+    Windows. This runs on Linux and macOS, where the WinUI head cannot.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12.0</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!--
+      SQLitePCLRaw.lib.e_sqlite3 2.1.11 carries a known advisory (GHSA-2m69-gcr7-jv3q)
+      and arrives transitively through EF Core's SQLite provider. It is suppressed
+      here only so this project's output is readable; the advisory is tracked
+      against MemoryTimeline.Data, which is where a fix belongs.
+    -->
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.6.4" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MemoryTimeline.Core\MemoryTimeline.Core.csproj" />
+    <ProjectReference Include="..\MemoryTimeline.Data\MemoryTimeline.Data.csproj" />
+    <ProjectReference Include="..\MemoryTimeline.Sync\MemoryTimeline.Sync.csproj" />
+  </ItemGroup>
+
+</Project>

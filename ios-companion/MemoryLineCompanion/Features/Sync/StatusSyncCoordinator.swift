@@ -3,12 +3,12 @@ import Foundation
 import Observation
 import os
 
-/// Wire values of `SyncOperation` (shared-contracts SyncChangeContracts.cs).
-/// The Swift DTO mirror does not carry them, so they are declared where the
-/// only consumer needs them.
-private enum SyncChangeOperation {
-    static let upsert = "upsert"
-}
+// A file-private `SyncChangeOperation` used to live here carrying only
+// `upsert`, because `capture_status` changes are never anything else, and the
+// Swift DTO mirror had nowhere better to put it. It is gone in favour of the
+// shared `SyncOperation` in DTOs.swift, which the timeline projection needed
+// anyway — two spellings of the same two wire strings is one more than the wire
+// has.
 
 /// Pulls Windows-authored `capture_status` changes and applies them locally, so
 /// the user can follow a capture's whole lifecycle from the phone without
@@ -43,6 +43,7 @@ final class StatusSyncCoordinator {
     private let settings: any SettingsStore
     private let api: any SyncAPI
     private let statusStore: any CaptureStatusStore
+    private let projections: TimelineProjectionApplier
     private let notifier: any CaptureStatusNotifying
     private let logger = Logger(subsystem: "com.memoryline.companion", category: "StatusSyncCoordinator")
 
@@ -66,18 +67,25 @@ final class StatusSyncCoordinator {
     ///   - statusStore: durable projection of the Windows-side status detail
     ///     (transcript preview, review counts) that `CaptureRecord` has no
     ///     room for.
+    ///   - projectionStore: the read-only copy of the Windows archive — events,
+    ///     eras, people and the review queue. No default: a coordinator built
+    ///     without one would pull the timeline feed, drop every event and report
+    ///     a perfectly healthy sync, which is not a state worth reaching by
+    ///     omission.
     ///   - notifier: local-notification presenter; injectable for tests.
     init(
         store: any CaptureStore,
         settings: any SettingsStore,
         api: any SyncAPI,
         statusStore: any CaptureStatusStore,
+        projectionStore: any TimelineProjectionStore,
         notifier: any CaptureStatusNotifying
     ) {
         self.store = store
         self.settings = settings
         self.api = api
         self.statusStore = statusStore
+        self.projections = TimelineProjectionApplier(store: projectionStore)
         self.notifier = notifier
     }
 
@@ -87,13 +95,15 @@ final class StatusSyncCoordinator {
         store: any CaptureStore,
         settings: any SettingsStore,
         api: any SyncAPI,
-        statusStore: any CaptureStatusStore
+        statusStore: any CaptureStatusStore,
+        projectionStore: any TimelineProjectionStore
     ) {
         self.init(
             store: store,
             settings: settings,
             api: api,
             statusStore: statusStore,
+            projectionStore: projectionStore,
             notifier: CaptureStatusNotifier(settings: settings))
     }
 
@@ -238,6 +248,18 @@ final class StatusSyncCoordinator {
     /// notifying about. Entity types this build does not consume simply carry
     /// the cursor forward.
     ///
+    /// Two disjoint passes over the same array: `capture_status` is this type's
+    /// own business — it moves a local capture's lifecycle and can raise a
+    /// notification — while the timeline entities are pure projection and go
+    /// through `TimelineProjectionApplier`. Keeping them apart is what stops
+    /// this method growing a case per entity type as the contract does, and it
+    /// lets the applier be driven by a test or a backfill with a hand-built
+    /// page. The two filters cannot overlap, so nothing is applied twice.
+    ///
+    /// A page is not applied atomically and does not need to be: every write on
+    /// both paths is an idempotent last-write-wins upsert or a delete, so a page
+    /// that fails part-way is simply replayed.
+    ///
     /// Throws only on local persistence failure, so the caller can hold the
     /// cursor and replay the page.
     private func apply(_ changes: [SyncChangeDto]) throws -> [CaptureStatusNotification] {
@@ -247,6 +269,12 @@ final class StatusSyncCoordinator {
                 notifications.append(notification)
             }
         }
+
+        // Projections raise no notifications: a phone buzzing because Windows
+        // republished an era is noise, and the transitions worth interrupting
+        // someone for are the ones about their own recording.
+        try projections.apply(changes)
+
         return notifications
     }
 
@@ -258,7 +286,7 @@ final class StatusSyncCoordinator {
     /// reported).
     private func apply(_ change: SyncChangeDto) throws -> CaptureStatusNotification? {
         // Only upserts carry a status; a delete would have no payload anyway.
-        guard change.operation == SyncChangeOperation.upsert else { return nil }
+        guard change.operation == SyncOperation.upsert else { return nil }
         guard let payloadJson = change.payloadJson, !payloadJson.isEmpty else {
             logger.notice("capture_status change \(change.changeId) had no payload")
             return nil

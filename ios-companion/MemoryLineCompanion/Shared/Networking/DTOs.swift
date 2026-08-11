@@ -268,4 +268,34 @@ enum SyncChangeEntityType {
     static let capture = "capture"
     static let captureArtifact = "capture_artifact"
     static let captureStatus = "capture_status"
+
+    // The read-only timeline projection Windows publishes. These lived in the
+    // macOS target while it was the only app with a timeline, with a note saying
+    // to move them here the day the phone grew one. That day arrived; an
+    // extension in one app's target would have given the type members the other
+    // app did not have.
+    static let event = "event"
+    static let era = "era"
+    static let person = "person"
+    static let pendingEvent = "pending_event"
+
+    /// A companion's approve/reject verdict on a pending event — the one entity
+    /// a non-Windows device authors. Deliberately absent from
+    /// <doc:projectedByWindows>: seeing it on the pull feed means reading back a
+    /// decision some device sent, and applying it as a projection would fabricate
+    /// a pending event out of the answer to one.
+    static let pendingEventDecision = "pending_event_decision"
+
+    /// The entity types `TimelineProjectionApplier` writes to the local store.
+    static let projectedByWindows: Set<String> = [event, era, person, pendingEvent]
+}
+
+/// `operation` values on a sync change, mirroring `SyncOperation` in
+/// `shared-contracts/dotnet/MemoryTimeline.SyncContracts/SyncChangeContracts.cs`.
+///
+/// Not needed until the projection arrived: `capture_status` changes are only
+/// ever upserts, so nothing had to distinguish them.
+enum SyncOperation {
+    static let upsert = "upsert"
+    static let delete = "delete"
 }

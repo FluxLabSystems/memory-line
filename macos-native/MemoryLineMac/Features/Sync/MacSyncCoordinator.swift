@@ -179,7 +179,7 @@ final class MacSyncCoordinator {
     /// this type's own business, and the timeline entities belong to an applier
     /// that can also be driven by a backfill or a test with a hand-built page.
     /// The two filters are disjoint — `capture_status` is not in
-    /// `TimelineProjectionEntityType.projected` — so nothing is applied twice.
+    /// `SyncChangeEntityType.projectedByWindows` — so nothing is applied twice.
     ///
     /// Entity types neither pass claims are ignored on purpose. `capture` and
     /// `capture_artifact` describe recordings whose authoritative copy is the

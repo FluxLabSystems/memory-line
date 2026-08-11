@@ -22,6 +22,9 @@ final class AppEnvironment {
     let recorder: AudioRecorderService
     /// Windows-authored processing status per capture (design §19 Phase 3).
     let statuses: SQLiteCaptureStatusStore
+    /// Read-only copy of the Windows archive — events, eras, people, review
+    /// queue. Windows is the only writer; this phone renders what it is sent.
+    let projections: SQLiteTimelineProjectionStore
     let statusSync: StatusSyncCoordinator
 
     private let logger = AppLog.logger(category: "environment")
@@ -34,8 +37,10 @@ final class AppEnvironment {
         let api = SyncAPIClient(settings: settings, tokens: tokens)
         let uploads = UploadCoordinator(store: captures, settings: settings, tokens: tokens, api: api)
         let statuses = Self.openStatusStore(database: database)
+        let projections = Self.openProjectionStore(database: database)
         let statusSync = StatusSyncCoordinator(
-            store: captures, settings: settings, api: api, statusStore: statuses)
+            store: captures, settings: settings, api: api,
+            statusStore: statuses, projectionStore: projections)
         // The upload pass pulls status when it finishes, so a manual "sync now"
         // also refreshes what Windows has done. Held weakly there; this
         // environment owns both coordinators for the process lifetime.
@@ -48,6 +53,7 @@ final class AppEnvironment {
         self.api = api
         self.uploads = uploads
         self.statuses = statuses
+        self.projections = projections
         self.statusSync = statusSync
         // Capture the local `uploads` (not self) so the closure is valid before
         // `self` is fully initialized. Every finalized recording immediately
@@ -131,6 +137,20 @@ final class AppEnvironment {
         } catch {
             fatalError(
                 "Memory Line could not prepare its capture-status table on an otherwise healthy "
+                + "database: \(error)")
+        }
+    }
+
+    /// Opens the timeline projection over the same database, with the same
+    /// policy as the status store above and for the same reason: its DDL runs
+    /// against a database that has already opened and migrated, so a failure
+    /// here means that database is unusable.
+    private static func openProjectionStore(database: SQLiteDatabase) -> SQLiteTimelineProjectionStore {
+        do {
+            return try SQLiteTimelineProjectionStore(database: database)
+        } catch {
+            fatalError(
+                "Memory Line could not prepare its timeline tables on an otherwise healthy "
                 + "database: \(error)")
         }
     }

@@ -325,10 +325,17 @@ layering rule above enforceable by the compiler rather than by review.
 ## The Swift apps (iOS companion + macOS)
 
 Two SwiftUI apps share one folder of code: `ios-companion/MemoryLineCompanion/Shared/`
-(domain models, sync client, SQLite stores, Keychain). The macOS project compiles that
-folder directly via an Xcode **synchronized folder group**, so a file added there lands in
-both apps with no project edit. Full detail: [`macos-native/README.md`](./macos-native/README.md)
-and [`docs/design/MACOS-PORT-PLAN.md`](./docs/design/MACOS-PORT-PLAN.md).
+(domain models, sync client, SQLite stores, Keychain, and the timeline projection). The
+macOS project compiles that folder directly via an Xcode **synchronized folder group**, so a
+file added there lands in both apps with no project edit. Full detail:
+[`macos-native/README.md`](./macos-native/README.md) and
+[`docs/design/MACOS-PORT-PLAN.md`](./docs/design/MACOS-PORT-PLAN.md).
+
+**Both apps have CI**, and both need a *committed shared scheme* to have it. Xcode writes
+schemes per-user under `xcuserdata/`, which is not in git, so `xcodebuild -scheme` has
+nothing to resolve without one — the iOS app had no CI for exactly this reason until
+`MemoryLineCompanion.xcscheme` was committed. If you add a target or a project, commit its
+scheme in the same change.
 
 **Rules for anything under `Shared/`:**
 
@@ -352,11 +359,23 @@ acking; hold the cursor when *applying* fails so the page replays; never ack a c
 did not advance; and last-write-wins on the Windows-authored `updatedAtUtc`. Change one
 and check the other.
 
+Both coordinators make **two disjoint sweeps** over a page: `capture_status` inline, because
+it moves a local capture's lifecycle and can raise a notification; everything in
+`SyncChangeEntityType.projectedByWindows` through the shared `TimelineProjectionApplier`.
+That split is what keeps a coordinator from growing a case per entity type. A page is not
+applied atomically and does not need to be — every write on both paths is an idempotent
+upsert or a delete, so a failed page simply replays.
+
 Windows remains the only writer and the only editing/approval surface. Everything the
-phone and the Mac show about processing is a **read-only projection** (design §19).
+phone and the Mac show of the archive is a **read-only projection** (design §19). The one
+exception is a `pending_event_decision`: approving or rejecting an extracted event is one
+idempotent bit with no field values to merge, so the contract admits it from a companion
+without making the system multi-writer. The Mac sends them
+(`MacReviewCoordinator`, queued to disk before any network call); the phone does not, and
+whether it should is an open question, not an oversight.
 
 ---
 
-**Last Updated:** 2026-08-07
+**Last Updated:** 2026-08-08
 **Primary target:** Windows Native (.NET 10 / WinUI 3) — `windows-native/`
 **In progress:** macOS (SwiftUI) — `macos-native/`

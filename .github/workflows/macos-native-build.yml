@@ -98,6 +98,13 @@ jobs:
     # in. Gating on purpose: a non-gating check here would repeat the exact
     # failure the 2026-07 audit called out (finding #10).
     #
+    # The final step RUNS the archive stack rather than only building it, and
+    # that distinction is the point. Building proves no Windows-only type crept
+    # in; it says nothing about whether EF Core can open a SQLite file on this
+    # platform or whether SchemaUpgrader can raise the real schema. Either could
+    # fail on a native asset while the build stays green - and macOS running the
+    # same C# Windows runs is the premise the whole macOS-as-peer plan rests on.
+    #
     # The sync service itself is not rebuilt here; sync-api-build.yml already
     # compiles and tests it on Linux, which proves the same portability point.
     steps:
@@ -120,3 +127,9 @@ jobs:
 
       - name: Build MemoryTimeline.SyncContracts
         run: dotnet build shared-contracts/dotnet/MemoryTimeline.SyncContracts/MemoryTimeline.SyncContracts.csproj -c Release
+
+      # A red run here is an architectural finding, not a flaky test: it would
+      # mean the archive cannot run in-process on macOS, and that reimplementing
+      # the business layer in Swift is back on the table.
+      - name: Run the archive stack on macOS
+        run: dotnet test windows-native/src/MemoryTimeline.Portability.Tests/MemoryTimeline.Portability.Tests.csproj -c Release --logger "console;verbosity=normal"

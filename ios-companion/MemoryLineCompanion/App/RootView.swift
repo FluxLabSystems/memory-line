@@ -1,9 +1,18 @@
 import AVFAudio
 import SwiftUI
 
-/// Root tab layout: Capture | History | Settings. Presents the first-run
-/// onboarding sheet while the microphone permission is still undetermined so
-/// permission education happens before driving-mode use (design §8.6).
+/// Root tab layout: Capture | History | Timeline | Settings. Presents the
+/// first-run onboarding sheet while the microphone permission is still
+/// undetermined so permission education happens before driving-mode use
+/// (design §8.6).
+///
+/// Capture stays first because it is what the app is for, and the ordering is
+/// what a thumb reaches for at a traffic light. History is this phone's own
+/// recordings; Timeline is the read-only copy of the Windows archive. Keeping
+/// them as separate tabs rather than merging them is deliberate: one is a list
+/// of things this device made and still owns, the other a copy of someone
+/// else's writes, and a single list would blur which is which exactly where a
+/// user might expect to be able to edit.
 @MainActor
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
@@ -15,6 +24,8 @@ struct RootView: View {
                 .tabItem { Label("Capture", systemImage: "record.circle.fill") }
             HistoryView()
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+            ArchiveTimelineView()
+                .tabItem { Label("Timeline", systemImage: "calendar.day.timeline.left") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

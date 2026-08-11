@@ -1,5 +1,5 @@
 import XCTest
-@testable import MemoryLineMac
+@testable import MemoryLineCompanion
 
 /// Covers the macOS timeline projection: what the store persists and gives back,
 /// what the range query includes, and how `TimelineProjectionApplier` handles a
@@ -174,10 +174,10 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let pending = Self.pendingEvent(id: "pen-1", startDate: Self.day(0), updatedAt: Self.day(0))
 
         let applied = try f.applier.apply([
-            upsertChange(event, entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 1),
-            upsertChange(era, entityType: TimelineProjectionEntityType.era, entityId: "era-1", changeId: 2),
-            upsertChange(person, entityType: TimelineProjectionEntityType.person, entityId: "per-1", changeId: 3),
-            upsertChange(pending, entityType: TimelineProjectionEntityType.pendingEvent, entityId: "pen-1", changeId: 4)
+            upsertChange(event, entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 1),
+            upsertChange(era, entityType: SyncChangeEntityType.era, entityId: "era-1", changeId: 2),
+            upsertChange(person, entityType: SyncChangeEntityType.person, entityId: "per-1", changeId: 3),
+            upsertChange(pending, entityType: SyncChangeEntityType.pendingEvent, entityId: "pen-1", changeId: 4)
         ])
 
         XCTAssertEqual(applied, 4)
@@ -201,12 +201,12 @@ final class TimelineProjectionStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try f.applier.apply([
-                upsertChange(newer, entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 1)
+                upsertChange(newer, entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 1)
             ]),
             1)
         XCTAssertEqual(
             try f.applier.apply([
-                upsertChange(older, entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 2)
+                upsertChange(older, entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 2)
             ]),
             0,
             "a stale revision must not count as applied")
@@ -221,7 +221,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let f = try makeFixture()
         let event = Self.event(id: "evt-1", startDate: Self.day(0), updatedAt: Self.day(1))
         let change = upsertChange(
-            event, entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 1)
+            event, entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 1)
 
         XCTAssertEqual(try f.applier.apply([change]), 1)
         XCTAssertEqual(try f.applier.apply([change]), 1)
@@ -234,12 +234,12 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let f = try makeFixture()
         let event = Self.event(id: "evt-1", startDate: Self.day(0), updatedAt: Self.day(0))
         _ = try f.applier.apply([
-            upsertChange(event, entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 1)
+            upsertChange(event, entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 1)
         ])
         XCTAssertNotNil(try f.store.event(eventId: "evt-1"))
 
         let applied = try f.applier.apply([
-            deleteChange(entityType: TimelineProjectionEntityType.event, entityId: "evt-1", changeId: 2)
+            deleteChange(entityType: SyncChangeEntityType.event, entityId: "evt-1", changeId: 2)
         ])
 
         XCTAssertEqual(applied, 1)
@@ -247,7 +247,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
         XCTAssertEqual(try f.store.events(from: .distantPast, to: .distantFuture), [])
     }
 
-    /// A delete for something this Mac never held is normal: the projection only
+    /// A delete for something this device never held is normal: the projection only
     /// starts at the cursor the device paired on. It must be a silent no-op, and
     /// it still counts as applied — the change was consumed and the end state is
     /// the one Windows asked for.
@@ -256,7 +256,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let f = try makeFixture()
 
         let applied = try f.applier.apply([
-            deleteChange(entityType: TimelineProjectionEntityType.person, entityId: "never-seen", changeId: 1)
+            deleteChange(entityType: SyncChangeEntityType.person, entityId: "never-seen", changeId: 1)
         ])
 
         XCTAssertEqual(applied, 1)
@@ -279,7 +279,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
             try f.applier.apply([
                 upsertChange(
                     event,
-                    entityType: TimelineProjectionEntityType.event,
+                    entityType: SyncChangeEntityType.event,
                     entityId: canonical,
                     changeId: 1)
             ]),
@@ -290,7 +290,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
                      "the payload's own spelling must not become a second row")
 
         let applied = try f.applier.apply([
-            deleteChange(entityType: TimelineProjectionEntityType.event, entityId: canonical, changeId: 2)
+            deleteChange(entityType: SyncChangeEntityType.event, entityId: canonical, changeId: 2)
         ])
 
         XCTAssertEqual(applied, 1)
@@ -326,7 +326,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let applied = try f.applier.apply([
             upsertChange(
                 pending,
-                entityType: TimelineProjectionEntityType.pendingEventDecision,
+                entityType: SyncChangeEntityType.pendingEventDecision,
                 entityId: "pen-1",
                 changeId: 1)
         ])
@@ -346,15 +346,15 @@ final class TimelineProjectionStoreTests: XCTestCase {
         let good = Self.event(id: "evt-good", startDate: Self.day(0), updatedAt: Self.day(0))
 
         var brokenJSON = upsertChange(
-            good, entityType: TimelineProjectionEntityType.event, entityId: "evt-broken", changeId: 1)
+            good, entityType: SyncChangeEntityType.event, entityId: "evt-broken", changeId: 1)
         brokenJSON.payloadJson = "{ not json"
 
         var missingPayload = upsertChange(
-            good, entityType: TimelineProjectionEntityType.era, entityId: "era-missing", changeId: 2)
+            good, entityType: SyncChangeEntityType.era, entityId: "era-missing", changeId: 2)
         missingPayload.payloadJson = nil
 
         var missingField = upsertChange(
-            good, entityType: TimelineProjectionEntityType.event, entityId: "evt-partial", changeId: 3)
+            good, entityType: SyncChangeEntityType.event, entityId: "evt-partial", changeId: 3)
         // Valid JSON, but `startDate`, `title` and `updatedAtUtc` are not
         // optional in the contract.
         missingField.payloadJson = #"{"eventId":"evt-partial"}"#
@@ -363,7 +363,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
             brokenJSON,
             missingPayload,
             missingField,
-            upsertChange(good, entityType: TimelineProjectionEntityType.event, entityId: "evt-good", changeId: 4)
+            upsertChange(good, entityType: SyncChangeEntityType.event, entityId: "evt-good", changeId: 4)
         ])
 
         XCTAssertEqual(applied, 1)
@@ -455,7 +455,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
             changeId: changeId,
             entityType: entityType,
             entityId: entityId,
-            operation: TimelineProjectionOperation.upsert,
+            operation: SyncOperation.upsert,
             revision: changeId,
             changedAtUtc: Self.day(0),
             sourceDeviceId: "windows-1",
@@ -468,7 +468,7 @@ final class TimelineProjectionStoreTests: XCTestCase {
             changeId: changeId,
             entityType: entityType,
             entityId: entityId,
-            operation: TimelineProjectionOperation.delete,
+            operation: SyncOperation.delete,
             revision: changeId,
             changedAtUtc: Self.day(0),
             sourceDeviceId: "windows-1",

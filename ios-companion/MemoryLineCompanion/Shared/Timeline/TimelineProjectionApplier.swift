@@ -48,14 +48,14 @@ struct TimelineProjectionApplier {
     /// Applies every timeline change in `changes` and returns how many were
     /// applied.
     ///
-    /// Entity types outside `TimelineProjectionEntityType.projected` are ignored
+    /// Entity types outside `SyncChangeEntityType.projectedByWindows` are ignored
     /// without comment: the feed is shared, so a page routinely carries
     /// `capture`, `capture_status` and `assistant_turn` changes that belong to
     /// other features, and treating those as anomalies would bury the real
     /// anomalies in noise.
     ///
     /// The count is *changes applied*, not rows altered — a delete for an entity
-    /// this Mac never held counts, because the change was consumed and the
+    /// this device never held counts, because the change was consumed and the
     /// desired end state (absent) is what the store now has. Pre-checking to
     /// report rows-altered would double the queries to make a progress number
     /// slightly different.
@@ -64,7 +64,7 @@ struct TimelineProjectionApplier {
     @discardableResult
     func apply(_ changes: [SyncChangeDto]) throws -> Int {
         var applied = 0
-        for change in changes where TimelineProjectionEntityType.projected.contains(change.entityType) {
+        for change in changes where SyncChangeEntityType.projectedByWindows.contains(change.entityType) {
             if try apply(change) { applied += 1 }
         }
         return applied
@@ -74,9 +74,9 @@ struct TimelineProjectionApplier {
 
     private func apply(_ change: SyncChangeDto) throws -> Bool {
         switch change.operation {
-        case TimelineProjectionOperation.upsert:
+        case SyncOperation.upsert:
             return try applyUpsert(change)
-        case TimelineProjectionOperation.delete:
+        case SyncOperation.delete:
             return try applyDelete(change)
         default:
             // Same reasoning as an undecodable payload: an operation this build
@@ -94,7 +94,7 @@ struct TimelineProjectionApplier {
         }
 
         switch change.entityType {
-        case TimelineProjectionEntityType.event:
+        case SyncChangeEntityType.event:
             guard var payload = decode(EventProjectionPayload.self, from: data, change: change) else {
                 return false
             }
@@ -103,7 +103,7 @@ struct TimelineProjectionApplier {
             guard isNotStale(payload.updatedAtUtc, existing: existing) else { return false }
             try store.upsertEvent(payload)
 
-        case TimelineProjectionEntityType.era:
+        case SyncChangeEntityType.era:
             guard var payload = decode(EraProjectionPayload.self, from: data, change: change) else {
                 return false
             }
@@ -112,7 +112,7 @@ struct TimelineProjectionApplier {
             guard isNotStale(payload.updatedAtUtc, existing: existing) else { return false }
             try store.upsertEra(payload)
 
-        case TimelineProjectionEntityType.person:
+        case SyncChangeEntityType.person:
             guard var payload = decode(PersonProjectionPayload.self, from: data, change: change) else {
                 return false
             }
@@ -121,7 +121,7 @@ struct TimelineProjectionApplier {
             guard isNotStale(payload.updatedAtUtc, existing: existing) else { return false }
             try store.upsertPerson(payload)
 
-        case TimelineProjectionEntityType.pendingEvent:
+        case SyncChangeEntityType.pendingEvent:
             guard var payload = decode(PendingEventProjectionPayload.self, from: data, change: change) else {
                 return false
             }
@@ -156,13 +156,13 @@ struct TimelineProjectionApplier {
         }
 
         switch change.entityType {
-        case TimelineProjectionEntityType.event:
+        case SyncChangeEntityType.event:
             try store.deleteEvent(eventId: change.entityId)
-        case TimelineProjectionEntityType.era:
+        case SyncChangeEntityType.era:
             try store.deleteEra(eraId: change.entityId)
-        case TimelineProjectionEntityType.person:
+        case SyncChangeEntityType.person:
             try store.deletePerson(personId: change.entityId)
-        case TimelineProjectionEntityType.pendingEvent:
+        case SyncChangeEntityType.pendingEvent:
             try store.deletePendingEvent(pendingEventId: change.entityId)
         default:
             return false
@@ -182,7 +182,7 @@ struct TimelineProjectionApplier {
     /// denotes the same UUID (`SyncChangeService.TryRelayProjection`, "Entity
     /// IDs"). SQLite compares TEXT byte for byte, so keying rows on the payload
     /// id would let a delete match nothing and leave a memory the user removed
-    /// on Windows sitting on this Mac forever — the exact failure the contract
+    /// on Windows sitting on this device forever — the exact failure the contract
     /// note describes. Normalising here also means the id this app hands back to
     /// the UI is the one every other device uses.
     ///

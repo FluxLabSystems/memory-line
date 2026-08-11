@@ -1,0 +1,102 @@
+name: iOS Companion Build
+
+# The phone had no CI at all until this existed.
+#
+# That is a bigger hole than it sounds: the companion carries eleven test files
+# covering the capture store, migrations, DTO coding and the status sync loop,
+# and none of them had ever been executed by anything except a developer's local
+# Xcode. The macOS workflow compiles ios-companion/.../Shared/ into the Mac
+# target, so the shared layer was covered by accident — but the phone's own App/,
+# Features/, AppIntents/ and the widget extension were built nowhere.
+#
+# The path filter includes Shared/ deliberately, even though the macOS job also
+# watches it. The two apps compile those files with different SDKs and different
+# availability: a symbol that exists on macOS 14 but not iOS 17, or a
+# `#if os(macOS)` branch that leaves the iOS side without a definition, is green
+# on one job and red on the other. Both need to see the change.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/remove-electron-macos-prep-j9gl75
+    paths:
+      - 'ios-companion/**'
+      - '.github/workflows/ios-companion-build.yml'
+  pull_request:
+    paths:
+      - 'ios-companion/**'
+  workflow_dispatch:
+
+jobs:
+  xcode:
+    name: iOS app (xcodebuild)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # The simulator runtime available on the runner image moves with Xcode, so
+      # this resolves a concrete destination rather than pinning an iPhone model
+      # that a future image drops. `xcodebuild` is happy with a name it was given
+      # and unhelpful about one it was not, so failing here with the list printed
+      # beats failing later inside a build step.
+      - name: Resolve a simulator destination
+        id: sim
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          # Highest iOS runtime, first available iPhone in it. Sorting the
+          # runtime keys descending picks the newest without naming a version.
+          UDID=$(xcrun simctl list devices available --json | jq -r '.devices | to_entries | map(select(.key | test("iOS"))) | sort_by(.key) | reverse | .[0].value | map(select(.isAvailable and (.name | test("iPhone")))) | .[0].udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "No available iPhone simulator on this runner image." >&2
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Using simulator $UDID"
+
+      # CODE_SIGNING_ALLOWED=NO: the runner has no signing identity and the app
+      # only needs to compile. Entitlements are still parsed, so a malformed
+      # entitlements file is caught; the signature itself is not produced.
+      - name: Build (Debug)
+        working-directory: ios-companion
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project MemoryLineCompanion.xcodeproj \
+            -scheme MemoryLineCompanion \
+            -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee xcodebuild.log
+
+      - name: Test
+        working-directory: ios-companion
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project MemoryLineCompanion.xcodeproj \
+            -scheme MemoryLineCompanion \
+            -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee -a xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcodebuild-log
+          path: ios-companion/xcodebuild.log
+          if-no-files-found: ignore

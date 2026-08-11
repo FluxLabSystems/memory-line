@@ -15,6 +15,9 @@ struct HistoryDetailView: View {
     /// Windows-authored processing status; nil until the PC reports on this
     /// capture. Read-only projection — nothing here is editable on the phone.
     @State private var status: CaptureStatusRecord?
+    /// Events Windows extracted from this recording and has not yet had
+    /// reviewed. The status already carries a *count*; this is what they say.
+    @State private var pending: [PendingEventProjectionPayload] = []
     @State private var playback = PlaybackController()
     @State private var isRetrying = false
 
@@ -56,6 +59,7 @@ struct HistoryDetailView: View {
             statusSection(summary)
             lifecycleSection(record, summary: summary)
             transcriptSection(summary)
+            extractedSection()
 
             Section("Recording") {
                 LabeledContent("Type", value: record.type.displayName)
@@ -189,6 +193,60 @@ struct HistoryDetailView: View {
         return "Preview only \u{2014} the first \(shown) of \(total) characters. \(boundary)"
     }
 
+    // MARK: - Extracted events
+
+    /// What Windows pulled out of this recording, awaiting review.
+    ///
+    /// The capture status has carried a pending *count* since Phase 3; this is
+    /// the first time the phone can say what those events actually are, because
+    /// the timeline projection now reaches it. That closes the loop the
+    /// companion exists for: you record something in the car, and later the same
+    /// device tells you what was found in it.
+    ///
+    /// Read-only, and the footer says where deciding happens. Approving or
+    /// rejecting from a companion is admitted by the contract — the Mac does it
+    /// — but whether a phone should approve memories into an archive has not
+    /// been decided, so this offers no buttons rather than buttons that would
+    /// quietly do nothing.
+    @ViewBuilder
+    private func extractedSection() -> some View {
+        if !pending.isEmpty {
+            Section {
+                ForEach(pending, id: \.pendingEventId) { item in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.title)
+                            .font(.body)
+                        HStack(spacing: 6) {
+                            // Windows' precision-honest string, never re-derived
+                            // here: an extraction that only knew a season must
+                            // not be shown as a precise day.
+                            Text(item.displayDate ?? "Date unknown")
+                            if let category = item.category, !category.isEmpty {
+                                Text(category)
+                            }
+                            Text(item.confidenceScore, format: .percent.precision(.fractionLength(0)))
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        if !item.peopleNames.isEmpty {
+                            // Names, not ids: the extraction found these in the
+                            // audio and they may not be in the contact book yet.
+                            Text(item.peopleNames.joined(separator: ", "))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                Text(pending.count == 1 ? "1 event awaiting review" : "\(pending.count) events awaiting review")
+            } footer: {
+                Text("Found by your PC in this recording. Approving or rejecting happens on Windows.")
+            }
+        }
+    }
+
     // MARK: - Upload
 
     @ViewBuilder
@@ -317,5 +375,11 @@ struct HistoryDetailView: View {
         if let fetched = try? env.statuses.status(captureId: captureId) {
             status = fetched
         }
+        // Filtered in memory rather than queried by capture id: the review queue
+        // is bounded by how much Windows has extracted and not yet had reviewed,
+        // so it is small, and a second index on the projection would exist to
+        // serve one screen.
+        pending = ((try? env.projections.allPendingEvents()) ?? [])
+            .filter { $0.captureId == captureId }
     }
 }

@@ -6,7 +6,7 @@ This directory contains PowerShell scripts for setting up, verifying, and managi
 
 Before using the commands in this document, note the following about the current build:
 
-- **Build with Visual Studio 2022 or `msbuild`, not `dotnet build`.** The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under `dotnet build`. Use `msbuild` (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.
+- **Build with Visual Studio 2026 or `msbuild`, not `dotnet build`.** The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under `dotnet build`. Use `msbuild` (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.
 - **The solution is x64-only.** `MemoryTimeline.sln` defines only `Debug|x64` and `Release|x64`. Always pass the platform explicitly, e.g. `-p:Platform=x64` (msbuild) or select `x64` in Visual Studio. There is no `Any CPU` or `Win32/ARM64` solution configuration.
 - **.NET SDK is pinned by `../src/global.json`** to version `8.0.100` with `rollForward: "major"`. This means a .NET 8 SDK (8.0.100+) or a newer major SDK such as .NET 9 will both satisfy the pin. `dotnet restore` still works normally for package restore.
 
@@ -49,12 +49,12 @@ Automatically checks and installs all required dependencies for development or p
 **What it installs:**
 
 **Core (Both Development and Production):**
-- .NET 8 SDK
+- .NET 10 SDK
 - Windows App SDK 1.5+
 - Windows Package Manager (winget)
 
 **Development Only:**
-- Visual Studio 2022 (Community or higher)
+- Visual Studio 2026 (Community or higher)
 - Windows SDK (10.0.26100.0+)
 - Git for Windows
 
@@ -102,8 +102,8 @@ Verifies that all dependencies are correctly installed and configured.
 - CPU information
 
 **Development Tools:**
-- .NET SDK (8.0+)
-- Visual Studio 2022 (17.8+)
+- .NET SDK (10.0.3xx+)
+- Visual Studio 2026 (18.0+)
 - Windows SDK (10.0.26100.0+)
 - Windows App SDK (1.5+)
 - Git
@@ -203,10 +203,10 @@ dotnet test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj --configuration Rel
 
 If automatic installation fails, you can install components manually:
 
-### .NET 8 SDK
-Download from: https://dotnet.microsoft.com/download/dotnet/8.0
+### .NET 10 SDK
+Download from: https://dotnet.microsoft.com/download/dotnet/10.0
 
-### Visual Studio 2022
+### Visual Studio 2026
 Download from: https://visualstudio.microsoft.com/downloads/
 
 Required workloads:

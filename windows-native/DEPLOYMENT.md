@@ -23,15 +23,15 @@ This guide covers building, testing, and deploying the Memory Timeline Windows n
 
 ### Development Environment
 - **Windows 11 22H2** or later (required for Windows App SDK 1.5+). The WinUI target cannot be built on Linux/macOS.
-- **Visual Studio 2022** (17.8 or later) with workloads:
+- **Visual Studio 2026** (18.0 or later) with workloads:
   - .NET Desktop Development
   - Universal Windows Platform development
   - Windows App SDK C# Templates
 - **.NET SDK** — the repo pins the SDK via `windows-native/src/global.json`:
   ```json
-  { "sdk": { "version": "8.0.100", "rollForward": "major" } }
+  { "sdk": { "version": "10.0.300", "rollForward": "latestFeature" } }
   ```
-  This means: use the **.NET 8 SDK** if it is installed, otherwise **roll forward to the next available major** (e.g. .NET 9). It will **not** select the .NET 10 SDK, whose newer WinUI XAML/PRI tooling breaks this project's resource generation. If you only have a newer SDK installed, install a **.NET 8 or .NET 9 SDK** rather than relying on whatever is latest.
+  This means: use a **.NET 10 SDK, 10.0.3xx or newer**. An older 10.0.1xx/2xx SDK will not satisfy it, because the newer bands require MSBuild 18 (Visual Studio 2026), which ships a suitable SDK.
 - **Windows App SDK** 1.5.x (restored as the `Microsoft.WindowsAppSDK` NuGet package)
 
 ### For Packaging / Store Deployment (Phase 7 — in progress)
@@ -58,7 +58,7 @@ Two more consequences:
 cd windows-native/src
 
 # Restore + build the whole solution with Visual Studio MSBuild.
-# 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2022),
+# 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2026),
 # NOT 'dotnet build'.
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 ```
@@ -69,7 +69,7 @@ msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64 /m
 ```
 
-You can also simply open `windows-native/src/MemoryTimeline.sln` in Visual Studio 2022, select the **Release / x64** (or **Debug / x64**) configuration, and Build.
+You can also simply open `windows-native/src/MemoryTimeline.sln` in Visual Studio 2026, select the **Release / x64** (or **Debug / x64**) configuration, and Build.
 
 ### Build Output
 The compiled application is placed under the platform-specific output folder, for example:

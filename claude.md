@@ -151,25 +151,26 @@ Critical for an assistant — get this wrong and you'll suggest broken commands:
 
 - **x64 only.** The solution defines x64/x86/ARM64 — **no AnyCPU**. Always pass
   `-p:Platform=x64` (or select x64 in Visual Studio).
-- **Build with Visual Studio 2022 (17.8+) or `msbuild.exe`, NOT `dotnet build` / `dotnet run`.**
+- **Build with Visual Studio 2026 (18.0+) or its `msbuild.exe`, NOT `dotnet build` / `dotnet run`.**
   WinUI 3 PRI resource generation (`MrtCore.PriGen` → `ExpandPriContent`) uses a .NET
   Framework MSBuild task that loads under VS's `msbuild.exe` but **fails under the
   `dotnet` CLI build engine** (error **MSB4062**). So `dotnet build` / `dotnet run`
   cannot build or launch the app.
-- **SDK pin.** `windows-native/src/global.json` pins the **.NET 10** SDK to its
-  `10.0.1xx` feature band (`10.0.100`, `rollForward: "latestPatch"`). The band is
-  deliberate: `10.0.1xx` declares MSBuild 17.14 as its minimum, so Visual Studio 2022
-  can still build; bands `10.0.2xx`+ require MSBuild 18 / Visual Studio 2026. (An
+- **SDK pin.** `windows-native/src/global.json` pins the **.NET 10** SDK at
+  `10.0.300` with `rollForward: "latestFeature"`, i.e. any 10.0.3xx-or-newer SDK. The
+  repo moved off the `10.0.1xx` band deliberately: bands `10.0.2xx`+ require MSBuild 18,
+  so **Visual Studio 2026 is the supported IDE and VS 2022 can no longer build this
+  repo.** (An
   earlier note here claimed .NET 10 was incompatible with the WindowsAppSDK PRI task —
   that is not the case; CI builds it green via VS msbuild.)
 - **CI is the validation gate.** `.github/workflows/windows-native-build.yml` builds
-  **Release | x64** on **windows-latest** via VS `msbuild` (`/t:Restore,Build`) and runs
+  **Release | x64** on **windows-latest** (VS 2026 / MSBuild 18) via VS `msbuild` (`/t:Restore,Build`) and runs
   tests best-effort. Compile success is the gate.
 - **No .NET SDK exists in the cloud dev sandbox.** You cannot build or run locally here —
   rely on CI to validate. Make changes that are correct by inspection; don't assume you
   can "just run it".
 
-For local dev on a real Windows machine: open the solution in VS 2022 and press F5, or
+For local dev on a real Windows machine: open the solution in VS 2026 and press F5, or
 `msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64`.
 
 ### Troubleshooting a local build
@@ -193,11 +194,11 @@ If it survives that, delete the stale package from the global cache
 A clean CI checkout builds this commit green, so a local-only failure of this shape is
 almost always leftover state.
 
-**`global.json` SDK resolution fails.** The pin is `10.0.100` with
-`rollForward: latestPatch`, which accepts `10.0.1xx` patches **only** — it will not roll
-forward to `10.0.2xx`. A machine with only a newer band installed (Visual Studio 2026
-ships one) cannot resolve it. Install a 10.0.1xx SDK, or raise the pin deliberately; the
-band is chosen so Visual Studio 2022 can still build (see the note inside `global.json`).
+**`global.json` SDK resolution fails.** The pin is `10.0.300` with
+`rollForward: latestFeature`, which accepts any 10.0.3xx-or-newer SDK. A machine with only
+a 10.0.1xx/2xx SDK (for example Visual Studio 2022's) cannot resolve it — install the
+current .NET 10 SDK, which Visual Studio 2026 ships. The CI `setup-dotnet` steps use
+`dotnet-version: '10.0.x'` to match.
 
 ### Tests: the SQLite parallelism hazard
 

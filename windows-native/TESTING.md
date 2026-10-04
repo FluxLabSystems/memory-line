@@ -55,7 +55,7 @@ Integration/performance tests build their schema with `Database.EnsureCreated()`
 cd windows-native/src
 
 # 1. Build the solution (Release | x64) with Visual Studio MSBuild.
-#    'msbuild' here is the VS msbuild.exe (e.g. Developer PowerShell for VS 2022),
+#    'msbuild' here is the VS msbuild.exe (e.g. Developer PowerShell for VS 2026),
 #    NOT 'dotnet build'.
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 

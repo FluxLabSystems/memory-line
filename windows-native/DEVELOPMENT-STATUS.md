@@ -26,12 +26,11 @@ similar ways — both surface as assembly-load and type-resolution errors.
 
 **Developer prerequisites changed** — see `README.md` → Prerequisites:
 
-- The **.NET 10 SDK, `10.0.1xx` band**, pinned by `src/global.json`. That band
-  declares MSBuild 17.14 as its minimum, which is what keeps Visual Studio 2022
-  able to build; bands `10.0.2xx`+ require MSBuild 18 / Visual Studio 2026.
+- The **.NET 10 SDK, 10.0.3xx or newer**, pinned by `src/global.json`
+  (`10.0.300`, `rollForward: latestFeature`). Bands `10.0.2xx`+ require
+  MSBuild 18 / Visual Studio 2026, so VS 2022 can no longer build the repo.
 - **Visual Studio 2026 is the supported IDE.** Microsoft supports targeting
-  .NET 10 only in VS 18.0+; VS 2022 17.14 builds with an "unsupported target"
-  warning rather than an error. The CI runner (`windows-latest`) is already
+  .NET 10 only in VS 18.0+, and the SDK pin requires it. The CI runner (`windows-latest`) is already
   VS 2026 / MSBuild 18.8.2.
 
 **Notes for whoever picks this up next:**

@@ -1,6 +1,6 @@
 name: Windows Native Build
 
-# Full compile + test of the native Windows (WinUI 3 / .NET 8) implementation.
+# Full compile + test of the native Windows (WinUI 3 / .NET 10) implementation.
 # The solution only defines x64/x86/ARM64 platforms (no AnyCPU) and the test
 # project references the WinUI app, so the whole solution is built for x64 on a
 # Windows runner (the WinUI target cannot build on Linux).
@@ -8,7 +8,7 @@ name: Windows Native Build
 # WinUI 3 PRI resource generation (MrtCore.PriGen -> ExpandPriContent task) uses a
 # .NET Framework MSBuild task that does NOT load under the `dotnet build` (.NET Core)
 # MSBuild engine, so the build is driven by the full Visual Studio msbuild.exe.
-# The .NET SDK is still pinned to 8.0 via windows-native/src/global.json for the
+# The .NET SDK is pinned to 10.0.3xx+ via windows-native/src/global.json for the
 # C# compilation.
 
 on:
@@ -48,7 +48,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.1xx'
+          dotnet-version: '10.0.x'
 
       - name: Setup MSBuild (Visual Studio)
         uses: microsoft/setup-msbuild@v2

@@ -1,7 +1,7 @@
 {
-  "//": "Pinned to the .NET 10 SDK 10.0.1xx feature band on purpose: that band declares MSBuild 17.14 as its minimum, so Visual Studio 2022 can still build these projects (targeting net10.0 there emits an unsupported-target warning, not an error). SDK bands 10.0.2xx and later require MSBuild 18, i.e. Visual Studio 2026 — raise this pin once the toolchain moves.",
+  "//": "Pinned to the .NET 10 SDK 10.0.3xx+ on purpose: the project now builds with Visual Studio 2026 (MSBuild 18). Visual Studio 2022 can no longer build this repo — the 10.0.2xx+ SDK bands require MSBuild 18. rollForward latestFeature accepts any newer 10.0.x feature band.",
   "sdk": {
-    "version": "10.0.100",
-    "rollForward": "latestPatch"
+    "version": "10.0.300",
+    "rollForward": "latestFeature"
   }
 }

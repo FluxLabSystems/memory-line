@@ -144,15 +144,15 @@ Key architectural decisions (recently reworked — see [Recent engineering](#rec
 
 ### Prerequisites
 - **Windows 11** (22H2 or later).
-- **Visual Studio 2022** (17.8+) with the **.NET Desktop Development** and **Windows App SDK** workloads.
-- A **.NET SDK**: the repo pins the build to the **.NET 10** SDK via `windows-native/src/global.json`, to the `10.0.1xx` feature band. That band is deliberate — it declares MSBuild 17.14 as its minimum, so Visual Studio 2022 can still build it; bands `10.0.2xx`+ require MSBuild 18 / Visual Studio 2026.
+- **Visual Studio 2026** (18.0+) with the **.NET Desktop Development** and **Windows App SDK** workloads.
+- A **.NET SDK**: the repo pins the build to the **.NET 10** SDK via `windows-native/src/global.json`, to `10.0.300` with `rollForward: latestFeature` (any 10.0.3xx-or-newer SDK). Those SDK bands require MSBuild 18, so Visual Studio 2022 can no longer build the repo.
 
 ### Build & run
 ```powershell
 git clone <repository-url>
 cd memory-line/windows-native/src
 
-# Open the solution in Visual Studio 2022 and press F5,
+# Open the solution in Visual Studio 2026 and press F5,
 # or build from the command line for x64 (the solution has no AnyCPU config):
 dotnet build MemoryTimeline.sln -c Debug -p:Platform=x64
 ```

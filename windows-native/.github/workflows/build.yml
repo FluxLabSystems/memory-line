@@ -17,7 +17,7 @@ jobs:
     - name: Setup .NET 8
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '10.0.1xx'
+        dotnet-version: '10.0.x'
 
     - name: Restore dependencies
       run: dotnet restore windows-native/src/MemoryTimeline.sln

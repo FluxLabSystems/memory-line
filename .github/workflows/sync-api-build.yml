@@ -26,7 +26,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.1xx'
+          dotnet-version: '10.0.x'
 
       - name: Build (Release)
         run: dotnet build services/MemoryTimeline.Services.sln -c Release

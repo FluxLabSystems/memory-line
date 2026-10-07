@@ -99,20 +99,18 @@ Every stage persists its state, so a failure is recoverable and visible in the U
 1. **Windows 11** (Version 22H2 or later)
    - Check version: `winver` in the Run dialog.
 
-2. **Visual Studio** — 2026 (18.0+) is the supported option, 2022 (17.14) works with a caveat.
+2. **Visual Studio 2026 (18.0+)** — required; VS 2022 can no longer build this repo.
    - Download: https://visualstudio.microsoft.com/
    - Required workloads:
      - `.NET Desktop Development`
      - `Windows App SDK` (Windows App SDK C# templates)
    - The projects target `net10.0`, and Microsoft supports targeting .NET 10 only in Visual
-     Studio 18.0+. VS 2022 17.14 emits an "unsupported target" **warning** rather than an error
-     and does build, but it is off the supported path — prefer VS 2026 if you have the choice.
+     Studio 18.0+. The pinned SDK band (below) also requires MSBuild 18.
 
-3. **The .NET 10 SDK, `10.0.1xx` feature band** — pinned by `windows-native/src/global.json`
-   (`"version": "10.0.100"`, `"rollForward": "latestPatch"`).
-   - The band is not arbitrary: `10.0.1xx` declares MSBuild 17.14 as its minimum, which is what
-     keeps VS 2022 able to build. SDK bands `10.0.2xx` and later require MSBuild 18, i.e. VS 2026.
-     Once the toolchain is fully on VS 2026, this pin can be raised.
+3. **The .NET 10 SDK, 10.0.3xx or newer** — pinned by `windows-native/src/global.json`
+   (`"version": "10.0.300"`, `"rollForward": "latestFeature"`).
+   - SDK bands `10.0.2xx` and later require MSBuild 18, i.e. VS 2026, so the repo no longer
+     builds in VS 2022. Visual Studio 2026 ships a satisfying SDK.
    - .NET 10 is required, not optional: .NET 8 and .NET 9 both reach end of support on
      2026-11-10, and the Windows SDK projection ref pack the build now uses is compiled against
      a newer runtime than net8.0 can consume (it fails with `CS1705` assembly-version conflicts).
@@ -153,7 +151,7 @@ cd memory-line/windows-native/src
 # Full app build (Visual Studio MSBuild), Release | x64:
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 
-# Or open MemoryTimeline.sln in Visual Studio 2022 and press F5 (debug) / Ctrl+F5 (run).
+# Or open MemoryTimeline.sln in Visual Studio 2026 and press F5 (debug) / Ctrl+F5 (run).
 ```
 
 ### First Run
@@ -588,13 +586,13 @@ See [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md) for detailed status and
   **Visual Studio (F5)** or the Visual Studio **`msbuild.exe`** instead.
 
 **"Windows App SDK not found"**
-- Install the **Windows App SDK** workload, or update Visual Studio to 17.8+.
+- Install the **Windows App SDK** workload, or update Visual Studio to 18.0+.
 
 **"SDK version not found" / wrong SDK selected**
-- The build is pinned to the **.NET 10 SDK, `10.0.1xx` band** (`global.json`, `10.0.100`,
-  `rollForward: latestPatch`). Install it from https://dotnet.microsoft.com/download/dotnet/10.0
-  — a `10.0.2xx` or newer SDK will *not* satisfy this pin, which is intentional: those bands
-  require MSBuild 18 (Visual Studio 2026), while `10.0.1xx` still works in Visual Studio 2022.
+- The build is pinned to the **.NET 10 SDK, 10.0.3xx or newer** (`global.json`, `10.0.300`,
+  `rollForward: latestFeature`). Install it from https://dotnet.microsoft.com/download/dotnet/10.0
+  — a `10.0.1xx`/`10.0.2xx` SDK will *not* satisfy this pin. These newer bands require MSBuild 18
+  (Visual Studio 2026), so Visual Studio 2022 can no longer build the repo.
 
 ### Runtime Errors
 

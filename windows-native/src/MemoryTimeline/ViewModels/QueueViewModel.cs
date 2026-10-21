@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using MemoryTimeline.Core.DTOs;
+using MemoryTimeline.Core.Models;
 using MemoryTimeline.Core.Services;
 using MemoryTimeline.Data.Models;
 using MemoryTimeline.Services;
@@ -18,6 +19,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 {
     private readonly IQueueService _queueService;
     private readonly ICaptureIngestionService _captureIngestionService;
+    private readonly IAudioImportService _audioImportService;
     private readonly IAudioRecordingService _recordingService;
     private readonly IAudioPlaybackService _playbackService;
     private readonly IRecallPromptService _recallPromptService;
@@ -77,6 +79,20 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private int _failedCount;
 
+    /// <summary>True while "Import audio" is copying/queuing files; disables the button.</summary>
+    [ObservableProperty]
+    private bool _isImporting;
+
+    /// <summary>
+    /// File-picker filter for "Import audio". The Whisper engine needs 16 kHz
+    /// 16-bit mono WAV; non-WAV input is normalized by the ingestion pipeline
+    /// (IAudioNormalizer) before transcription, so compressed formats are
+    /// accepted here. Anything the import service still rejects comes back as
+    /// a per-file "Unsupported format" entry in the outcome.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ImportableAudioExtensions =
+        new[] { ".wav", ".m4a", ".mp3", ".aac", ".ogg", ".flac" };
+
     // Computed properties for UI bindings
     public bool CanStartRecording => !IsRecording && !IsPaused;
     public bool CanPauseRecording => IsRecording;
@@ -123,6 +139,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     public QueueViewModel(
         IQueueService queueService,
         ICaptureIngestionService captureIngestionService,
+        IAudioImportService audioImportService,
         IAudioRecordingService recordingService,
         IAudioPlaybackService playbackService,
         IRecallPromptService recallPromptService,
@@ -130,6 +147,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     {
         _queueService = queueService;
         _captureIngestionService = captureIngestionService;
+        _audioImportService = audioImportService;
         _recordingService = recordingService;
         _playbackService = playbackService;
         _recallPromptService = recallPromptService;
@@ -570,6 +588,93 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// "Import audio…": routes each picked file through
+    /// <see cref="IAudioImportService.ImportFilesAsync"/>, which copies it into
+    /// the app's recordings folder and enqueues it via ICaptureIngestionService
+    /// (same capture/artifact identity and content-hash dedupe as an in-app
+    /// recording). Files enter the queue as pending; "Process All" transcribes
+    /// and extracts them with the queue's normal retry/config-error handling.
+    /// Returns a summary the page shows in its InfoBar, with one line per
+    /// skipped or failed file; never throws.
+    /// </summary>
+    public async Task<AudioImportOutcome> ImportAudioFilesAsync(IReadOnlyList<string> filePaths)
+    {
+        if (filePaths == null || filePaths.Count == 0)
+        {
+            return new AudioImportOutcome("No files selected", "Choose one or more audio files to import.", 0, 0);
+        }
+
+        if (IsImporting)
+        {
+            return new AudioImportOutcome("Import already running", "Wait for the current import to finish.", 0, 0);
+        }
+
+        try
+        {
+            IsImporting = true;
+            StatusText = filePaths.Count == 1
+                ? "Importing 1 audio file..."
+                : $"Importing {filePaths.Count} audio files...";
+
+            var options = new AudioImportOptions
+            {
+                // Queue as pending (like a stopped recording) instead of
+                // transcribing inline: the queue owns processing order, retries,
+                // and the non-retryable configuration-error path.
+                AutoProcess = false,
+                SupportedFormats = ImportableAudioExtensions.ToArray()
+            };
+
+            var result = await _audioImportService.ImportFilesAsync(filePaths, options);
+            await RefreshQueueAsync();
+
+            var outcome = BuildImportOutcome(result);
+            StatusText = outcome.Title;
+            _logger.LogInformation("Audio import finished: {Imported} imported, {Problems} skipped/failed",
+                outcome.ImportedCount, outcome.ProblemCount);
+            return outcome;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error importing audio files");
+            StatusText = "Error importing audio";
+            return new AudioImportOutcome("Import failed", ex.Message, 0, filePaths.Count);
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Pure summary of an import batch for the InfoBar: imported count in the
+    /// title, one "file: reason" line per skipped or failed file in the message.
+    /// </summary>
+    public static AudioImportOutcome BuildImportOutcome(AudioImportResult result)
+    {
+        var imported = result.SuccessfulImports;
+        var problems = result.Items
+            .Where(i => i.Status == AudioImportStatus.Failed || i.Status == AudioImportStatus.Skipped)
+            .Select(i => $"{i.FileName}: {i.ErrorMessage ?? i.Status.ToString().ToLowerInvariant()}")
+            .ToList();
+
+        var importedText = imported == 1
+            ? "1 audio file added to the queue"
+            : $"{imported} audio files added to the queue";
+
+        if (problems.Count == 0)
+        {
+            return new AudioImportOutcome(importedText, "Press Process All to transcribe and extract events.", imported, 0);
+        }
+
+        var title = imported == 0
+            ? (problems.Count == 1 ? "The audio file was not imported" : "No audio files were imported")
+            : $"{importedText}; {problems.Count} skipped or failed";
+
+        return new AudioImportOutcome(title, string.Join(Environment.NewLine, problems), imported, problems.Count);
+    }
+
     #endregion
 
     #region Guided Recall
@@ -997,4 +1102,17 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 
         GC.SuppressFinalize(this);
     }
+}
+
+/// <summary>
+/// Outcome of an "Import audio" batch, shaped for the Queue page's InfoBar.
+/// </summary>
+/// <param name="Title">One-line summary (also shown in the status bar).</param>
+/// <param name="Message">Per-file skip/failure reasons, or the next step when everything imported.</param>
+/// <param name="ImportedCount">Files that entered the queue.</param>
+/// <param name="ProblemCount">Files skipped (unsupported, duplicate, too large) or failed.</param>
+public sealed record AudioImportOutcome(string Title, string Message, int ImportedCount, int ProblemCount)
+{
+    /// <summary>True when at least one file was skipped or failed.</summary>
+    public bool HasProblems => ProblemCount > 0;
 }

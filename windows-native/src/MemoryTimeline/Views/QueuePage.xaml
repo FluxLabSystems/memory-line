@@ -11,6 +11,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>   <!-- Recording Controls -->
+            <RowDefinition Height="Auto"/>   <!-- Import outcome InfoBar -->
             <RowDefinition Height="*"/>       <!-- Queue List -->
             <RowDefinition Height="Auto"/>   <!-- Status Bar -->
         </Grid.RowDefinitions>
@@ -90,6 +91,22 @@
                         <TextBlock Text="Paste Text" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
+
+                <!-- Third capture path: existing audio files (phone voice memos,
+                     dictaphone recordings). Each file is copied into the app's
+                     recordings folder and enters the queue as pending through the
+                     same capture-ingestion seam as an in-app recording. -->
+                <Button x:Name="ImportAudioButton"
+                        Click="ImportAudioButton_Click"
+                        IsEnabled="{x:Bind ViewModel.IsImporting, Converter={StaticResource BoolNegationConverter}, Mode=OneWay}"
+                        AutomationProperties.Name="Import audio files"
+                        ToolTipService.ToolTip="Import existing audio files (WAV, M4A, MP3, AAC, OGG, FLAC) into the queue"
+                        Height="48">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE8B5;" FontSize="20"/>
+                        <TextBlock Text="Import Audio&#x2026;" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
 
             <!-- Recording Status -->
@@ -137,8 +154,17 @@
             </StackPanel>
         </Grid>
 
+        <!-- Import outcome: how many files entered the queue, plus one line per
+             skipped/failed file (unsupported format, duplicate, too large, error).
+             Severity/title/message are set by QueuePage.ShowImportOutcome. -->
+        <InfoBar x:Name="ImportInfoBar"
+                 Grid.Row="1"
+                 Margin="16,8,16,0"
+                 IsOpen="False"
+                 IsClosable="True"/>
+
         <!-- Queue ListView -->
-        <ScrollViewer Grid.Row="1" Padding="16">
+        <ScrollViewer Grid.Row="2" Padding="16">
             <StackPanel Spacing="8">
                 <!-- Guided recall card: ONE active prompt generated from archive
                      gaps. "Record answer" starts the normal recording flow (the
@@ -313,7 +339,7 @@
         </ScrollViewer>
 
         <!-- Status Bar -->
-        <Grid Grid.Row="2"
+        <Grid Grid.Row="3"
               Padding="16,12"
               Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
               BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"

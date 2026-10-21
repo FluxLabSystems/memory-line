@@ -87,8 +87,10 @@ try {
     $dotnetInfo = & dotnet --info 2>$null
 
     if ($dotnetVersion) {
+        # src/global.json pins 10.0.300 with rollForward latestFeature: any
+        # 10.0.3xx-or-newer SDK satisfies it; 10.0.1xx/2xx (e.g. VS 2022's) do not.
         $version = [Version]$dotnetVersion
-        if ($version.Major -ge 8) {
+        if ($version -ge [Version]'10.0.300') {
             Write-Pass ".NET SDK $dotnetVersion"
             Add-ReportLine "[PASS] .NET SDK: $dotnetVersion"
             $passCount++
@@ -99,8 +101,8 @@ try {
                 $runtimes | ForEach-Object { Write-Info "    $_" }
             }
         } else {
-            Write-Warn ".NET SDK $dotnetVersion found, but 8.0+ recommended"
-            Add-ReportLine "[WARN] .NET SDK: $dotnetVersion (8.0+ recommended)"
+            Write-Warn ".NET SDK $dotnetVersion found, but 10.0.300 or newer is required (global.json pin)"
+            Add-ReportLine "[WARN] .NET SDK: $dotnetVersion (10.0.3xx+ required)"
             $warnCount++
         }
     }
@@ -111,12 +113,13 @@ try {
 }
 
 # 3. Visual Studio
-Write-Host "`nChecking Visual Studio 2022..." -ForegroundColor Yellow
+Write-Host "`nChecking Visual Studio 2026 (18.x)..." -ForegroundColor Yellow
 $vsWherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
 if (Test-Path $vsWherePath) {
     try {
-        $vsInfo = & $vsWherePath -version "[17.0,18.0)" -latest -format json | ConvertFrom-Json
+        # 18.x only: the 10.0.3xx SDK pin needs MSBuild 18, so VS 2022 does not qualify.
+        $vsInfo = & $vsWherePath -version "[18.0,19.0)" -latest -format json | ConvertFrom-Json
 
         if ($vsInfo) {
             Write-Pass "Visual Studio $($vsInfo.displayName) - Version $($vsInfo.catalog.productDisplayVersion)"
@@ -134,8 +137,8 @@ if (Test-Path $vsWherePath) {
         $warnCount++
     }
 } else {
-    Write-Warn "Visual Studio 2022 not found (optional for production)"
-    Add-ReportLine "[WARN] Visual Studio 2022: Not found (optional)"
+    Write-Warn "Visual Studio 2026 not found (required to build; optional for running a built app)"
+    Add-ReportLine "[WARN] Visual Studio 2026: Not found (required to build)"
     $warnCount++
 }
 
@@ -164,7 +167,7 @@ if (Test-Path $sdkPath) {
     $warnCount++
 }
 
-# 5. Windows App SDK
+# 5. Windows App SDK (2.3.1 via NuGet; the app is self-contained, so no machine-wide runtime is required)
 Write-Host "`nChecking Windows App SDK..." -ForegroundColor Yellow
 $nugetPackagesPath = "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk"
 
@@ -191,8 +194,8 @@ if (Test-Path $nugetPackagesPath) {
         Add-ReportLine "[PASS] Windows App SDK: Runtime installed"
         $passCount++
     } else {
-        Write-Warn "Windows App SDK not found"
-        Add-ReportLine "[WARN] Windows App SDK: Not found"
+        Write-Warn "Windows App SDK not found in the NuGet cache (restored by msbuild /t:Restore; no runtime install needed - the app is self-contained)"
+        Add-ReportLine "[WARN] Windows App SDK: Not found in NuGet cache (restored on first build)"
         $warnCount++
     }
 }

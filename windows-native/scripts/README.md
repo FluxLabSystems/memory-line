@@ -1,6 +1,6 @@
 # Memory Timeline - PowerShell Scripts
 
-This directory contains PowerShell scripts for setting up, verifying, and managing the Memory Timeline Windows native application (.NET 8 / WinUI 3). This is the **primary, actively developed** version of Memory Timeline.
+This directory contains PowerShell scripts for setting up, verifying, and managing the Memory Timeline Windows native application (.NET 10 / WinUI 3 / Windows App SDK 2.3.1). This is the **primary, actively developed** version of Memory Timeline.
 
 ## Build Reality (Important)
 
@@ -8,7 +8,7 @@ Before using the commands in this document, note the following about the current
 
 - **Build with Visual Studio 2026 or `msbuild`, not `dotnet build`.** The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under `dotnet build`. Use `msbuild` (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.
 - **The solution is x64-only.** `MemoryTimeline.sln` defines only `Debug|x64` and `Release|x64`. Always pass the platform explicitly, e.g. `-p:Platform=x64` (msbuild) or select `x64` in Visual Studio. There is no `Any CPU` or `Win32/ARM64` solution configuration.
-- **.NET SDK is pinned by `../src/global.json`** to version `8.0.100` with `rollForward: "major"`. This means a .NET 8 SDK (8.0.100+) or a newer major SDK such as .NET 9 will both satisfy the pin. `dotnet restore` still works normally for package restore.
+- **.NET SDK is pinned by `../src/global.json`** to `10.0.300` with `rollForward: "latestFeature"`, i.e. any 10.0.3xx-or-newer SDK. Those bands require MSBuild 18, so **Visual Studio 2026 (18.x)** is the supported IDE and VS 2022 cannot build the repo. `dotnet restore` still works normally for package restore.
 
 Example command-line build/restore/test (from a Developer PowerShell in `windows-native/src`):
 
@@ -19,11 +19,11 @@ dotnet restore MemoryTimeline.sln
 # Build the WinUI 3 app with msbuild (NOT dotnet build)
 msbuild MemoryTimeline.sln -p:Configuration=Debug -p:Platform=x64 -restore
 
-# Run unit tests
-dotnet test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj
+# Run the already-built test assembly (NOT dotnet test, which would rebuild with the dotnet engine)
+dotnet vstest MemoryTimeline.Tests\bin\x64\Debug\net10.0-windows10.0.26100.0\MemoryTimeline.Tests.dll
 ```
 
-> Note: `Setup-Dependencies.ps1` prints a "Next steps" hint suggesting `dotnet build` and `dotnet run --project MemoryTimeline`. That hint is **stale/inaccurate** for the WinUI 3 app — prefer Visual Studio or `msbuild` with `-p:Platform=x64` as shown above.
+> The test DLL may land under `bin\Debug\...` instead of `bin\x64\Debug\...` depending on the solution's platform mapping for the test project; CI searches both. See [`../TESTING.md`](../TESTING.md).
 
 See [`../TESTING.md`](../TESTING.md) for the full, primary test suite instructions.
 
@@ -49,8 +49,8 @@ Automatically checks and installs all required dependencies for development or p
 **What it installs:**
 
 **Core (Both Development and Production):**
-- .NET 10 SDK
-- Windows App SDK 1.5+
+- .NET 10 SDK (10.0.3xx or newer)
+- Windows App SDK 2.3.1 — restored from NuGet with the solution; the app is self-contained, so no runtime install is performed
 - Windows Package Manager (winget)
 
 **Development Only:**
@@ -105,7 +105,7 @@ Verifies that all dependencies are correctly installed and configured.
 - .NET SDK (10.0.3xx+)
 - Visual Studio 2026 (18.0+)
 - Windows SDK (10.0.26100.0+)
-- Windows App SDK (1.5+)
+- Windows App SDK (2.3.1, NuGet cache)
 - Git
 - PowerShell (5.0+)
 
@@ -192,11 +192,10 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Build and test (x64-only; use msbuild for the WinUI 3 app, not dotnet build)
+# Build and test (x64-only; use msbuild for the WinUI 3 app, not dotnet build / dotnet test)
 cd src
-dotnet restore MemoryTimeline.sln
-msbuild MemoryTimeline.sln -p:Configuration=Release -p:Platform=x64 -restore
-dotnet test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj --configuration Release
+msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+dotnet vstest MemoryTimeline.Tests\bin\x64\Release\net10.0-windows10.0.26100.0\MemoryTimeline.Tests.dll
 ```
 
 ## Manual Installation

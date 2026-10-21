@@ -41,10 +41,13 @@ $ProgressPreference = 'Continue'
 # Minimum version requirements
 $MinWindowsVersion = [Version]'10.0.22621.0' # Windows 11 22H2 (TargetPlatformMinVersion)
 $RecommendedWindowsVersion = [Version]'10.0.26100.0' # Windows 11 24H2
-$MinDotNetVersion = [Version]'8.0.0'
-$MinVSVersion = [Version]'17.8.0'
+# src/global.json pins the .NET 10 SDK at 10.0.300 with rollForward latestFeature
+# (any 10.0.3xx-or-newer band). Those bands need MSBuild 18, i.e. Visual Studio
+# 2026 (18.x); VS 2022 cannot build the repo. Windows App SDK is 2.3.1 (NuGet).
+$MinDotNetVersion = [Version]'10.0.300'
+$MinVSVersion = [Version]'18.0.0'
 $MinWindowsSDKVersion = '10.0.26100.0'
-$MinWindowsAppSDKVersion = [Version]'1.5.0'
+$MinWindowsAppSDKVersion = [Version]'2.3.1'
 
 # Color output helpers
 function Write-Success {
@@ -129,45 +132,44 @@ function Test-DotNetSDK {
 
 # Install .NET SDK
 function Install-DotNetSDK {
-    Write-Info "Installing .NET 8 SDK..."
+    Write-Info "Installing the .NET 10 SDK..."
 
-    # Direct download link for .NET 8.0 SDK (x64)
-    $installerUrl = "https://download.visualstudio.microsoft.com/download/pr/b280d97f-25a9-4ab7-a018-46a6c4142ca3/2e2cfa6e90682cf436b4d49e7e10d6e2/dotnet-sdk-8.0.101-win-x64.exe"
-    $installerPath = "$env:TEMP\dotnet-sdk-8.0-installer.exe"
-
+    # winget tracks the current .NET 10 SDK band, which is what global.json's
+    # rollForward: latestFeature resolves to. (Visual Studio 2026 also ships a
+    # matching SDK, so a VS install alone usually satisfies the pin.)
     try {
-        Write-Info "Downloading .NET 8 SDK installer..."
-        Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
-
-        Write-Info "Running installer..."
-        Start-Process -FilePath $installerPath -ArgumentList "/quiet", "/norestart" -Wait
-
-        Remove-Item $installerPath -Force
+        Write-Info "Installing via winget (Microsoft.DotNet.SDK.10)..."
+        & winget install Microsoft.DotNet.SDK.10 --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -ne 0) {
+            throw "winget exited with code $LASTEXITCODE"
+        }
 
         # Refresh environment variables
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
-        Write-Success ".NET 8 SDK installed successfully"
+        Write-Success ".NET 10 SDK installed successfully"
         return $true
     } catch {
-        Write-Error "Failed to install .NET SDK: $_"
+        Write-Warning "Could not install the .NET 10 SDK automatically: $_"
+        Write-Info "Install it manually (10.0.3xx or newer) from https://dotnet.microsoft.com/download/dotnet/10.0"
         return $false
     }
 }
 
 # Check Visual Studio
 function Test-VisualStudio {
-    Write-Info "Checking Visual Studio 2022..."
+    Write-Info "Checking Visual Studio 2026 (18.x)..."
 
     $vsWherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
     if (-not (Test-Path $vsWherePath)) {
-        Write-Warning "Visual Studio 2022 not found"
+        Write-Warning "Visual Studio 2026 not found"
         return $false
     }
 
     try {
-        $vsInfo = & $vsWherePath -version "[17.8,18.0)" -latest -format json | ConvertFrom-Json
+        # 18.x only: the 10.0.3xx SDK pin needs MSBuild 18, so VS 2022 (17.x) does not count.
+        $vsInfo = & $vsWherePath -version "[18.0,19.0)" -latest -format json | ConvertFrom-Json
 
         if ($vsInfo) {
             $version = [Version]$vsInfo.catalog.productDisplayVersion
@@ -188,15 +190,14 @@ function Test-VisualStudio {
 
 # Install Visual Studio (provide instructions)
 function Install-VisualStudio {
-    Write-Info "Visual Studio 2022 installation required for development."
+    Write-Info "Visual Studio 2026 (18.0 or later) is required for development."
     Write-Info ""
-    Write-Info "Please download and install Visual Studio 2022 Community (or higher) from:"
+    Write-Info "Please download and install Visual Studio 2026 Community (or higher) from:"
     Write-Info "https://visualstudio.microsoft.com/downloads/"
     Write-Info ""
     Write-Info "Required workloads:"
     Write-Info "  • .NET desktop development"
-    Write-Info "  • Universal Windows Platform development"
-    Write-Info "  • Windows App SDK C# Templates"
+    Write-Info "  • Windows application development (WinUI / Windows App SDK)"
     Write-Info ""
 
     $response = Read-Host "Open download page in browser? (Y/N)"
@@ -298,26 +299,13 @@ function Test-WindowsAppSDK {
 
 # Install Windows App SDK
 function Install-WindowsAppSDK {
-    Write-Info "Installing Windows App SDK..."
-
-    # Install via winget
-    try {
-        Write-Info "Installing Windows App SDK via winget..."
-        & winget install Microsoft.WindowsAppSDK.1.5 --accept-source-agreements --accept-package-agreements
-
-        Write-Success "Windows App SDK installed successfully"
-        return $true
-    } catch {
-        Write-Warning "Could not install via winget"
-    }
-
-    # Fallback: Install via NuGet (for development)
-    if ($Mode -eq 'Development') {
-        Write-Info "Windows App SDK will be installed via NuGet when building the project"
-        return $true
-    }
-
-    return $false
+    # Nothing to download: the app builds with WindowsAppSDKSelfContained=true,
+    # so the 2.3.1 runtime ships inside the build output and no machine-wide
+    # Windows App Runtime install is needed. For development the NuGet package
+    # (Microsoft.WindowsAppSDK 2.3.1, referenced by the project) is restored by
+    # msbuild /t:Restore; the check above only looks at that cache.
+    Write-Info "Windows App SDK 2.3.1 is restored from NuGet with the solution (self-contained; no runtime install required)"
+    return $true
 }
 
 # Check Git
@@ -547,12 +535,12 @@ function Main {
     # .NET SDK
     if (-not (Test-DotNetSDK)) {
         if (Install-DotNetSDK) {
-            $results.Required += ".NET 8 SDK"
+            $results.Required += ".NET 10 SDK"
         } else {
-            $results.Failed += ".NET 8 SDK"
+            $results.Failed += ".NET 10 SDK"
         }
     } else {
-        $results.Required += ".NET 8 SDK"
+        $results.Required += ".NET 10 SDK"
     }
 
     # Windows App SDK (Production runtime)
@@ -573,11 +561,11 @@ function Main {
         # Visual Studio
         if (-not (Test-VisualStudio)) {
             if (-not (Install-VisualStudio)) {
-                Write-Warning "Visual Studio 2022 installation required for development"
-                $results.Failed += "Visual Studio 2022"
+                Write-Warning "Visual Studio 2026 installation required for development"
+                $results.Failed += "Visual Studio 2026"
             }
         } else {
-            $results.Required += "Visual Studio 2022"
+            $results.Required += "Visual Studio 2026"
         }
 
         # Windows SDK
@@ -670,17 +658,17 @@ function Main {
 
     if ($Mode -eq 'Development') {
         Write-Info "Next steps:"
-        Write-Info "  1. Open Visual Studio 2022"
+        Write-Info "  1. Open Visual Studio 2026"
         Write-Info "  2. Open solution: windows-native\src\MemoryTimeline.sln"
-        Write-Info "  3. Build and run the application"
+        Write-Info "  3. Select the x64 platform (there is no AnyCPU) and press F5"
         Write-Info ""
-        Write-Info "Or use command line:"
+        Write-Info "Or from a Developer PowerShell for VS 2026 (NOT 'dotnet build' - the WinUI PRI task needs VS msbuild):"
         Write-Info "  cd windows-native\src"
-        Write-Info "  dotnet build"
-        Write-Info "  dotnet run --project MemoryTimeline"
+        Write-Info "  msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64"
+        Write-Info "  .\MemoryTimeline\bin\x64\Debug\net10.0-windows10.0.26100.0\MemoryTimeline.exe"
     } else {
-        Write-Info "Production runtime is ready."
-        Write-Info "You can now run Memory Timeline MSIX packages on this system."
+        Write-Info "Runtime prerequisites are ready."
+        Write-Info "Memory Timeline ships unpackaged and self-contained: run MemoryTimeline.exe from a build output folder."
     }
 
     Write-Host ""

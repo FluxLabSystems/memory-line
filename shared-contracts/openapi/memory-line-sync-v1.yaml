@@ -2,15 +2,20 @@ openapi: 3.0.3
 
 # Memory Line Sync API v1 — wire contract.
 # Faithful to docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md §11 (API design),
-# §6 (domain model), and §12 (synchronization). The devices/captures/artifacts/sync
-# sections mirror the shipped DTOs in ../dotnet/MemoryTimeline.SyncContracts
-# (used verbatim by services/MemoryTimeline.SyncApi and the Windows sync client,
-# serialized camelCase via System.Text.Json web defaults); see ../README.md for
-# versioning rules.
+# §6 (domain model), and §12 (synchronization). Every schema mirrors a shipped DTO
+# in ../dotnet/MemoryTimeline.SyncContracts (used verbatim by
+# services/MemoryTimeline.SyncApi and the Windows sync client, serialized camelCase
+# via System.Text.Json web defaults); see ../README.md for versioning rules.
+#
+# This file is checked by a test in services/MemoryTimeline.SyncApi.Tests
+# (ContractCompatibilityTests): every path+method here must be routed by the
+# service and vice versa, every DTO must have a schema with the same property
+# names, and the entityType enums must match SyncChangeEntityType. Edit the DTOs
+# and this file together, in the same commit, or the sync-api workflow fails.
 
 info:
   title: Memory Line Sync API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     Device-neutral sync, capture, assistant, and roadtrip API for Memory Line.
     Conventions (design doc section 11.1): base path /api/v1, JSON metadata,
@@ -1529,12 +1534,21 @@ components:
         entityType:
           type: string
           enum: [capture, capture_artifact, capture_status, recording_queue,
-                 pending_event, event, assistant_turn, assistant_turn_chunk]
+                 pending_event, event, era, person, pending_event_decision,
+                 assistant_turn, assistant_turn_chunk]
+          description: >-
+            Entity discriminator (the SyncChangeEntityType constants). event,
+            era, person and pending_event are the read-only timeline projection
+            Windows publishes (v1.4); pending_event_decision is a companion's
+            verdict travelling the other way.
         entityId:
           type: string
           description: >-
             The entity's ID. For capture_status this is the captureId, so a
-            capture has exactly one status entity.
+            capture has exactly one status entity. For the timeline
+            projections it is the projected row's own key (eventId, eraId,
+            personId, pendingEventId) in canonical lowercase UUID form, and for
+            pending_event_decision the pendingEventId being decided.
         operation:
           type: string
           enum: [upsert, delete]
@@ -1557,7 +1571,13 @@ components:
             Entity-type-specific payload, delivered as a JSON string — not an
             embedded object. For capture upserts it encodes a
             CaptureChangePayload; for capture_status upserts, a
-            CaptureStatusChangePayload. Null for tombstones and payload-free
+            CaptureStatusChangePayload; for event, era, person and
+            pending_event upserts an EventProjectionPayload,
+            EraProjectionPayload, PersonProjectionPayload or
+            PendingEventProjectionPayload; for pending_event_decision a
+            PendingEventDecisionPayload; for assistant_turn and
+            assistant_turn_chunk an AssistantTurnChangePayload or
+            AssistantTurnChunkPayload. Null for tombstones and payload-free
             changes.
 
     CaptureChangePayload:
@@ -1731,6 +1751,346 @@ components:
             section 16.2). Null when the publisher cannot classify it — which
             is not evidence either way.
 
+    # --------------------------------------------------- timeline projections
+
+    EventProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for event changes: a
+        read-only projection of one archive event, published by the owner's
+        Windows device so a companion can draw a timeline it does not own
+        (design doc section 19 Phase 3; the EventProjectionPayload DTO).
+        Documented here for reference — on the wire it travels as a string
+        inside payloadJson, not as an inline object.
+
+
+        Denormalised on purpose: tags, people and location names ride inline
+        so a consumer draws a bubble rather than reconstructs a graph. Every
+        date-time is UTC; startDate and friends are the archive's dates in a
+        UTC encoding, which is why clients render displayDate rather than
+        localising them. Payloads do not strip nulls.
+      required:
+        - eventId
+        - title
+        - startDate
+        - datePrecision
+        - tags
+        - personIds
+        - locations
+        - mediaCount
+        - updatedAtUtc
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+          description: Trimmed to a readable length by the publisher; not the archive's full text.
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+          description: >-
+            How much of startDate to believe. Carried rather than derived so a
+            companion never invents an exact day for a memory the user dated to
+            a summer; a value outside this list rejects the push entry.
+        displayDate:
+          type: string
+          nullable: true
+          description: Precision-honest display string ("Summer 2003"), formatted by Windows.
+        earliestPossible:
+          type: string
+          format: date-time
+          nullable: true
+        latestPossible:
+          type: string
+          format: date-time
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        eraId:
+          type: string
+          format: uuid
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tag names, already resolved.
+        personIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Linked person ids; names come from the person projection.
+        locations:
+          type: array
+          items:
+            type: string
+          description: Location display names, already resolved.
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        mediaCount:
+          type: integer
+          minimum: 0
+          description: Attached media items, so a companion can show a badge without fetching any.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    EraProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for era changes: a
+        life period, projected for timeline backgrounds and the eras list
+        (the EraProjectionPayload DTO). Travels as a string inside
+        payloadJson.
+      required: [eraId, name, startDate, colorCode, displayOrder, updatedAtUtc]
+      properties:
+        eraId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        name:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null for an ongoing era.
+        colorCode:
+          type: string
+          description: >-
+            "#RRGGBB". Colours cross as strings and the client builds its own
+            brush. The service also accepts "#AARRGGBB", which the Windows
+            column can hold; anything that is not a hex colour rejects the
+            push entry.
+        categoryId:
+          type: string
+          nullable: true
+        categoryName:
+          type: string
+          nullable: true
+        displayOrder:
+          type: integer
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PersonProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for person changes: a
+        contact-book person, projected for the People hub and for resolving
+        EventProjectionPayload.personIds (the PersonProjectionPayload DTO).
+        Travels as a string inside payloadJson.
+      required: [personId, name, isFavorite, eventCount, updatedAtUtc]
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        name:
+          type: string
+        nickname:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+          nullable: true
+        mergedIntoId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            When set, this person was merged into another and this id is a
+            tombstone companions must follow rather than show as a duplicate;
+            a value that is not a UUID rejects the push entry.
+        isFavorite:
+          type: boolean
+        eventCount:
+          type: integer
+          minimum: 0
+          description: Events this person appears in, so the hub can sort without a scan.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PendingEventProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for pending_event
+        changes: an extracted event awaiting review, projected so a companion
+        can show the queue and act on it with a PendingEventDecisionPayload
+        (the PendingEventProjectionPayload DTO). Travels as a string inside
+        payloadJson.
+      required:
+        - pendingEventId
+        - title
+        - startDate
+        - datePrecision
+        - confidenceScore
+        - tags
+        - peopleNames
+        - updatedAtUtc
+      properties:
+        pendingEventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        captureId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Capture this was extracted from, so the companion can link back.
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+        displayDate:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Extraction confidence, so the reviewer can triage.
+        tags:
+          type: array
+          items:
+            type: string
+        peopleNames:
+          type: array
+          items:
+            type: string
+          description: People the extraction found, by name — they may not exist yet.
+        transcriptPreview:
+          type: string
+          nullable: true
+          maxLength: 600
+          description: >-
+            Bounded excerpt of the source transcript (design doc section 14.5),
+            never the whole thing; the same bound as
+            CaptureStatusChangePayload.transcriptPreview, refused rather than
+            trimmed when exceeded.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PendingEventDecisionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for
+        pending_event_decision changes: a companion's approve/reject verdict
+        on a pending event — the one write a non-Windows device may make (the
+        PendingEventDecisionPayload DTO). Travels as a string inside
+        payloadJson.
+
+
+        Safe to accept precisely because it is not an edit: it carries no
+        field values to merge, applying it twice means what applying it once
+        meant, and two devices sending the same verdict agree by
+        construction. Windows still performs the approval and drops verdicts
+        for reviews it has already resolved. The service relays the entry
+        verbatim; it keeps no pending events to validate against.
+      required: [pendingEventId, decision, decidedByDeviceId, decidedAtUtc]
+      properties:
+        pendingEventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        decision:
+          type: string
+          enum: [approve, reject]
+          description: >-
+            Exact lowercase. Deliberately has no default: a missing or
+            unknown verdict is rejected rather than read as approve, because
+            the failure mode of a missing field must never be a write to the
+            archive.
+        decidedByDeviceId:
+          type: string
+          format: uuid
+          description: >-
+            Must be the device pushing the decision (change_not_permitted
+            otherwise); Windows keeps it as the audit trail of who reviewed
+            what.
+        decidedAtUtc:
+          type: string
+          format: date-time
+        corrections:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/PendingEventCorrections'
+          description: >-
+            Optional reviewer corrections applied before approval. Null means
+            approve as extracted.
+
+    PendingEventCorrections:
+      type: object
+      description: >-
+        The narrow set of fields a reviewer may correct while approving (the
+        PendingEventCorrections DTO) — title and dates, the fields realistically
+        fixed on a phone. Deliberately not general editing: it rides the
+        decision because fixing a title while approving is one act, not two.
+      properties:
+        title:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+          nullable: true
+          description: A value outside the vocabulary rejects the push entry.
+        category:
+          type: string
+          nullable: true
+
     SyncPushRequest:
       type: object
       required: [entries]
@@ -1754,18 +2114,31 @@ components:
         entityType:
           type: string
           enum: [capture, capture_artifact, capture_status, recording_queue,
-                 pending_event, event, assistant_turn, assistant_turn_chunk]
+                 pending_event, event, era, person, pending_event_decision,
+                 assistant_turn, assistant_turn_chunk]
+          description: >-
+            Entity discriminator. event, era, person and pending_event may be
+            pushed only by the owner's Windows device — any other device is
+            refused per entry with change_not_permitted — and
+            pending_event_decision is the one entity a companion may author
+            besides its own captures.
         entityId:
           type: string
           description: >-
             The entity's ID; for capture_status the captureId, which must equal
-            the payload's captureId.
+            the payload's captureId. For the timeline projections and
+            decisions it must be a UUID in canonical lowercase "D" form equal
+            to the payload's own ID, so every consumer keys the same row the
+            same way.
         operation:
           type: string
           enum: [upsert, delete]
           description: >-
-            capture_status accepts upsert only — a status is a latest-wins
-            projection with nothing to tombstone.
+            capture_status, assistant_turn, assistant_turn_chunk and
+            pending_event_decision accept upsert only — a status is a
+            latest-wins projection with nothing to tombstone, and a verdict is
+            a fact that cannot be retracted. delete tombstones one of the four
+            timeline projections and needs no payload.
         payloadJson:
           type: string
           nullable: true

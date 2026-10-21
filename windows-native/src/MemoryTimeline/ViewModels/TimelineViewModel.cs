@@ -10,6 +10,7 @@ using MemoryTimeline.Core.Models;
 using MemoryTimeline.Core.Services;
 using MemoryTimeline.Data.Models;
 using MemoryTimeline.Data.Repositories;
+using MemoryTimeline.Services;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.Json;
@@ -1373,6 +1374,47 @@ public partial class TimelineViewModel : ObservableObject
             SelectedEventMediaHeader = "Photos";
             _ = LoadPeopleForEventAsync(eventDto);
             _ = LoadMediaForSelectedEventAsync(eventDto);
+
+            // Opening an event in the details panel is what the Jump List's
+            // "Recent Events" group tracks (JumpListService subscribes).
+            WeakReferenceMessenger.Default.Send(new EventOpenedMessage(eventDto.EventId));
+        }
+    }
+
+    /// <summary>
+    /// "View on timeline" / deep-link entry point (TimelinePage navigation
+    /// parameter): moves the viewport to the event's start date and announces
+    /// the event as opened so the Jump List tracks it. A missing event or a
+    /// failed load is reported in the status line, never thrown.
+    /// </summary>
+    public async Task NavigateToEventAsync(string eventId)
+    {
+        if (string.IsNullOrWhiteSpace(eventId))
+        {
+            return;
+        }
+
+        try
+        {
+            var targetEvent = await _eventService.GetEventByIdAsync(eventId);
+            if (targetEvent == null)
+            {
+                StatusText = "That event no longer exists";
+                _logger.LogWarning("Navigation requested for unknown event {EventId}", eventId);
+                return;
+            }
+
+            if (GoToDateCommand.CanExecute(targetEvent.StartDate))
+            {
+                await GoToDateCommand.ExecuteAsync(targetEvent.StartDate);
+            }
+
+            WeakReferenceMessenger.Default.Send(new EventOpenedMessage(targetEvent.EventId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error navigating to event {EventId}", eventId);
+            StatusText = "Could not navigate to the event";
         }
     }
 

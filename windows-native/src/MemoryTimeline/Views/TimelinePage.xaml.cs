@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using MemoryTimeline.Core.Services;
 using MemoryTimeline.ViewModels;
 
 namespace MemoryTimeline.Views;
@@ -43,21 +42,11 @@ public sealed partial class TimelinePage : Page
             return;
         }
 
-        // "View on timeline" navigations pass an event id; move the viewport to it.
-        var eventId = parameter;
-        try
-        {
-            var eventService = App.Current.Services.GetRequiredService<IEventService>();
-            var targetEvent = await eventService.GetEventByIdAsync(eventId);
-            if (targetEvent != null && ViewModel.GoToDateCommand.CanExecute(targetEvent.StartDate))
-            {
-                ViewModel.GoToDateCommand.Execute(targetEvent.StartDate);
-            }
-        }
-        catch
-        {
-            // Navigation focus is best-effort; the timeline still renders normally.
-        }
+        // "View on timeline" navigations (Search, Ask, Connections, Map, Home,
+        // People, toast and Jump List "event:" deep links) pass an event id;
+        // the ViewModel moves the viewport to it, reports a missing event in
+        // its status line, and announces the event as opened (Jump List).
+        await ViewModel.NavigateToEventAsync(parameter);
     }
 
     /// <summary>

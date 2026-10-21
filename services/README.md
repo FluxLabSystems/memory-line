@@ -98,8 +98,10 @@ docker run -d --name memory-line-sync \
   memory-line-sync
 ```
 
-- The container listens on port `8080` (the ASP.NET Core 8 container
-  default); map it to whatever host port you like (`-p 5210:8080`).
+- The container listens on port `8080` (the default of the official ASP.NET
+  Core 8+ images; the Dockerfile builds on the .NET 10 SDK/ASP.NET images to
+  match the projects' `net10.0` target); map it to whatever host port you like
+  (`-p 5210:8080`).
 - `/data` is the data directory (the image sets `SyncApi__DataDir=/data` and
   declares `VOLUME /data`) — **always mount a volume there** or the
   database, artifacts, signing key, and pairing code vanish with the

@@ -84,14 +84,29 @@ public class SettingsService : ISettingsService
         {
             await EnsureCacheInitializedAsync();
 
-            if (_cache.TryGetValue(key, out var value))
+            // Reads take the same lock the writers hold: Dictionary is not safe
+            // to read while another thread mutates it, and settings are read
+            // from the sync worker, the queue and the UI thread concurrently.
+            string? value;
+            bool found;
+            await _cacheLock.WaitAsync();
+            try
+            {
+                found = _cache.TryGetValue(key, out value);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+
+            if (found)
             {
                 if (SecretProtection.IsSecretKey(key))
                 {
-                    value = await RevealSecretAsync(key, value);
+                    value = await RevealSecretAsync(key, value!);
                 }
 
-                return DeserializeValue<T>(value);
+                return DeserializeValue<T>(value!);
             }
 
             _logger.LogWarning("Setting '{Key}' not found, returning default value", key);
@@ -136,7 +151,17 @@ public class SettingsService : ISettingsService
         try
         {
             await EnsureCacheInitializedAsync();
-            var snapshot = new Dictionary<string, string>(_cache);
+
+            Dictionary<string, string> snapshot;
+            await _cacheLock.WaitAsync();
+            try
+            {
+                snapshot = new Dictionary<string, string>(_cache);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
 
             // Callers of this method see the same plaintext GetSettingAsync
             // returns; the stored form is an implementation detail of the row.
@@ -163,7 +188,16 @@ public class SettingsService : ISettingsService
     public async Task<bool> SettingExistsAsync(string key)
     {
         await EnsureCacheInitializedAsync();
-        return _cache.ContainsKey(key);
+
+        await _cacheLock.WaitAsync();
+        try
+        {
+            return _cache.ContainsKey(key);
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     /// <summary>
@@ -319,7 +353,10 @@ public class SettingsService : ISettingsService
 
     private async Task EnsureCacheInitializedAsync()
     {
-        if (_cacheInitialized)
+        // Volatile read: the flag is set under the lock below, and this
+        // unlocked fast path must observe that publication rather than a
+        // stale register.
+        if (Volatile.Read(ref _cacheInitialized))
             return;
 
         await _cacheLock.WaitAsync();
@@ -335,7 +372,7 @@ public class SettingsService : ISettingsService
                 _cache[setting.SettingKey] = setting.SettingValue;
             }
 
-            _cacheInitialized = true;
+            Volatile.Write(ref _cacheInitialized, true);
             _logger.LogInformation("Settings cache initialized with {Count} settings", _cache.Count);
         }
         finally

@@ -425,11 +425,18 @@ public class TimelineService : ITimelineService
         {
             era.PixelX = converter.DateToScreen(era.StartDate);
 
+            // An era with no end date is ONGOING: it runs to the edge of the
+            // view (that is also what gives it its width). IsRangeVisible treats
+            // a null end as a point event, which is right for events and wrong
+            // here - it made every ongoing era disappear the moment the view
+            // scrolled past its start.
             var endDate = era.EndDate ?? viewport.EndDate;
             var endPixel = converter.DateToScreen(endDate);
 
             era.Width = Math.Max(0, endPixel - era.PixelX);
-            era.IsVisible = converter.IsRangeVisible(era.StartDate, era.EndDate);
+            era.IsVisible = era.EndDate.HasValue
+                ? converter.IsRangeVisible(era.StartDate, era.EndDate)
+                : era.StartDate <= converter.VisibleEndDate;
         }
     }
 

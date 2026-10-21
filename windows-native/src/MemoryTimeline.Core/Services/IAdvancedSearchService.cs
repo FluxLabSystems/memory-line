@@ -105,18 +105,32 @@ public class AdvancedSearchService : IAdvancedSearchService
         return results;
     }
 
+    /// <summary>
+    /// The ONE search-term predicate, shared by the result query and every
+    /// facet query. Title, description, transcript and the free-text location
+    /// all match; the facets used to search only title and description, so a
+    /// term that matched a transcript alone counted events in the list that no
+    /// facet acknowledged, and the two disagreed on screen.
+    /// </summary>
+    private static IQueryable<Event> ApplySearchTerm(IQueryable<Event> query, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return query;
+        }
+
+        var term = searchTerm.ToLower();
+        return query.Where(e =>
+            e.Title.ToLower().Contains(term) ||
+            (e.Description != null && e.Description.ToLower().Contains(term)) ||
+            (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term)) ||
+            (e.Location != null && e.Location.ToLower().Contains(term)));
+    }
+
     private IQueryable<Event> ApplyFilters(IQueryable<Event> query, SearchFilter filter)
     {
         // Text search
-        if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
-        {
-            var term = filter.SearchTerm.ToLower();
-            query = query.Where(e =>
-                e.Title.ToLower().Contains(term) ||
-                (e.Description != null && e.Description.ToLower().Contains(term)) ||
-                (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term)) ||
-                (e.Location != null && e.Location.ToLower().Contains(term)));
-        }
+        query = ApplySearchTerm(query, filter.SearchTerm);
 
         // Category filter
         if (filter.Categories.Any())
@@ -208,16 +222,12 @@ public class AdvancedSearchService : IAdvancedSearchService
 
         var baseQuery = dbContext.Events.AsNoTracking().AsQueryable();
 
-        // Apply base filter if provided (excluding the facet being calculated)
+        // Apply base filter if provided (excluding the facet being calculated).
+        // The search term uses the SAME predicate as the result list, so every
+        // facet counts exactly the events the list shows.
         if (baseFilter != null)
         {
-            if (!string.IsNullOrWhiteSpace(baseFilter.SearchTerm))
-            {
-                var term = baseFilter.SearchTerm.ToLower();
-                baseQuery = baseQuery.Where(e =>
-                    e.Title.ToLower().Contains(term) ||
-                    (e.Description != null && e.Description.ToLower().Contains(term)));
-            }
+            baseQuery = ApplySearchTerm(baseQuery, baseFilter.SearchTerm);
             if (baseFilter.StartDate.HasValue)
                 baseQuery = baseQuery.Where(e => e.StartDate >= baseFilter.StartDate.Value);
             if (baseFilter.EndDate.HasValue)

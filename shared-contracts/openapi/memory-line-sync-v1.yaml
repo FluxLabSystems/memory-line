@@ -237,15 +237,26 @@ paths:
       operationId: completeCapture
       summary: Mark a capture fully uploaded; all declared artifacts must be complete.
       description: >-
-        Phase 1 behavior: returns the current capture state (artifact
-        completeness is not yet enforced by this endpoint; artifact integrity
-        is enforced on artifact complete).
+        Every artifact declared on the capture must be complete (an artifact
+        already purged by retention counts as done); otherwise the call is
+        rejected with 409 capture_artifacts_incomplete, which is retryable —
+        finish the upload and call again. Nothing is declared at all: the same
+        409, since a capture with no content has nothing for Windows to
+        process.
+
+
+        A capture still in a client-authored pre-upload status (local_only or
+        uploading) advances to received with a bumped serverRevision and
+        publishes a capture change carrying the completed audio artifact. A
+        capture already at or past received is left exactly as it is — artifact
+        completion already appended the ingestion-triggering change — so
+        replaying this call appends nothing and returns the current state.
       parameters:
         - $ref: '#/components/parameters/CaptureId'
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          description: Capture accepted for processing.
+          description: Capture accepted for processing (or already was).
           content:
             application/json:
               schema:
@@ -260,7 +271,21 @@ paths:
       tags: [captures]
       operationId: retryCapture
       summary: Re-run processing for a failed capture.
-      description: 'Phase 1 behavior: returns the current capture state.'
+      description: >-
+        Re-queues a capture whose status is failed: the status returns to
+        received, serverRevision is bumped, and a capture change carrying the
+        complete audio artifact is published so Windows can download and
+        ingest it again. Only a failed capture may be retried — any other
+        status is rejected with 409 capture_not_failed — and not one whose
+        audio the retention sweep has purged (409 artifact_purged; upload the
+        audio again first).
+
+
+        The capture_status projection is Windows-authored and is deliberately
+        left untouched: it keeps reporting the failure until Windows publishes
+        the outcome of the retried run. Whether Windows re-processes a capture
+        it has already ingested once is the Windows client's decision, tracked
+        on that side.
       parameters:
         - $ref: '#/components/parameters/CaptureId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -273,6 +298,7 @@ paths:
                 $ref: '#/components/schemas/Capture'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   # --------------------------------------------------------------- artifacts
@@ -1040,7 +1066,12 @@ components:
       description: >-
         Conflicting state: duplicate ID with a different declaration, invalid
         lifecycle state, or missing parts (artifact_incomplete_parts is
-        retryable after uploading the missing part).
+        retryable after uploading the missing part). On captures:
+        capture_artifacts_incomplete (complete called before every declared
+        artifact finished — retryable) and capture_not_failed (retry called on
+        a capture that is not failed). On trips and detours:
+        trip_invalid_transition and detour_invalid_transition (a state-machine
+        move the entity does not allow from where it is).
       content:
         application/json:
           schema:

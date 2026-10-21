@@ -147,8 +147,8 @@ contract: [`shared-contracts/openapi/memory-line-sync-v1.yaml`](../shared-contra
 | POST | `/api/v1/captures` | Create capture metadata; idempotent by client-generated `captureId` (replay returns the existing capture). |
 | GET | `/api/v1/captures/{captureId}` | Fetch a capture with its artifact summaries. |
 | PATCH | `/api/v1/captures/{captureId}` | Update descriptive fields (captureType, titleHint, userNote, tripId); last writer wins. |
-| POST | `/api/v1/captures/{captureId}/complete` | Mark the capture fully uploaded (Phase 1: minimal handler, returns current state). |
-| POST | `/api/v1/captures/{captureId}/retry` | Re-run processing for a failed capture (Phase 1: minimal handler). |
+| POST | `/api/v1/captures/{captureId}/complete` | Mark the capture fully uploaded. Every declared artifact must be complete (409 `capture_artifacts_incomplete`, retryable, otherwise); a capture still `local_only`/`uploading` advances to `received` and publishes a capture change; one already `received` or beyond is returned unchanged. |
+| POST | `/api/v1/captures/{captureId}/retry` | Re-queue a `failed` capture: status back to `received`, revision bumped, capture change with the audio artifact republished for Windows. 409 `capture_not_failed` on any other status; 409 `artifact_purged` when retention has removed the audio. |
 | POST | `/api/v1/captures/{captureId}/artifacts/initiate` | Declare an artifact (type, expected byte length, SHA-256) → part size/count plan. |
 | PUT | `/api/v1/artifacts/{artifactId}/parts/{partNumber}` | Upload one part; re-uploading a part number replaces it. |
 | POST | `/api/v1/artifacts/{artifactId}/complete` | Assemble the parts; validates byte length, part count, and SHA-256 before accepting. |

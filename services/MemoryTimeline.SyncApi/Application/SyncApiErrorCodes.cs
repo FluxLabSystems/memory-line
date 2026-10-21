@@ -15,6 +15,16 @@ public static class SyncApiErrorCodes
     public const string ValidationError = "validation_error";
     public const string CaptureNotFound = "capture_not_found";
     public const string CaptureConflict = "capture_conflict";
+
+    /// <summary>
+    /// POST /captures/{id}/complete was called before every declared artifact
+    /// completed (or before any was declared). Retryable: finishing the upload
+    /// is the fix.
+    /// </summary>
+    public const string CaptureArtifactsIncomplete = "capture_artifacts_incomplete";
+
+    /// <summary>POST /captures/{id}/retry on a capture that is not failed.</summary>
+    public const string CaptureNotFailed = "capture_not_failed";
     public const string ArtifactNotFound = "artifact_not_found";
     public const string ArtifactConflict = "artifact_conflict";
     public const string ArtifactInvalidState = "artifact_invalid_state";

@@ -223,7 +223,7 @@ public static class Program
             {
                 Log("Redirecting activation to main instance");
                 isRedirect = true;
-                keyInstance.RedirectActivationToAsync(args).AsTask().Wait();
+                RedirectActivationTo(args, keyInstance);
             }
 
             return isRedirect;
@@ -235,4 +235,91 @@ public static class Program
             return false;
         }
     }
+
+    #region Single-instance redirection (Windows App SDK AppLifecycle pattern)
+
+    // Main runs on the STA thread. RedirectActivationToAsync completes only once
+    // that thread has pumped the cross-process COM calls behind the redirect, so
+    // blocking it with Task.Wait() can deadlock the secondary instance (the
+    // Windows App SDK AppLifecycle guidance). The documented shape: run the
+    // redirect on a worker thread and wait on a Win32 event with
+    // CoWaitForMultipleObjects, which keeps pumping messages while it waits.
+
+    private const uint CWMO_DEFAULT = 0;
+    private const uint RedirectTimeoutMilliseconds = 15_000;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateEvent(IntPtr lpEventAttributes, bool bManualReset, bool bInitialState, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetEvent(IntPtr hEvent);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("ole32.dll")]
+    private static extern uint CoWaitForMultipleObjects(uint dwFlags, uint dwTimeout, uint cHandles, IntPtr[] pHandles, out uint lpdwIndex);
+
+    /// <summary>
+    /// Hands this (secondary) instance's activation to the registered main
+    /// instance without blocking the STA thread's message pump. Bounded by
+    /// <see cref="RedirectTimeoutMilliseconds"/> so a wedged main instance
+    /// cannot leave an invisible second process alive forever; a timeout only
+    /// costs that one activation (logged), the secondary still exits.
+    /// </summary>
+    private static void RedirectActivationTo(AppActivationArguments args, AppInstance keyInstance)
+    {
+        var redirectEventHandle = CreateEvent(IntPtr.Zero, bManualReset: true, bInitialState: false, lpName: null);
+        if (redirectEventHandle == IntPtr.Zero)
+        {
+            // Practically unreachable; keep the old behaviour but bounded so a
+            // deadlock cannot hang the process.
+            Log($"CreateEvent failed ({Marshal.GetLastWin32Error()}); falling back to a bounded synchronous wait");
+            if (!keyInstance.RedirectActivationToAsync(args).AsTask().Wait(TimeSpan.FromMilliseconds(RedirectTimeoutMilliseconds)))
+            {
+                Log("Activation redirect timed out (fallback wait)");
+            }
+            return;
+        }
+
+        try
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    keyInstance.RedirectActivationToAsync(args).AsTask().Wait();
+                    Log("Activation redirected to the main instance");
+                }
+                catch (Exception ex)
+                {
+                    Log($"Activation redirect failed (non-fatal): {ex.Message}");
+                }
+                finally
+                {
+                    SetEvent(redirectEventHandle);
+                }
+            });
+
+            // Pumps messages while waiting, which is what lets the redirect complete.
+            var hr = CoWaitForMultipleObjects(
+                CWMO_DEFAULT,
+                RedirectTimeoutMilliseconds,
+                1,
+                new[] { redirectEventHandle },
+                out _);
+            if (hr != 0)
+            {
+                Log($"CoWaitForMultipleObjects returned 0x{hr:X8} (timeout or error); exiting the secondary instance anyway");
+            }
+        }
+        finally
+        {
+            CloseHandle(redirectEventHandle);
+        }
+    }
+
+    #endregion
 }

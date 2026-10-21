@@ -902,6 +902,19 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
   - [ ] Timeline FPS monitoring
 
 #### 7.2 Packaging
+
+> **Honest state (2026-10):** the app ships **unpackaged** (`WindowsPackageType=None`,
+> self-contained Windows App SDK) and no MSIX identity exists. The only manifest is
+> `src/MemoryTimeline/Package.appxmanifest`, which still carries the template
+> placeholders (`Publisher="CN=Your Name"`, a dummy `PhoneIdentity` GUID) and
+> references `Assets\*.png` files that have not been created (`src/MemoryTimeline/Assets/`
+> does not exist; the csproj's `Assets\**` glob matches nothing). A second, divergent
+> manifest under `windows-native/packaging/` (different publisher, MinVersion 19041, and
+> protocol / file-type / share-target extensions nothing in the app handled) was deleted
+> in 2026-10, as was the csproj's reference to a `win-$(Platform).pubxml` publish profile
+> that was never added. Filling in a real publisher identity, producing the icon assets,
+> and signing are still to do — nothing below has been started.
+
 - [ ] **MSIX Package**
   - [ ] Configure Package.appxmanifest
     - [ ] Identity (name, publisher, version)

@@ -74,6 +74,11 @@ public class OpenAiCompatibleLlmService : ILlmService
 
             var prompt = LlmPromptSupport.BuildExtractionPrompt(transcript, context);
 
+            // llm_max_tokens / llm_temperature, re-read per call like the URL
+            // and model (same reader as the Anthropic path, so both providers
+            // honour the same rows).
+            var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
             var request = new ChatCompletionRequest
             {
                 Model = model,
@@ -81,8 +86,8 @@ public class OpenAiCompatibleLlmService : ILlmService
                 {
                     new() { Role = "user", Content = prompt }
                 },
-                Temperature = 0.3, // Lower temperature for more consistent structured output
-                MaxTokens = 4096,
+                Temperature = generation.Temperature,
+                MaxTokens = generation.MaxTokens,
                 Stream = false
             };
 
@@ -180,11 +185,14 @@ public class OpenAiCompatibleLlmService : ILlmService
         }
         messages.Add(new ChatMessage { Role = "user", Content = userPrompt });
 
+        // The caller owns the output budget; the temperature comes from settings.
+        var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
         var request = new ChatCompletionRequest
         {
             Model = model,
             Messages = messages,
-            Temperature = 0.3,
+            Temperature = generation.Temperature,
             MaxTokens = maxTokens,
             Stream = false
         };

@@ -13,6 +13,10 @@ public static class SettingKeys
     public const string LlmProvider = "llm_provider";
     public const string LlmModel = "llm_model";
     public const string LlmBaseUrl = "llm_base_url";           // OpenAI-compatible endpoint (Ollama / LM Studio / vLLM); matches DB seed
+    public const string LlmMaxTokens = "llm_max_tokens";       // matches DB seed ("4000"); output budget for extraction calls
+    public const string LlmTemperature = "llm_temperature";    // matches DB seed ("0.3"); sampling temperature for every LLM call
+    public const string RagSimilarityThreshold = "rag_similarity_threshold"; // matches DB seed ("0.75"); minimum cosine similarity for similar-event retrieval
+    public const string AutoGenerateEmbeddings = "auto_generate_embeddings"; // matches DB seed ("true"); embed new/approved events in the background
     public const string DefaultZoomLevel = "default_zoom_level";
     public const string EmbeddingProvider = "embedding_provider"; // matches DB seed ("local" | "openai")
     public const string EmbeddingApiKey = "embedding_api_key"; // matches DB seed

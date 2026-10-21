@@ -67,6 +67,11 @@ public class AnthropicLlmService : ILlmService
             // Build the prompt
             var prompt = BuildExtractionPrompt(transcript, context);
 
+            // llm_max_tokens / llm_temperature, re-read per call like the key
+            // and model. The seeded temperature (0.3) keeps structured output
+            // consistent; the budget bounds the extraction response.
+            var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
             _logger.LogDebug("Sending request to Claude API");
 
             // Call Claude API using the SDK (Anthropic.SDK v5.8.0 API)
@@ -79,8 +84,8 @@ public class AnthropicLlmService : ILlmService
             {
                 Messages = messages,
                 Model = ModelName,
-                MaxTokens = 4096,
-                Temperature = 0.3m, // Lower temperature for more consistent structured output
+                MaxTokens = generation.MaxTokens,
+                Temperature = (decimal)generation.Temperature,
                 Stream = false
             };
 
@@ -193,6 +198,10 @@ public class AnthropicLlmService : ILlmService
             ? userPrompt
             : $"<system_instructions>\n{systemPrompt}\n</system_instructions>\n\n{userPrompt}";
 
+        // The caller owns the output budget here (each feature knows how long
+        // its answer may be); only the temperature comes from settings.
+        var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
         var parameters = new MessageParameters
         {
             Messages = new List<Message>
@@ -201,7 +210,7 @@ public class AnthropicLlmService : ILlmService
             },
             Model = ModelName,
             MaxTokens = maxTokens,
-            Temperature = 0.3m,
+            Temperature = (decimal)generation.Temperature,
             Stream = false
         };
 

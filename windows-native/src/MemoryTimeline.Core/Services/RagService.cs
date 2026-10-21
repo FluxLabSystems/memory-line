@@ -21,30 +21,66 @@ public class RagService : IRagService
     private readonly IEventService _eventService;
     private readonly IDbContextFactory<Data.AppDbContext> _contextFactory;
     private readonly ICrossReferenceRepository _crossReferenceRepository;
+    private readonly ISettingsService? _settingsService;
     private readonly ILogger<RagService> _logger;
 
+    /// <summary>
+    /// The similarity floor when <c>rag_similarity_threshold</c> is absent or
+    /// unusable, or when no settings service is injected (the value the
+    /// service hard-coded before the setting was read).
+    /// </summary>
+    internal const double DefaultSimilarityThreshold = 0.7;
+
+    /// <summary>
+    /// Creates the service. <paramref name="settingsService"/> is optional and
+    /// trailing so existing constructions keep compiling; without it the
+    /// similarity threshold is <see cref="DefaultSimilarityThreshold"/>.
+    /// </summary>
     public RagService(
         IEmbeddingService embeddingService,
         IEventService eventService,
         IDbContextFactory<Data.AppDbContext> contextFactory,
         ICrossReferenceRepository crossReferenceRepository,
-        ILogger<RagService> logger)
+        ILogger<RagService> logger,
+        ISettingsService? settingsService = null)
     {
         _embeddingService = embeddingService;
         _eventService = eventService;
         _contextFactory = contextFactory;
         _crossReferenceRepository = crossReferenceRepository;
         _logger = logger;
+        _settingsService = settingsService;
+    }
+
+    /// <summary>
+    /// The configured similarity floor: <c>rag_similarity_threshold</c>, read
+    /// per call so a Settings change applies live, validated to 0..1.
+    /// </summary>
+    internal async Task<double> GetSimilarityThresholdAsync()
+    {
+        if (_settingsService == null)
+        {
+            return DefaultSimilarityThreshold;
+        }
+
+        var text = await _settingsService.GetSettingAsync<string>(SettingKeys.RagSimilarityThreshold, string.Empty);
+        return double.TryParse(text?.Trim(), System.Globalization.NumberStyles.Float,
+                   System.Globalization.CultureInfo.InvariantCulture, out var value)
+               && !double.IsNaN(value) && value >= 0.0 && value <= 1.0
+            ? value
+            : DefaultSimilarityThreshold;
     }
 
     /// <summary>
     /// Finds similar events using embedding-based similarity search.
     /// </summary>
-    public async Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double threshold = 0.7)
+    public async Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double? threshold = null)
     {
         try
         {
             _logger.LogInformation("Finding similar events for {EventId}", eventId);
+
+            var effectiveThreshold = threshold ?? await GetSimilarityThresholdAsync();
 
             await using var dbContext = await _contextFactory.CreateDbContextAsync();
 
@@ -105,7 +141,7 @@ public class RagService : IRagService
                 queryEmbedding,
                 candidateEmbeddings,
                 topK,
-                threshold);
+                effectiveThreshold);
 
             // Get event details
             var similarEvents = new List<SimilarEvent>();
@@ -170,7 +206,11 @@ public class RagService : IRagService
             }
             else
             {
-                var similarEvents = await FindSimilarEventsAsync(eventId, topK: 20, threshold: 0.6);
+                // Candidates are gathered below the display floor so a
+                // relationship can still be found for a borderline pair; the
+                // configured threshold only ever lowers this, never raises it.
+                var candidateFloor = Math.Min(0.6, await GetSimilarityThresholdAsync());
+                var similarEvents = await FindSimilarEventsAsync(eventId, topK: 20, threshold: candidateFloor);
                 foreach (var similar in similarEvents)
                 {
                     var evt = await _eventService.GetEventWithDetailsAsync(similar.EventId);
@@ -302,8 +342,8 @@ public class RagService : IRagService
         {
             _logger.LogInformation("Suggesting tags for event {EventId}", eventId);
 
-            // Find similar events
-            var similarEvents = await FindSimilarEventsAsync(eventId, topK: 10, threshold: 0.75);
+            // Find similar events at the configured floor
+            var similarEvents = await FindSimilarEventsAsync(eventId, topK: 10);
 
             if (similarEvents.Count == 0)
             {
@@ -425,12 +465,12 @@ public class RagService : IRagService
                 .Select(x => (x.EventId, x.Embedding!))
                 .ToList();
 
-            // Find similar events
+            // Find similar events at the configured floor
             var similarities = _embeddingService.FindKNearestNeighbors(
                 queryEmbedding,
                 candidateEmbeddings,
                 10,
-                0.7);
+                await GetSimilarityThresholdAsync());
 
             // Get tags from similar events
             var tagFrequency = new Dictionary<string, (int count, double totalSimilarity)>();

@@ -12,9 +12,11 @@ public interface IRagService
     /// </summary>
     /// <param name="eventId">Event ID to find similar events for</param>
     /// <param name="topK">Number of similar events to return</param>
-    /// <param name="threshold">Minimum similarity threshold</param>
+    /// <param name="threshold">Minimum cosine similarity; null uses the
+    /// <c>rag_similarity_threshold</c> setting (seeded 0.75), which is what
+    /// callers should pass unless they have a reason of their own.</param>
     /// <returns>List of similar events with similarity scores</returns>
-    Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double threshold = 0.7);
+    Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double? threshold = null);
 
     /// <summary>
     /// Detects cross-references between events using LLM analysis.

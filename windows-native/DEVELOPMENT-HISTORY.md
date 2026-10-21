@@ -361,7 +361,7 @@ Added export/import functionality, Windows 11 integration features (notification
 - Group-based organization
 - Duplicate prevention
 
-**Windows Timeline Service:**
+**Windows Timeline Service** *(historical — removed in 2026-10: it never had a caller, needed package identity the unpackaged app lacks, and Windows 11 dropped the Timeline UI)*:
 - IWindowsTimelineService interface
 - WindowsTimelineService implementation
 - Publish events to Windows Timeline
@@ -462,6 +462,11 @@ Added export/import functionality, Windows 11 integration features (notification
 ---
 
 ## Known Limitations
+
+> **Note (2026-10):** this list is the historical snapshot from the Phase 6 milestone and is
+> kept as written. Since then: unit/integration/performance tests exist and gate CI (item 1);
+> local ONNX embeddings are the default provider (item 6); items 2-4 and 7 are still open.
+> See `DEVELOPMENT-STATUS.md` for the current state.
 
 Current limitations pending Phase 7:
 1. **Testing:** Comprehensive automated tests not yet implemented

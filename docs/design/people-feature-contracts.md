@@ -409,8 +409,9 @@ Task<PersonSuggestionDto> ApplyPersonSuggestionAsync(PersonSuggestionDto suggest
 - Constructor gains `IPersonService personService` (registered by integrator).
 - `BuildExtractionContextAsync`: populate `context.KnownPeople` with up to 100
   person display names via `IPersonService.GetAllPersonsAsync(PersonSortOption.MostEvents)`
-  (best-effort; keep the existing catch-and-continue shape). Resolve the
-  existing TODO.
+  (best-effort; keep the existing catch-and-continue shape). **Done** — the
+  TODO that used to sit here is resolved; `EventExtractionService` now calls
+  `GetAllPersonsAsync(PersonSortOption.MostEvents)` for the known-people list.
 - `GetPersonSuggestionsAsync`: deserialize `ExtractedData`; source names from
   `PeopleDetails` (fallback `People`); for each distinct name run
   `IPersonService.FindBestMatchAsync`:

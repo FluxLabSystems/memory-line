@@ -279,7 +279,7 @@ windows-native/
 │              ↕                            │
 │  ┌──────────────────────────────────┐    │
 │  │ Data Access Layer                │    │
-│  │ - EF Core 8 + SQLite (WAL)       │    │
+│  │ - EF Core 10 + SQLite (WAL)      │    │
 │  │ - IDbContextFactory per-operation│    │
 │  │ - Repositories + SchemaUpgrader  │    │
 │  └──────────────────────────────────┘    │
@@ -502,8 +502,9 @@ Tests cover timeline math, services, repository/integration behavior, and perfor
 
 `.github/workflows/windows-native-build.yml` builds the full solution **Release | x64** on
 `windows-latest`, driving the build with **Visual Studio MSBuild** (`microsoft/setup-msbuild`)
-because the WinUI PRI task cannot run under `dotnet build`. Tests run best-effort via
-`dotnet vstest`. Builds are currently **green** in CI.
+because the WinUI PRI task cannot run under `dotnet build`. The built test assembly then
+runs with `dotnet vstest`; **the build and the tests both gate the run**. Builds are
+currently **green** in CI.
 
 ---
 
@@ -638,7 +639,7 @@ See [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md) for detailed status and
 
 ## License
 
-MIT License — see the main repository `LICENSE` file.
+No license file has been published for this repository yet; see the root `README.md`.
 
 ---
 

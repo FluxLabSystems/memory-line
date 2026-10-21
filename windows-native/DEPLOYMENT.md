@@ -1,6 +1,6 @@
 # Memory Timeline - Deployment Guide
 
-This guide covers building, testing, and deploying the Memory Timeline Windows native application (WinUI 3 / Windows App SDK, .NET 8).
+This guide covers building, testing, and deploying the Memory Timeline Windows native application (WinUI 3 / Windows App SDK 2.3.1, .NET 10).
 
 > **Important build note.** The WinUI 3 app is currently an **unpackaged** desktop app (`WindowsPackageType=None`, self-contained Windows App SDK). It builds for a specific CPU platform (**x64**, x86, or ARM64 — there is **no `AnyCPU`**) and, because of the WinUI PRI/XAML resource-generation tooling, must be built with **Visual Studio or `msbuild.exe`**, not `dotnet build`. See [Building the Application](#building-the-application) for details.
 >
@@ -22,7 +22,7 @@ This guide covers building, testing, and deploying the Memory Timeline Windows n
 ## Prerequisites
 
 ### Development Environment
-- **Windows 11 22H2** or later (required for Windows App SDK 1.5+). The WinUI target cannot be built on Linux/macOS.
+- **Windows 11 22H2** or later (`TargetPlatformMinVersion` 10.0.22621.0; Windows App SDK 2.3.1 is bundled self-contained). The WinUI target cannot be built on Linux/macOS.
 - **Visual Studio 2026** (18.0 or later) with workloads:
   - .NET Desktop Development
   - Universal Windows Platform development
@@ -74,7 +74,7 @@ You can also simply open `windows-native/src/MemoryTimeline.sln` in Visual Studi
 ### Build Output
 The compiled application is placed under the platform-specific output folder, for example:
 ```
-windows-native/src/MemoryTimeline/bin/x64/Release/net8.0-windows10.0.26100.0/
+windows-native/src/MemoryTimeline/bin/x64/Release/net10.0-windows10.0.26100.0/
 ```
 Because the app is unpackaged and self-contained, this folder contains `MemoryTimeline.exe` plus the Windows App SDK runtime and can be launched directly.
 
@@ -109,7 +109,7 @@ cd windows-native/src
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 
 # 2. Run the compiled test DLL with vstest (no rebuild)
-dotnet vstest MemoryTimeline.Tests/bin/x64/Release/net8.0-windows10.0.26100.0/MemoryTimeline.Tests.dll `
+dotnet vstest MemoryTimeline.Tests/bin/x64/Release/net10.0-windows10.0.26100.0/MemoryTimeline.Tests.dll `
   --logger:"trx;LogFileName=test.trx" --ResultsDirectory:TestResults
 ```
 
@@ -155,13 +155,15 @@ See [`TESTING.md`](./TESTING.md) for the test-suite layout, the EF Core InMemory
 ### Command-Line Packaging
 
 ```powershell
-# Set environment variables
-$AppxManifestPath = ".\packaging\Package.appxmanifest"
+# Illustrative only. The former windows-native/packaging/ manifest was removed (it diverged
+# from the project and declared extensions nothing handled); the only manifest is
+# src/MemoryTimeline/Package.appxmanifest, which still carries template placeholders
+# (no publisher identity, no Assets\*.png) - see DEVELOPMENT-STATUS.md section 7.2.
+$AppxManifestPath = ".\src\MemoryTimeline\Package.appxmanifest"
 $OutputPath = ".\output\packages"
-$MappingFile = ".\packaging\FileMapping.txt"
 
-# Create package using makeappx
-makeappx pack /d ".\bin\Release\net8.0-windows\" /p "$OutputPath\MemoryTimeline.msix" /l
+# Create package using makeappx (no FileMapping.txt exists yet)
+makeappx pack /d ".\src\MemoryTimeline\bin\x64\Release\net10.0-windows10.0.26100.0\" /p "$OutputPath\MemoryTimeline.msix" /l
 
 # For app bundle (multiple architectures)
 makeappx bundle /d "$OutputPath\bundles" /p "$OutputPath\MemoryTimeline.msixbundle"
@@ -406,18 +408,18 @@ else {
 The repository has a **real** GitHub Actions workflow that compiles and tests the native Windows implementation. Its key design decisions mirror the constraints described above:
 
 - Runs on **`windows-latest`** (the WinUI target cannot build on Linux).
-- Installs the **.NET 8 SDK** (`actions/setup-dotnet`) and **Visual Studio MSBuild** (`microsoft/setup-msbuild`).
+- Installs the **.NET 10 SDK** (`actions/setup-dotnet`, `10.0.x`) and **Visual Studio MSBuild** (`microsoft/setup-msbuild`).
 - Builds the **whole solution for `Release | x64`** via `msbuild MemoryTimeline.sln /t:Restore,Build` — **not** `dotnet build`, to avoid the WinUI PRI/XAML task failure.
 - Runs tests with **`dotnet vstest`** against the already-built `MemoryTimeline.Tests.dll` — **not** `dotnet test`, which would rebuild the WinUI app and hit the same failure.
-- Compilation is the gate; the headless VSTest run of the self-contained WinUI test assembly is best-effort (`continue-on-error`) and its results/logs are uploaded as artifacts.
+- Compilation **and** the `dotnet vstest` run both gate the workflow (a failing or missing test assembly fails the run); results/logs are uploaded as artifacts.
 
 Core of the build and test steps:
 
 ```yaml
-- name: Setup .NET 8
+- name: Setup .NET 10
   uses: actions/setup-dotnet@v4
   with:
-    dotnet-version: '8.0.x'
+    dotnet-version: '10.0.x'
 
 - name: Setup MSBuild (Visual Studio)
   uses: microsoft/setup-msbuild@v2

@@ -14,6 +14,44 @@ findings were not adversarially verified (quota-trimmed) and are listed separate
 **Context:** the codebase compiles green in CI, but finding #10 below shows the CI test step never actually
 executes tests — so 'CI green' currently proves compilation only. Runtime validation remains the top gap.
 
+> ## Status addendum (2026-10-21)
+>
+> The findings below are kept as originally written. Current state, checked against the code:
+>
+> | # | Finding | Status |
+> |---|---------|--------|
+> | 1 | Legacy-export import binds no snake_case fields | ✅ fixed — `ImportService` maps the snake_case legacy keys |
+> | 2 | Pre-import backup `File.Copy` of a WAL database | ✅ fixed — `SqliteConnection.BackupDatabase` (online backup) |
+> | 3 | "View on Timeline" passed a DateTime parameter | ✅ fixed — Search passes the event id; `TimelineViewModel.NavigateToEventAsync` handles it |
+> | 4 | Category checkbox state inverts after Clear Filters | ✅ fixed — checkboxes bound to ViewModel state |
+> | 5 | Save Search dialog never shown | ✅ fixed — `SaveSearchDialog.ShowAsync()` is wired |
+> | 6 | Gantt era bars misaligned by the 140 px label column | ✅ fixed — the milestone zone and ruler share the spacer |
+> | 7 | `MediaOpened` reset playback state after `Play()` | ✅ fixed — state transition guarded |
+> | 8 | Main instance never subscribed to `AppInstance.Activated` | ✅ fixed — `keyInstance.Activated += OnRedirectedActivation`; the redirect no longer blocks the STA thread (2026-10) |
+> | 9 | CI test glob missed the AnyCPU output path | ✅ fixed — both layouts searched |
+> | 10 | Test suite non-gating (`continue-on-error`) | ✅ fixed — tests gate the workflow |
+> | 11 | Reject All without confirmation | ✅ fixed — confirmation dialogs for Reject / Reject All |
+> | 12 | Phantom "OpenAI"/"Local" LLM providers | ✅ fixed — only Anthropic and OpenAI-compatible are offered, routed per call |
+> | 13 | Date-range query drops in-progress multi-day events | ✅ fixed — overlap predicate on `StartDate`/`EndDate` |
+> | 14 / 15 | Junction add/remove APIs broke on the detached graph | ✅ fixed — junction writes go through a fresh context (the Connections page now uses `AddTagToEventAsync`, 2026-10) |
+> | 16 | Edit from the detail dialog opened a second dialog | ✅ fixed |
+> | 17 | Individual era filter checkboxes had no effect | ✅ fixed — per-filter `PropertyChanged` re-evaluates the bar layer |
+> | 18 | Audio import advertised formats Whisper cannot parse | ⚠️ mitigated — import is restricted to WAV today; non-WAV normalization (`IAudioNormalizer`) is being added in Core, and the 2026-10 Queue-page importer surfaces per-file "Unsupported format" instead of a failed queue item |
+>
+> **Part 2 / Part 3 items addressed by the 2026-10 head wiring pass:** audio settings that
+> were never read (fixed format + microphone picker), default zoom never consumed, milestones
+> not editable/deletable, era/milestone dialogs closing on failed saves, the STA-blocking
+> activation redirect, the startup/selection double-navigation, the README's Windows Timeline
+> and Jump List claims (Timeline removed, recent events wired), Reset to Defaults not clearing
+> keys / resetting to Dark, the unwired navigation accelerators, `AudioImportService` with no
+> consumer, Jump List actions that only navigated, the dead `event:` deep-link surface, the
+> unpackaged Jump List caveat (detected and documented), the unused `AudioLevelChanged` meter,
+> NavigationView selection not following programmatic navigation, and "Support removing stored
+> API keys". Addressed earlier: `EventUpdated/DeletedMessage`, backup/restore, transcript
+> persistence on the queue row, NOCASE identity, the `pull_request` CI trigger, gating tests,
+> the real Clear Cache, `CanZoomIn/CanZoomOut` notification. The two Electron-only items
+> (`jest.config.js`, `batchImportService`/`main.js`) refer to the removed Electron app.
+
 ---
 
 ## Part 1 — CONFIRMED findings (adversarially verified)
@@ -250,7 +288,7 @@ WhisperSpeechToTextService streams the raw audio file into Whisper.net 1.5's pro
 - **Dispose frees the WhisperFactory and semaphore while a transcription may be in flight** — `windows-native/src/MemoryTimeline/Services/WhisperSpeechToTextService.cs:241` (wn-shell)
 - **StopRecordingAsync failure path silently discards the finished recording** — `windows-native/src/MemoryTimeline/Services/AudioRecordingService.cs:169` (wn-shell)
 - **SetThemeAsync test asserts the default value — it passes even if SetThemeAsync is a no-op** — `windows-native/src/MemoryTimeline.Tests/Services/SettingsServiceTests.cs:153` (tests-ci)
-- **moduleNameMapper points at identity-obj-proxy, which is not a devDependency** — `jest.config.js:21` (tests-ci)
+- **moduleNameMapper points at identity-obj-proxy, which is not a devDependency** — `jest.config.js:21` (tests-ci) — *refers to the removed Electron app; no longer applicable*
 - **Performance tests assert absolute wall-clock thresholds — flaky on shared CI runners** — `windows-native/src/MemoryTimeline.Tests/Performance/PerformanceTests.cs:101` (tests-ci)
 - **Clear Cache button is a TODO stub that reports success to the user** — `windows-native/src/MemoryTimeline/ViewModels/SettingsViewModel.cs:239` (product)
 - **Reset to Defaults silently fails to reset API keys and changes theme to Dark instead of the first-run System default** — `windows-native/src/MemoryTimeline/ViewModels/SettingsViewModel.cs:220` (product)
@@ -339,7 +377,7 @@ WhisperSpeechToTextService streams the raw audio file into Whisper.net 1.5's pro
 
 - **[medium] Make the .NET tests gating by isolating the non-WinUI subset** — All 13 test classes exercise only Core/Data types (services, repositories, layout math) — nothing needs a WinUI dispatcher. Removing the test project's reference to the WinUI app project (or splitting a MemoryTimeline.Tests.Core project) would let CI run `dotnet test` normally without the 'headless …
 - **[medium] Cover QueueService's processing pipeline (ProcessNextItemAsync, retries, ConfigurationException path)** — QueueServiceTests covers only CRUD/status plumbing; ProcessNextItemAsync, ProcessAllPendingAsync, the 3-attempt retry with exponential backoff, the non-retryable ConfigurationException branch, and the notification calls (the parts most likely to break at runtime) have zero tests. Note the retry loop…
-- **[medium] Add tests for batchImportService and the main.js IPC handler wiring** — batchImportService was rewritten with schema fixes but has no test file at all, and main.js handler registration (the contract the renderer depends on) is explicitly excluded from coverage (jest.config.js line 13). A smoke test that instantiates each service against a schema.sql database and a handl…
+- **[medium] Add tests for batchImportService and the main.js IPC handler wiring** *(Electron app — removed from the repository; no longer applicable)* — batchImportService was rewritten with schema fixes but has no test file at all, and main.js handler registration (the contract the renderer depends on) is explicitly excluded from coverage (jest.config.js line 13). A smoke test that instantiates each service against a schema.sql database and a handl…
 - **[small] Trigger the Windows workflow on pull_request and the default branch** — Replacing the hard-coded feature-branch filter with `pull_request` plus pushes to main keeps the compile/test gate alive after the current review branch is merged, and gives contributors pre-merge signal instead of post-push annotations on a branch nobody watches.
 - **[small] Tag PerformanceTests with an xUnit trait and exclude them from the default CI run** — A [Trait("Category","Performance")] on the class plus a `--TestCaseFilter` in CI keeps the fast, deterministic suites gating while the wall-clock-sensitive load tests run on demand (workflow_dispatch or nightly), eliminating the main flake source before tests are made blocking.
 - **[small] Enforce TestDbContextFactory's ':memory:' prohibition in code** — The class doc warns that SQLite ':memory:' connection strings would give each context an empty database (the classic silently-green trap), but nothing prevents a future test from passing one to the constructor or CreateSqliteFile. A one-line guard (throw if the options' connection string contains ':…

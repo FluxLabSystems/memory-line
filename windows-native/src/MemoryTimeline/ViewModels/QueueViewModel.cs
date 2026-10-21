@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using MemoryTimeline.Core.DTOs;
@@ -418,6 +419,10 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 
             OnPropertyChanged(nameof(IsQueueEmpty));
             await UpdateStatusCountsAsync();
+
+            // Every queue mutation on this page ends in a refresh, so this is
+            // the one place the shell's Queue badge needs to hear about it.
+            WeakReferenceMessenger.Default.Send(new QueueChangedMessage());
         }
         catch (Exception ex)
         {

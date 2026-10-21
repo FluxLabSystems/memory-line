@@ -15,29 +15,49 @@ namespace MemoryTimeline;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    private readonly MainViewModel _viewModel;
     private readonly INavigationService _navigationService;
+
+    // True while the NavigationView selection is being synced to a navigation
+    // that already happened (programmatic NavigateTo, back/forward, deep link).
+    // SelectionChanged must not navigate again in that case: it would create a
+    // second page instance, drop the original navigation parameter's effect,
+    // and push a duplicate back-stack entry.
+    private bool _isSyncingSelection;
+
+    /// <summary>
+    /// Shell state (navigation badge counts) bound by MainWindow.xaml via x:Bind.
+    /// </summary>
+    public MainViewModel ViewModel { get; }
 
     public MainWindow(MainViewModel viewModel, INavigationService navigationService)
     {
-        InitializeComponent();
-        _viewModel = viewModel;
+        ViewModel = viewModel;
         _navigationService = navigationService;
+        InitializeComponent();
 
         // Use standard title bar to avoid overlap with navigation
         // (ExtendsContentIntoTitleBar causes the drag region to block navigation clicks)
 
-        // Initialize navigation service
+        // Subscribe BEFORE attaching the frame so the very first navigation
+        // already syncs the NavigationView selection and back-button state.
+        _navigationService.Navigated += OnNavigationServiceNavigated;
         _navigationService.Frame = ContentFrame;
         RegisterPages();
+
+        Closed += OnWindowClosed;
 
         // Land on Home immediately (no blank frame while settings load), then
         // asynchronously honor home_is_default_page: when the user has turned
         // the Home landing off, flip to Timeline - but only if nothing else
         // (deep link, activation action) has navigated away in the meantime.
+        // The Navigated handler selects the matching NavigationView item.
         _navigationService.NavigateTo("Home");
-        SelectNavigationItem("Home");
         _ = ApplyDefaultLandingPreferenceAsync();
+
+        // Shell badge counts (Queue / Review). Fire-and-forget from the
+        // constructor like the landing preference: the ViewModel logs failures
+        // and leaves the badges hidden.
+        _ = ViewModel.InitializeAsync();
     }
 
     /// <summary>
@@ -58,7 +78,7 @@ public sealed partial class MainWindow : Window
             if (string.Equals(homeIsDefault?.Trim(), "false", StringComparison.OrdinalIgnoreCase) &&
                 ContentFrame.CurrentSourcePageType == typeof(HomePage))
             {
-                NavigateTo("Timeline");
+                _navigationService.NavigateTo("Timeline");
             }
         }
         catch (Exception ex)
@@ -84,8 +104,38 @@ public sealed partial class MainWindow : Window
         _navigationService.RegisterPage("Settings", typeof(SettingsPage));
     }
 
+    private void OnWindowClosed(object sender, WindowEventArgs args)
+    {
+        _navigationService.Navigated -= OnNavigationServiceNavigated;
+        ViewModel.Dispose();
+    }
+
+    /// <summary>
+    /// Keeps the shell in step with whatever the Frame actually shows: selects
+    /// the NavigationView item for the page (without re-navigating) and enables
+    /// the back button when there is history to go back to. Fires for every
+    /// navigation path - item clicks, programmatic "view on timeline" / draft
+    /// resume / activation navigations, and back/forward.
+    /// </summary>
+    private void OnNavigationServiceNavigated(object? sender, PageNavigatedEventArgs e)
+    {
+        NavigationView.IsBackEnabled = e.CanGoBack;
+
+        if (!string.IsNullOrEmpty(e.PageKey))
+        {
+            SelectNavigationItem(e.PageKey);
+        }
+    }
+
     private void NavigationView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (_isSyncingSelection)
+        {
+            // Selection is being mirrored from a navigation that already
+            // happened; navigating again here would double it.
+            return;
+        }
+
         if (args.IsSettingsSelected)
         {
             _navigationService.NavigateTo("Settings");
@@ -100,29 +150,47 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void NavigationView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
+    {
+        _navigationService.GoBack();
+    }
+
     #region Keyboard Navigation Handlers
 
     private void NavigateTo(string pageTag)
     {
+        // The Navigated handler selects the matching NavigationView item.
         _navigationService.NavigateTo(pageTag);
-        SelectNavigationItem(pageTag);
     }
 
+    /// <summary>
+    /// Selects the NavigationView item whose Tag matches the page key (or the
+    /// built-in Settings item) WITHOUT triggering a navigation: the
+    /// SelectionChanged handler is suppressed for the duration.
+    /// </summary>
     private void SelectNavigationItem(string tag)
     {
-        if (tag == "Settings")
+        _isSyncingSelection = true;
+        try
         {
-            NavigationView.SelectedItem = NavigationView.SettingsItem;
-            return;
-        }
-
-        foreach (var item in NavigationView.MenuItems)
-        {
-            if (item is NavigationViewItem navItem && navItem.Tag?.ToString() == tag)
+            if (tag == "Settings")
             {
-                NavigationView.SelectedItem = navItem;
+                NavigationView.SelectedItem = NavigationView.SettingsItem;
                 return;
             }
+
+            foreach (var item in NavigationView.MenuItems)
+            {
+                if (item is NavigationViewItem navItem && navItem.Tag?.ToString() == tag)
+                {
+                    NavigationView.SelectedItem = navItem;
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _isSyncingSelection = false;
         }
     }
 
@@ -170,12 +238,9 @@ public sealed partial class MainWindow : Window
 
     private void PasteCapture_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        // Sync the nav selection FIRST: programmatic selection raises
-        // SelectionChanged, which performs a plain parameterless "Queue"
-        // navigation. The parameterized navigation below must come last so
-        // the "paste" parameter reaches QueuePage.OnNavigatedTo and opens
-        // the paste-capture dialog.
-        SelectNavigationItem("Queue");
+        // The parameterized navigation carries "paste" to QueuePage.OnNavigatedTo,
+        // which opens the paste-capture dialog; the Navigated handler then syncs
+        // the NavigationView selection without navigating a second time.
         _navigationService.NavigateTo("Queue", "paste");
         args.Handled = true;
     }
@@ -203,19 +268,13 @@ public sealed partial class MainWindow : Window
 
     private void GoBack_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_navigationService.CanGoBack)
-        {
-            _navigationService.GoBack();
-        }
+        _navigationService.GoBack();
         args.Handled = true;
     }
 
     private void GoForward_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (ContentFrame.CanGoForward)
-        {
-            ContentFrame.GoForward();
-        }
+        _navigationService.GoForward();
         args.Handled = true;
     }
 

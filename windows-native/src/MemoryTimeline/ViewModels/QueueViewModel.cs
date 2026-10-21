@@ -64,6 +64,14 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private double _recordingDuration;
 
+    /// <summary>
+    /// Live microphone level, 0..100, for the Queue page's meter. Fed by
+    /// IAudioRecordingService.AudioLevelChanged (~20 Hz, dB-scaled peak) while
+    /// recording; reset to 0 whenever capturing stops or pauses.
+    /// </summary>
+    [ObservableProperty]
+    private double _audioLevel;
+
     [ObservableProperty]
     private string _statusText = "Ready";
 
@@ -162,6 +170,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         _queueService.QueueItemStatusChanged += OnQueueItemStatusChanged;
         _queueService.ProcessingProgressChanged += OnProcessingProgressChanged;
         _recordingService.RecordingStateChanged += OnRecordingStateChanged;
+        _recordingService.AudioLevelChanged += OnAudioLevelChanged;
         _playbackService.PlaybackStateChanged += OnPlaybackStateChanged;
         _playbackService.PositionChanged += OnPlaybackPositionChanged;
     }
@@ -969,6 +978,12 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsRecordingActive));
         OnPropertyChanged(nameof(IsIdle));
 
+        if (!IsRecording)
+        {
+            // No frames arrive while paused/stopped; do not leave a stale bar.
+            AudioLevel = 0;
+        }
+
         StopRecordingCommand.NotifyCanExecuteChanged();
         PauseRecordingCommand.NotifyCanExecuteChanged();
         ResumeRecordingCommand.NotifyCanExecuteChanged();
@@ -1041,6 +1056,20 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         });
     }
 
+    private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)
+    {
+        // Raised on a MediaCapture worker thread at ~20 Hz; marshal before
+        // touching the bound property.
+        var level = Math.Clamp(e.Level, 0.0, 1.0) * 100.0;
+        RunOnUi(() =>
+        {
+            if (IsRecording)
+            {
+                AudioLevel = level;
+            }
+        });
+    }
+
     private void OnProcessingProgressChanged(object? sender, QueueProcessingProgressEventArgs e)
     {
         // Raised from the queue's background processing; marshal before touching
@@ -1094,6 +1123,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         _queueService.QueueItemStatusChanged -= OnQueueItemStatusChanged;
         _queueService.ProcessingProgressChanged -= OnProcessingProgressChanged;
         _recordingService.RecordingStateChanged -= OnRecordingStateChanged;
+        _recordingService.AudioLevelChanged -= OnAudioLevelChanged;
         _playbackService.PlaybackStateChanged -= OnPlaybackStateChanged;
         _playbackService.PositionChanged -= OnPlaybackPositionChanged;
 

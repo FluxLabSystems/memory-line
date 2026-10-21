@@ -123,8 +123,15 @@
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            Visibility="{x:Bind ViewModel.IsPaused, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
 
-                <ProgressBar IsIndeterminate="True"
+                <!-- Live input level: dB-scaled peak sampled from the capture
+                     frames at ~20 Hz (AudioRecordingService -> AudioLevelChanged),
+                     so the user can see the microphone is actually picking up audio. -->
+                <ProgressBar x:Name="InputLevelBar"
+                             Value="{x:Bind ViewModel.AudioLevel, Mode=OneWay}"
+                             Minimum="0"
+                             Maximum="100"
                              Margin="0,8,0,0"
+                             AutomationProperties.Name="Microphone input level"
                              Visibility="{x:Bind ViewModel.IsRecording, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
 
                 <TextBlock Text="Ready to record"

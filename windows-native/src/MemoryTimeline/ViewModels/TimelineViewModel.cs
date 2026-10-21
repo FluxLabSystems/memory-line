@@ -29,7 +29,13 @@ public partial class TimelineViewModel : ObservableObject
     private readonly IMediaService _mediaService;
     private readonly IEraRepository _eraRepository;
     private readonly ITagRepository _tagRepository;
+    private readonly ISettingsService _settingsService;
     private readonly ILogger<TimelineViewModel> _logger;
+
+    // The singleton ViewModel keeps its zoom across navigation; the stored
+    // default_zoom_level is applied only to the FIRST initialization so a
+    // zoom the user chose in this session is not reset on every page visit.
+    private bool _defaultZoomApplied;
 
     // Captured at construction time (the ViewModel is created on the UI thread) so
     // messenger callbacks arriving from background threads can marshal to the UI thread.
@@ -228,6 +234,7 @@ public partial class TimelineViewModel : ObservableObject
         IMediaService mediaService,
         IEraRepository eraRepository,
         ITagRepository tagRepository,
+        ISettingsService settingsService,
         ILogger<TimelineViewModel> logger)
     {
         _timelineService = timelineService;
@@ -237,6 +244,7 @@ public partial class TimelineViewModel : ObservableObject
         _mediaService = mediaService;
         _eraRepository = eraRepository;
         _tagRepository = tagRepository;
+        _settingsService = settingsService;
         _logger = logger;
 
         // The ViewModel is constructed on the UI thread; capture its dispatcher so
@@ -490,6 +498,8 @@ public partial class TimelineViewModel : ObservableObject
             IsLoading = true;
             StatusText = "Loading timeline...";
 
+            await ApplyDefaultZoomLevelAsync();
+
             TotalEventCount = await _eventService.GetTotalEventCountAsync();
 
             // Create initial viewport
@@ -505,6 +515,39 @@ public partial class TimelineViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Applies the Settings page's "Default Zoom Level" (default_zoom_level,
+    /// stored lowercase: year/month/week/day) the first time the timeline
+    /// initializes. An unknown or unreadable value keeps the built-in Month.
+    /// </summary>
+    private async Task ApplyDefaultZoomLevelAsync()
+    {
+        if (_defaultZoomApplied)
+        {
+            return;
+        }
+
+        _defaultZoomApplied = true;
+
+        try
+        {
+            var stored = await _settingsService.GetDefaultZoomLevelAsync();
+            if (Enum.TryParse<ZoomLevel>(stored?.Trim(), ignoreCase: true, out var zoomLevel) &&
+                Enum.IsDefined(typeof(ZoomLevel), zoomLevel))
+            {
+                CurrentZoomLevel = zoomLevel;
+            }
+            else
+            {
+                _logger.LogWarning("Unrecognized default zoom level '{Value}'; using {Fallback}", stored, CurrentZoomLevel);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the default zoom level; using {Fallback}", CurrentZoomLevel);
         }
     }
 

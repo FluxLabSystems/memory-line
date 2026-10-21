@@ -365,9 +365,7 @@ public class MediaService : IMediaService
         // the EXIF backfill above changed: the projection's map pin comes from
         // the event's linked locations, and the backfill may have just given one
         // coordinates. Locations are shared rows, so OTHER events linked to a
-        // backfilled location keep a stale pin - the same cross-entity fan-out
-        // the interface already records for a person's EventCount, and not a
-        // decision to take from inside a photo attach.
+        // backfilled location moved too; the backfill republishes those itself.
         // The duplicate-hash early return above wrote nothing and returns before
         // reaching this.
         if (publishProjection)
@@ -760,37 +758,63 @@ public class MediaService : IMediaService
     /// <see cref="IMediaService"/>) so tests can exercise the rule without a
     /// binary GPS-tagged image fixture; production reaches it only through
     /// <see cref="AttachAsync"/>.
+    ///
+    /// <para>A location is a shared row: every other event linked to one that
+    /// just gained coordinates now has a map pin a companion has not seen, so
+    /// those events are republished here (the attaching event is published by
+    /// the attach itself, after the media count has moved too). Best-effort,
+    /// like every projection publish - the coordinates are already saved.</para>
     /// </summary>
-    internal async Task BackfillEventLocationCoordinatesAsync(
+    /// <returns>The ids of the OTHER events whose projections were republished.</returns>
+    internal async Task<IReadOnlyList<string>> BackfillEventLocationCoordinatesAsync(
         string eventId,
         double latitude,
         double longitude,
         CancellationToken ct = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        var missingCoordinates = await context.Locations
-            .Where(l => l.EventLocations.Any(el => el.EventId == eventId))
-            .Where(l => l.Latitude == null || l.Longitude == null)
-            .ToListAsync(ct);
-
-        if (missingCoordinates.Count == 0)
+        List<string> otherLinkedEventIds;
+        await using (var context = await _contextFactory.CreateDbContextAsync(ct))
         {
-            return;
+            var missingCoordinates = await context.Locations
+                .Where(l => l.EventLocations.Any(el => el.EventId == eventId))
+                .Where(l => l.Latitude == null || l.Longitude == null)
+                .ToListAsync(ct);
+
+            if (missingCoordinates.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            foreach (var location in missingCoordinates)
+            {
+                location.Latitude = latitude;
+                location.Longitude = longitude;
+                location.GeocodedAt = null; // photo-sourced, not geocoded
+
+                _logger.LogInformation(
+                    "Backfilled coordinates ({Latitude}, {Longitude}) for location '{Name}' ({LocationId}) from photo EXIF GPS on event {EventId}.",
+                    latitude, longitude, location.Name, location.LocationId, eventId);
+            }
+
+            await context.SaveChangesAsync(ct);
+
+            var backfilledIds = missingCoordinates.Select(l => l.LocationId).ToList();
+            otherLinkedEventIds = await context.EventLocations
+                .AsNoTracking()
+                .Where(el => backfilledIds.Contains(el.LocationId) && el.EventId != eventId)
+                .Select(el => el.EventId)
+                .Distinct()
+                .ToListAsync(ct);
         }
 
-        foreach (var location in missingCoordinates)
+        // Fan out AFTER the context is disposed and the rows are committed: the
+        // publisher re-reads each event through its own connection.
+        foreach (var otherEventId in otherLinkedEventIds)
         {
-            location.Latitude = latitude;
-            location.Longitude = longitude;
-            location.GeocodedAt = null; // photo-sourced, not geocoded
-
-            _logger.LogInformation(
-                "Backfilled coordinates ({Latitude}, {Longitude}) for location '{Name}' ({LocationId}) from photo EXIF GPS on event {EventId}.",
-                latitude, longitude, location.Name, location.LocationId, eventId);
+            await PublishEventProjectionAsync(otherEventId);
         }
 
-        await context.SaveChangesAsync(ct);
+        return otherLinkedEventIds;
     }
 
     /// <summary>

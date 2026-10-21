@@ -53,4 +53,11 @@ public static class SettingKeys
     public const string SyncCursor = "sync_cursor";
     /// <summary>Automatically transcribe/extract remote captures after ingestion.</summary>
     public const string SyncAutoProcess = "sync_auto_process";
+    /// <summary>
+    /// "true" while a full timeline projection backfill is owed to the sync
+    /// service: set when a registration is saved and after a restore, cleared
+    /// by the sync worker once <c>ITimelineProjectionPublisher.PublishAllAsync</c>
+    /// has run. NOT seeded: absent = nothing owed.
+    /// </summary>
+    public const string TimelineProjectionBackfillPending = "timeline_projection_backfill_pending";
 }

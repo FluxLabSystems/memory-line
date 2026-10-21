@@ -62,7 +62,32 @@ public class SyncSettingsStore : ISyncSettingsStore
         await _settingsService.SetSettingAsync(SettingKeys.SyncRefreshToken, registration.RefreshToken);
         await _settingsService.SetSettingAsync(SettingKeys.SyncEnabled, true);
 
+        // A new registration means a server (or a device identity) that has
+        // never seen this archive: whatever the outbox remembers delivering
+        // was delivered as someone else. The worker projects everything again
+        // in its first cycle.
+        await SetProjectionBackfillPendingAsync(true);
+
         _logger.LogInformation("Sync registration saved for device {DeviceId}; sync enabled", registration.DeviceId);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsProjectionBackfillPendingAsync() =>
+        await _settingsService.GetSettingAsync(SettingKeys.TimelineProjectionBackfillPending, false);
+
+    /// <inheritdoc />
+    public async Task SetProjectionBackfillPendingAsync(bool pending)
+    {
+        if (pending)
+        {
+            await _settingsService.SetSettingAsync(SettingKeys.TimelineProjectionBackfillPending, true);
+        }
+        else
+        {
+            // Absent means "nothing owed" (the key is not seeded), so clearing
+            // is a delete rather than a "false" row.
+            await _settingsService.DeleteSettingAsync(SettingKeys.TimelineProjectionBackfillPending);
+        }
     }
 
     /// <inheritdoc />

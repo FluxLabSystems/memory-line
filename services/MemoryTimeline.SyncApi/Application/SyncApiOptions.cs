@@ -78,4 +78,16 @@ public class SyncApiOptions
 
     /// <summary>Minutes between assistant session reaps (the first runs at startup).</summary>
     public int AssistantReaperIntervalMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Days a trip's route context snapshots are kept (design §22 decision 9:
+    /// trails auto-delete after 14 days). Each trip's newest snapshot survives
+    /// the sweep so detour generation on a long trip keeps a position.
+    /// Terminal (dismissed/expired) detour suggestions age out on the same
+    /// clock.
+    /// </summary>
+    public int RouteContextRetentionDays { get; set; } = 14;
+
+    /// <summary>Hours a generated detour suggestion stays actionable when the provider sets no expiry.</summary>
+    public int DetourSuggestionLifetimeHours { get; set; } = 6;
 }

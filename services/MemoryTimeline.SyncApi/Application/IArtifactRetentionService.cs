@@ -22,4 +22,6 @@ public interface IArtifactRetentionService
 public sealed record RetentionSweepReport(
     int TemporaryFilesRemoved,
     int ArtifactsPurgedByAge,
-    int ArtifactsPurgedByPressure);
+    int ArtifactsPurgedByPressure,
+    int RouteContextsRemoved,
+    int DetourSuggestionsRemoved);

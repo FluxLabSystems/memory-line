@@ -37,6 +37,12 @@ builder.Services.AddSingleton<ISyncChangeService, SyncChangeService>();
 builder.Services.AddSingleton<IAssistantService, AssistantService>();
 builder.Services.AddSingleton<IArtifactRetentionService, ArtifactRetentionService>();
 builder.Services.AddSingleton<IAssistantSessionReaper, AssistantSessionReaper>();
+builder.Services.AddSingleton<ITripService, TripService>();
+builder.Services.AddSingleton<IDetourService, DetourService>();
+// No place provider ships with the service (design §22 decision 5 names
+// Google Places with an Apple failover; neither adapter exists yet), so detour
+// generation is honest and yields nothing until one is registered here.
+builder.Services.AddSingleton<IDetourSuggestionProvider, NoDetourSuggestionProvider>();
 
 // Housekeeping on timers: the artifact retention / temp-file sweep (design
 // §22 decision 7) and the idle assistant-session reaper (§6.6). Hosted
@@ -126,6 +132,8 @@ CaptureEndpoints.MapEndpoints(authenticatedApi);
 ArtifactEndpoints.MapEndpoints(authenticatedApi);
 SyncEndpoints.MapEndpoints(authenticatedApi);
 AssistantEndpoints.MapEndpoints(authenticatedApi);
+TripEndpoints.MapEndpoints(authenticatedApi);
+DetourEndpoints.MapEndpoints(authenticatedApi);
 
 app.Run();
 

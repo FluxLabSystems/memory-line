@@ -45,6 +45,15 @@ public static class SyncApiErrorCodes
     public const string AssistantSessionNotFound = "assistant_session_not_found";
     public const string AssistantTurnNotFound = "assistant_turn_not_found";
     public const string AssistantTurnConflict = "assistant_turn_conflict";
+    public const string TripNotFound = "trip_not_found";
+
+    /// <summary>PATCH /trips/{id} asked for a status the trip state machine does not allow from where it is.</summary>
+    public const string TripInvalidTransition = "trip_invalid_transition";
+
+    public const string DetourNotFound = "detour_not_found";
+
+    /// <summary>A detour disposition the monotonic state machine does not allow (out of accepted, dismissed or expired).</summary>
+    public const string DetourInvalidTransition = "detour_invalid_transition";
 
     /// <summary>
     /// The caller is authenticated but may not author this change: a companion

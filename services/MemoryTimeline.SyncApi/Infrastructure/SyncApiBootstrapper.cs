@@ -77,6 +77,16 @@ public static class SyncApiBootstrapper
             throw new InvalidOperationException("SyncApi:AssistantReaperIntervalMinutes must be positive.");
         }
 
+        if (options.RouteContextRetentionDays <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:RouteContextRetentionDays must be positive.");
+        }
+
+        if (options.DetourSuggestionLifetimeHours <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:DetourSuggestionLifetimeHours must be positive.");
+        }
+
         var dataDir = Path.GetFullPath(string.IsNullOrWhiteSpace(options.DataDir) ? "data" : options.DataDir);
         Directory.CreateDirectory(dataDir);
         var artifactsDir = Path.Combine(dataDir, "artifacts");
@@ -104,6 +114,7 @@ public static class SyncApiBootstrapper
         await db.Database.EnsureCreatedAsync();
         await EnsureCaptureStatusTableAsync(db);
         await EnsureAssistantTablesAsync(db);
+        await EnsureTripTablesAsync(db);
 
         var retentionCutoffUtc = DateTime.UtcNow.AddHours(-IdempotencyRetentionHours);
         await db.IdempotencyRecords
@@ -223,6 +234,91 @@ public static class SyncApiBootstrapper
         await db.Database.ExecuteSqlRawAsync(
             "CREATE UNIQUE INDEX IF NOT EXISTS IX_assistant_turns_session_id_sequence " +
             "ON assistant_turns (session_id, sequence)");
+    }
+
+    /// <summary>
+    /// Creates the trip, route-context and detour-suggestion tables (design §19
+    /// Phase 5) on databases that predate them, for the same reason the
+    /// capture_status and assistant tables are created this way: EnsureCreated
+    /// leaves an existing database untouched. Every statement is idempotent.
+    /// Column names and types mirror the trip mappings in <see cref="SyncDbContext"/>.
+    /// </summary>
+    private static async Task EnsureTripTablesAsync(SyncDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS trips (
+                trip_id TEXT NOT NULL CONSTRAINT PK_trips PRIMARY KEY,
+                owner_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                started_at_utc TEXT NULL,
+                ended_at_utc TEXT NULL,
+                origin_label TEXT NULL,
+                destination_label TEXT NULL,
+                status TEXT NOT NULL,
+                preferences_json TEXT NULL,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_trips_owner_id ON trips (owner_id)");
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS trip_route_contexts (
+                route_context_id TEXT NOT NULL CONSTRAINT PK_trip_route_contexts PRIMARY KEY,
+                trip_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                captured_at_utc TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                horizontal_accuracy_m REAL NULL,
+                heading_degrees REAL NULL,
+                speed_mps REAL NULL,
+                route_progress REAL NULL,
+                remaining_distance_m REAL NULL,
+                remaining_duration_s REAL NULL,
+                current_road_name TEXT NULL,
+                destination_eta_utc TEXT NULL,
+                provider TEXT NULL,
+                received_at_utc TEXT NOT NULL
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_trip_route_contexts_trip_id_captured_at_utc " +
+            "ON trip_route_contexts (trip_id, captured_at_utc)");
+
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS detour_suggestions (
+                suggestion_id TEXT NOT NULL CONSTRAINT PK_detour_suggestions PRIMARY KEY,
+                trip_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                generated_at_utc TEXT NOT NULL,
+                expires_at_utc TEXT NULL,
+                place_provider TEXT NULL,
+                provider_place_id TEXT NULL,
+                name TEXT NOT NULL,
+                category TEXT NULL,
+                reason TEXT NULL,
+                latitude REAL NULL,
+                longitude REAL NULL,
+                route_added_distance_m REAL NULL,
+                route_added_duration_s REAL NULL,
+                open_status TEXT NULL,
+                next_open_interval TEXT NULL,
+                price_summary TEXT NULL,
+                admission_currency TEXT NULL,
+                confidence REAL NULL,
+                verification_sources_json TEXT NULL,
+                state TEXT NOT NULL,
+                state_changed_at_utc TEXT NOT NULL
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE INDEX IF NOT EXISTS IX_detour_suggestions_trip_id_generated_at_utc " +
+            "ON detour_suggestions (trip_id, generated_at_utc)");
     }
 
     private static byte[] ResolveSigningKey(SyncApiOptions options, string dataDir)

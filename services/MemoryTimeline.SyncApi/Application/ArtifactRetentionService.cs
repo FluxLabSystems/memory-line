@@ -147,16 +147,66 @@ public sealed class ArtifactRetentionService : IArtifactRetentionService
             }
         }
 
-        var report = new RetentionSweepReport(temporaryFilesRemoved, purgedByAge, purgedByPressure);
-        if (report.TemporaryFilesRemoved > 0 || report.ArtifactsPurgedByAge > 0 || report.ArtifactsPurgedByPressure > 0)
+        var (routeContextsRemoved, suggestionsRemoved) = await SweepTripDataAsync(db, nowUtc, cancellationToken);
+
+        var report = new RetentionSweepReport(
+            temporaryFilesRemoved, purgedByAge, purgedByPressure, routeContextsRemoved, suggestionsRemoved);
+        if (report.TemporaryFilesRemoved > 0 || report.ArtifactsPurgedByAge > 0 || report.ArtifactsPurgedByPressure > 0
+            || report.RouteContextsRemoved > 0 || report.DetourSuggestionsRemoved > 0)
         {
             _logger.LogInformation(
-                "Retention sweep removed {TempFiles} temporary file(s) and purged {ByAge} artifact(s) by age " +
-                "and {ByPressure} under storage pressure.",
-                report.TemporaryFilesRemoved, report.ArtifactsPurgedByAge, report.ArtifactsPurgedByPressure);
+                "Retention sweep removed {TempFiles} temporary file(s), purged {ByAge} artifact(s) by age " +
+                "and {ByPressure} under storage pressure, and deleted {RouteContexts} route context(s) " +
+                "and {Suggestions} finished detour suggestion(s).",
+                report.TemporaryFilesRemoved, report.ArtifactsPurgedByAge, report.ArtifactsPurgedByPressure,
+                report.RouteContextsRemoved, report.DetourSuggestionsRemoved);
         }
 
         return report;
+    }
+
+    /// <summary>
+    /// Route-context retention (design §22 decision 9): snapshots received
+    /// before the window are deleted, except each trip's newest one so a long
+    /// trip keeps a position for detour generation. Detour suggestions that
+    /// are dismissed or expired age out on the same clock; saved and accepted
+    /// ones are the user's choices and stay with the trip.
+    /// </summary>
+    private async Task<(int RouteContexts, int Suggestions)> SweepTripDataAsync(
+        SyncDbContext db, DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var cutoffUtc = nowUtc.AddDays(-_options.RouteContextRetentionDays);
+
+        var stale = await db.RouteContexts
+            .Where(r => r.ReceivedAtUtc < cutoffUtc)
+            .ToListAsync(cancellationToken);
+        var removedContexts = 0;
+        if (stale.Count > 0)
+        {
+            var tripIds = stale.Select(r => r.TripId).Distinct().ToList();
+            var newestPerTrip = await db.RouteContexts.AsNoTracking()
+                .Where(r => tripIds.Contains(r.TripId))
+                .GroupBy(r => r.TripId)
+                .Select(g => g.OrderByDescending(r => r.CapturedAtUtc).ThenByDescending(r => r.ReceivedAtUtc).First().RouteContextId)
+                .ToListAsync(cancellationToken);
+            var keep = newestPerTrip.ToHashSet(StringComparer.Ordinal);
+            var doomed = stale.Where(r => !keep.Contains(r.RouteContextId)).ToList();
+            db.RouteContexts.RemoveRange(doomed);
+            removedContexts = doomed.Count;
+        }
+
+        var finishedSuggestions = await db.DetourSuggestions
+            .Where(s => (s.State == DetourSuggestionState.Dismissed || s.State == DetourSuggestionState.Expired)
+                && s.StateChangedAtUtc < cutoffUtc)
+            .ToListAsync(cancellationToken);
+        db.DetourSuggestions.RemoveRange(finishedSuggestions);
+
+        if (removedContexts > 0 || finishedSuggestions.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return (removedContexts, finishedSuggestions.Count);
     }
 
     private static long BytesHeld(ServerArtifact artifact) => artifact.ActualByteLength ?? artifact.ExpectedByteLength;

@@ -754,6 +754,10 @@ paths:
       tags: [trips]
       operationId: createTrip
       summary: Create a trip.
+      description: >-
+        The service mints the tripId. Trips are owner-scoped, like captures:
+        every device of the owner reads and updates the same trips. A status
+        of active at creation stamps startedAtUtc when none is sent.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -772,12 +776,53 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalServerError' }
+    get:
+      tags: [trips]
+      operationId: listTrips
+      summary: List the owner's trips, newest first (added in v1.4).
+      responses:
+        '200':
+          description: The owner's trips.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /trips/{tripId}:
+    get:
+      tags: [trips]
+      operationId: getTrip
+      summary: Fetch a trip (added in v1.4).
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: The trip.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
     patch:
       tags: [trips]
       operationId: updateTrip
       summary: Update trip metadata or status (latest valid state transition wins).
+      description: >-
+        The body is a JSON object where an absent key means "unchanged" and an
+        explicit null clears a nullable field, as for captures. A status key
+        runs through the trip state machine (design doc section 12.2):
+        planned → active | archived; active → paused | completed | archived;
+        paused → active | completed | archived; completed → archived; archived
+        is terminal. Asking for the status the trip already has is a no-op;
+        any other move the machine lacks is rejected with 409
+        trip_invalid_transition. Moving to active stamps startedAtUtc when the
+        trip has none, and completing stamps endedAtUtc the same way.
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -808,6 +853,11 @@ paths:
       description: >-
         One contextual snapshot per capture by default; continuous trails only
         when the user explicitly enables trip logging (design doc section 6.4).
+        A client-supplied routeContextId that parses as a UUID is honoured and
+        replaying it returns the stored snapshot with 200; otherwise the
+        service mints one. The service keeps a trip's trail for 14 days
+        (section 22, decision 9) and always its newest snapshot; exact
+        location is never logged (section 14.5).
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -818,6 +868,12 @@ paths:
             schema:
               $ref: '#/components/schemas/RouteContext'
       responses:
+        '200':
+          description: Idempotent replay — a snapshot with this routeContextId already exists and is returned as-is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteContext'
         '201':
           description: Snapshot stored.
           content:
@@ -827,6 +883,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   /trips/{tripId}/detours/generate:
@@ -834,6 +891,16 @@ paths:
       tags: [trips]
       operationId: generateDetourSuggestions
       summary: Generate verified detour suggestions for the trip's current route context.
+      description: >-
+        Runs the configured place provider against the trip's most recent
+        route context snapshot and returns the suggestions it produced, newest
+        first, each stored in the proposed state with an expiry. Places
+        already suggested, saved, accepted or dismissed on this trip are never
+        proposed again (design doc section 10.5). An empty array is a real
+        answer, not an error: the trip has no route context yet, or the service
+        has no place provider configured — the shipped service has none (the
+        Google/Apple adapters of section 22, decision 5, are not built), so it
+        invents nothing.
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -877,6 +944,15 @@ paths:
       tags: [detours]
       operationId: acceptDetourSuggestion
       summary: Accept a suggestion (monotonic; not overwritten by a stale proposed state).
+      description: >-
+        Disposition is a monotonic state machine (design doc section 12.2):
+        proposed, heard and saved may each become accepted or dismissed, both
+        terminal; a suggestion whose expiresAtUtc has passed becomes expired,
+        also terminal, the moment it is read. Asking for the state a
+        suggestion already has is a no-op 200; a move the machine lacks is
+        409 detour_invalid_transition. The same rules apply to dismiss and
+        save (save is a step before accept or dismiss, from proposed or heard
+        only).
       parameters:
         - $ref: '#/components/parameters/SuggestionId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1057,7 +1133,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: The addressed entity does not exist or is not owned by the caller.
+      description: >-
+        The addressed entity does not exist or is not owned by the caller
+        (capture_not_found, artifact_not_found, device_unknown,
+        assistant_session_not_found, assistant_turn_not_found, trip_not_found,
+        detour_not_found).
       content:
         application/json:
           schema:
@@ -1862,8 +1942,10 @@ components:
 
     Trip:
       type: object
-      description: Trip lifecycle entity (design doc section 6.4).
-      required: [tripId, name, status]
+      description: >-
+        Trip lifecycle entity (design doc section 6.4; the TripResponse DTO).
+        Owner-scoped: every device of the owner sees the same trips.
+      required: [tripId, name, status, createdAtUtc, updatedAtUtc]
       properties:
         tripId:
           type: string
@@ -1891,21 +1973,36 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-          description: Free-form trip preferences (detour categories, budget, pace, ...).
+          description: Free-form trip preferences (detour categories, budget, pace, ...). Stored and returned verbatim.
+        createdAtUtc:
+          type: string
+          format: date-time
+          description: When the service created the trip (added in v1.4).
+        updatedAtUtc:
+          type: string
+          format: date-time
+          description: When the trip last changed on the service (added in v1.4).
 
     TripCreateRequest:
       type: object
+      description: Creates a trip (the TripCreateRequest DTO). The server mints the tripId.
       required: [name]
       properties:
         name:
           type: string
+          maxLength: 200
         startedAtUtc:
           type: string
           format: date-time
+          nullable: true
         originLabel:
           type: string
+          nullable: true
+          maxLength: 500
         destinationLabel:
           type: string
+          nullable: true
+          maxLength: 500
         status:
           type: string
           enum: [planned, active, paused, completed, archived]
@@ -1913,6 +2010,7 @@ components:
         preferencesJson:
           type: object
           additionalProperties: true
+          nullable: true
 
     TripUpdateRequest:
       type: object
@@ -1946,44 +2044,65 @@ components:
 
     RouteContext:
       type: object
-      description: Point-in-time route/location snapshot for a trip (design doc section 6.4).
+      description: >-
+        Point-in-time route/location snapshot for a trip (design doc section
+        6.4; the TripRouteContext DTO — named differently in C# only because
+        ASP.NET Core has a RouteContext type). The same shape is the request
+        and the response: routeContextId and tripId are optional on the way in
+        and always present on the way out. Optional fields the client did not
+        send come back as null, since responses do not strip nulls.
       required: [capturedAtUtc, latitude, longitude]
       properties:
         routeContextId:
           type: string
           format: uuid
-          description: Client-generated snapshot ID; the server mints one when absent.
+          nullable: true
+          description: Client-generated snapshot ID; the server mints one when absent or not a UUID.
         tripId:
           type: string
           format: uuid
+          nullable: true
+          description: Taken from the path on write; present on read.
         capturedAtUtc:
           type: string
           format: date-time
         latitude:
           type: number
           format: double
+          minimum: -90
+          maximum: 90
         longitude:
           type: number
           format: double
+          minimum: -180
+          maximum: 180
         horizontalAccuracyM:
           type: number
           format: double
+          nullable: true
         headingDegrees:
           type: number
           format: double
+          nullable: true
         speedMps:
           type: number
           format: double
+          nullable: true
         routeProgress:
           type: number
           format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
           description: Fraction of the route completed, 0.0 to 1.0.
         remainingDistanceM:
           type: number
           format: double
+          nullable: true
         remainingDurationS:
           type: number
           format: double
+          nullable: true
         currentRoadName:
           type: string
           nullable: true
@@ -1993,13 +2112,19 @@ components:
           nullable: true
         provider:
           type: string
+          nullable: true
           description: Source of the routing data, e.g. apple_maps.
 
     # --------------------------------------------------------------- detours
 
     DetourSuggestion:
       type: object
-      description: Verified detour suggestion (design doc section 6.5).
+      description: >-
+        Verified detour suggestion (design doc section 6.5; the
+        DetourSuggestion DTO). The descriptive fields are what the place
+        provider produced and are relayed as they came — a field the provider
+        could not fill is null, since responses do not strip nulls. Only state
+        moves, through the accept/dismiss/save endpoints and expiry.
       required: [suggestionId, tripId, generatedAtUtc, name, state]
       properties:
         suggestionId:
@@ -2014,32 +2139,47 @@ components:
         expiresAtUtc:
           type: string
           format: date-time
+          nullable: true
+          description: >-
+            When the suggestion stops being actionable; the service applies a
+            default lifetime when the provider sets none. Past it, the state
+            becomes expired on the next read.
         placeProvider:
           type: string
+          nullable: true
         providerPlaceId:
           type: string
+          nullable: true
+          description: The provider's own place ID; what keeps a place from being suggested twice.
         name:
           type: string
         category:
           type: string
+          nullable: true
         reason:
           type: string
+          nullable: true
           description: Short human-readable justification for the suggestion.
         latitude:
           type: number
           format: double
+          nullable: true
         longitude:
           type: number
           format: double
+          nullable: true
         routeAddedDistanceM:
           type: number
           format: double
+          nullable: true
         routeAddedDurationS:
           type: number
           format: double
+          nullable: true
         openStatus:
           type: string
           enum: [open, closed, closing_soon, unknown]
+          nullable: true
         nextOpenInterval:
           type: string
           nullable: true
@@ -2052,6 +2192,7 @@ components:
         confidence:
           type: number
           format: double
+          nullable: true
           description: Verification confidence, 0.0 to 1.0.
         verificationSourcesJson:
           type: object

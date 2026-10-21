@@ -5,7 +5,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using MemoryTimeline.SyncContracts;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MemoryTimeline.SyncApi.Tests;
 
@@ -42,8 +44,15 @@ public class SyncApiFixture : IDisposable
     {
     }
 
-    /// <summary>Boots the host with the standard settings plus <paramref name="extraSettings"/> (which win on key collisions).</summary>
-    protected SyncApiFixture(IReadOnlyDictionary<string, string>? extraSettings)
+    /// <summary>
+    /// Boots the host with the standard settings plus <paramref name="extraSettings"/>
+    /// (which win on key collisions), and lets a derived fixture swap services
+    /// through <paramref name="configureServices"/>, which runs after the
+    /// application's own registrations so a later singleton wins.
+    /// </summary>
+    protected SyncApiFixture(
+        IReadOnlyDictionary<string, string>? extraSettings,
+        Action<IServiceCollection>? configureServices = null)
     {
         _dataDir = Path.Combine(
             Path.GetTempPath(), "memory-line-syncapi-tests", Guid.NewGuid().ToString("N"));
@@ -58,6 +67,11 @@ public class SyncApiFixture : IDisposable
             foreach (var (key, value) in extraSettings ?? new Dictionary<string, string>())
             {
                 builder.UseSetting(key, value);
+            }
+
+            if (configureServices is not null)
+            {
+                builder.ConfigureTestServices(configureServices);
             }
         });
     }

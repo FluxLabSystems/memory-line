@@ -99,6 +99,48 @@ public class RetentionSweepTests : IClassFixture<SyncApiFixture>
         File.Exists(freshPart).Should().BeTrue("a file written within the grace window may still be in flight");
     }
 
+    [Fact]
+    public async Task Sweep_DeletesOldRouteContextsButKeepsEachTripsNewestSnapshot()
+    {
+        var (_, client) = await _fixture.RegisterClientAsync("ios", "iPhone");
+        var trip = await TripFlowTests.CreateTripAsync(client, "Long haul");
+        var captured = DateTime.UtcNow;
+        var first = await AppendRouteContextAsync(client, trip.TripId, captured.AddMinutes(-10));
+        var second = await AppendRouteContextAsync(client, trip.TripId, captured.AddMinutes(-5));
+        var newest = await AppendRouteContextAsync(client, trip.TripId, captured);
+
+        var sweep = _fixture.Services.GetRequiredService<IArtifactRetentionService>();
+
+        var early = await sweep.SweepAsync(DateTime.UtcNow.AddDays(13), CancellationToken.None);
+        early.RouteContextsRemoved.Should().Be(0, "all three are inside the 14-day window");
+
+        var late = await sweep.SweepAsync(DateTime.UtcNow.AddDays(15), CancellationToken.None);
+        late.RouteContextsRemoved.Should().Be(2, "the trail goes, the trip's current position stays");
+
+        // A replay tells us what survived: a stored snapshot replays with 200,
+        // a deleted one is re-created with 201.
+        (await ReplayAsync(client, trip.TripId, newest)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReplayAsync(client, trip.TripId, first)).StatusCode.Should().Be(HttpStatusCode.Created);
+        (await ReplayAsync(client, trip.TripId, second)).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    private static async Task<TripRouteContext> AppendRouteContextAsync(HttpClient client, string tripId, DateTime capturedAtUtc)
+    {
+        var request = new TripRouteContext
+        {
+            RouteContextId = Guid.NewGuid().ToString("D"),
+            CapturedAtUtc = capturedAtUtc,
+            Latitude = 44.0,
+            Longitude = -110.0,
+        };
+        var response = await client.PostAsJsonAsync($"/api/v1/trips/{tripId}/route-context", request, SyncApiFixture.Json);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return request;
+    }
+
+    private static Task<HttpResponseMessage> ReplayAsync(HttpClient client, string tripId, TripRouteContext snapshot)
+        => client.PostAsJsonAsync($"/api/v1/trips/{tripId}/route-context", snapshot, SyncApiFixture.Json);
+
     /// <summary>Creates a capture and uploads a 100-byte audio artifact; returns the IDs.</summary>
     internal static async Task<(string CaptureId, string ArtifactId)> UploadCaptureAsync(HttpClient client)
     {

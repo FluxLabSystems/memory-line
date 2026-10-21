@@ -85,6 +85,8 @@ value has a working default, so an empty configuration runs.
 | `TemporaryFileGraceMinutes` | `SyncApi__TemporaryFileGraceMinutes` | `60` | How long a `*.tmp` part/assembly file may go unwritten before the sweep treats it as crash-orphaned. |
 | `AssistantSessionIdleHours` | `SyncApi__AssistantSessionIdleHours` | `24` | Hours without an accepted turn after which an assistant session is reaped (the design doc names no figure). |
 | `AssistantReaperIntervalMinutes` | `SyncApi__AssistantReaperIntervalMinutes` | `60` | Minutes between idle-session reaps; the first runs at startup. |
+| `RouteContextRetentionDays` | `SyncApi__RouteContextRetentionDays` | `14` | Days a trip's route-context trail is kept (design §22 decision 9); each trip's newest snapshot survives. Dismissed/expired detour suggestions age out on the same clock. |
+| `DetourSuggestionLifetimeHours` | `SyncApi__DetourSuggestionLifetimeHours` | `6` | How long a generated detour suggestion stays actionable when the provider sets no expiry. |
 
 > **Note:** raising `SyncApi:MaxPartSizeBytes` above ~28.6 MB (Kestrel's
 > 30,000,000-byte default `MaxRequestBodySize`) additionally requires raising
@@ -355,6 +357,31 @@ feed as ordered `assistant_turn_chunk` changes.
   `pending` and is eventually reaped. The Windows client's responder is
   tracked separately.
 
+## Trips and detours (design §19 Phase 5)
+
+The eight trip/detour operations of the v1 contract are implemented, plus two
+additive reads (`GET /trips`, `GET /trips/{tripId}`, contract v1.4). Trips are
+plain owner-scoped REST resources — nothing here rides the change feed.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/trips` | Create a trip (server-minted ID; `name` required). |
+| GET | `/api/v1/trips` | List the owner's trips, newest first. |
+| GET | `/api/v1/trips/{tripId}` | Fetch a trip. |
+| PATCH | `/api/v1/trips/{tripId}` | Update fields (absent = unchanged, null = clear) and status through the state machine: `planned → active \| archived`, `active → paused \| completed \| archived`, `paused → active \| completed \| archived`, `completed → archived`; `archived` is terminal. Same status is a no-op; anything else is 409 `trip_invalid_transition`. Activating stamps `startedAtUtc`, completing stamps `endedAtUtc`, when unset. |
+| POST | `/api/v1/trips/{tripId}/route-context` | Store a route/location snapshot (201; a replayed `routeContextId` returns the stored one with 200). Coordinates are validated and never logged. |
+| POST | `/api/v1/trips/{tripId}/detours/generate` | Run the place provider against the newest snapshot; returns the new `proposed` suggestions. Places already on the trip (any state) are never proposed twice. |
+| GET | `/api/v1/trips/{tripId}/detours` | List suggestions, newest first; expiry is applied on read. |
+| POST | `/api/v1/detours/{suggestionId}/accept` · `/dismiss` · `/save` | Monotonic disposition: `proposed`/`heard`/`saved` → `accepted` or `dismissed` (both terminal); `save` from `proposed`/`heard`; `expired` is terminal. Same state is a no-op 200; a disallowed move is 409 `detour_invalid_transition`. |
+
+**What generates the suggestions: nothing, yet.** The detour agent (§10) needs
+a place provider — Google Places inside the free tier with an Apple failover per
+§22 decision 5 — and neither adapter exists. The service defines the seam
+(`IDetourSuggestionProvider`) and registers `NoDetourSuggestionProvider`, so
+`generate` answers an honest empty array rather than an invented place. A real
+adapter is a DI registration away; the lifecycle around it (persistence,
+expiry, exclusion of repeats, disposition) is built and tested against a fake.
+
 ## Retention sweep (design §22 decisions 7 and 9)
 
 A background sweep (`RetentionSweepHostedService` → `ArtifactRetentionService`)
@@ -380,6 +407,11 @@ runs at startup and every `RetentionSweepIntervalMinutes`:
   uploads and assemblies write through — are deleted once they have gone
   unwritten for `TemporaryFileGraceMinutes`. In-process failures already clean
   up after themselves; this covers a process that died mid-write.
+- **Route-context trails** (§22 decision 9) are deleted after
+  `RouteContextRetentionDays`, keeping each trip's newest snapshot so a long
+  trip still has a position for detour generation; dismissed and expired
+  detour suggestions age out on the same clock. Saved and accepted ones are
+  the user's choices and stay with the trip.
 
 ## Security notes (design §14)
 
@@ -406,6 +438,8 @@ runs at startup and every `RetentionSweepIntervalMinutes`:
 {DataDir}/                 # SyncApi__DataDir, default ./data
 ├── sync.db                # SQLite: owners, devices, captures, capture_artifacts,
 │                          #   capture_status (latest Windows-authored status per capture),
+│                          #   assistant_sessions, assistant_turns (Phase 4),
+│                          #   trips, trip_route_contexts, detour_suggestions (Phase 5),
 │                          #   sync_changes (change log), push_receipts, idempotency_records
 ├── artifacts/             # filesystem blob store (parts during upload, assembled artifacts after complete;
 │                          #   blobs of purged artifacts are gone, their rows stay with state=purged)
@@ -423,9 +457,12 @@ deployment across a schema change, stop the service and delete `sync.db`
 `artifacts/` are content-addressed by ID and can be removed too). Proper
 migrations are planned before any stable release.
 
-> The Phase 3 `capture_status` table is the one exception so far: because
-> `EnsureCreated` leaves an existing database untouched, startup issues an
-> idempotent `CREATE TABLE IF NOT EXISTS` for it. Upgrading a Phase 1/2
-> deployment to Phase 3 therefore does **not** require deleting `sync.db`. That
-> is a stopgap, not a migration system — the next schema change still needs
-> real migrations.
+> Every table added after Phase 1 — `capture_status` (Phase 3), the assistant
+> tables (Phase 4) and the trip/detour tables (Phase 5) — is created by an
+> idempotent `CREATE TABLE IF NOT EXISTS` at startup, because `EnsureCreated`
+> leaves an existing database untouched. Upgrading an older deployment across
+> those phases therefore does **not** require deleting `sync.db`. That is still
+> a stopgap, not a migration system: it can add tables, not alter existing
+> ones, so the first change to an existing table's columns needs real
+> migrations. The column lists in `SyncApiBootstrapper` deliberately duplicate
+> the `SyncDbContext` mappings and must be kept in step.

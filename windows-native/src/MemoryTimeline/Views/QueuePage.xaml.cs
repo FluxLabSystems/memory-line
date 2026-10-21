@@ -14,6 +14,12 @@ public sealed partial class QueuePage : Page
     /// </summary>
     private const int LongTextWarningThreshold = 20000;
 
+    /// <summary>
+    /// Navigation parameter sent by the Jump List "Start Recording" quick
+    /// action (App.HandleActivationAction): starts capturing on arrival.
+    /// </summary>
+    public const string StartRecordingParameter = "record";
+
     private bool _isPasteDialogOpen;
 
     /// <summary>
@@ -40,6 +46,10 @@ public sealed partial class QueuePage : Page
         var parameter = e.Parameter as string;
         var openPasteDialog = string.Equals(parameter, "paste", StringComparison.OrdinalIgnoreCase);
 
+        // The Jump List "Start Recording" quick action navigates here with the
+        // "record" parameter so capturing starts as soon as the page is up.
+        var startRecording = string.Equals(parameter, StartRecordingParameter, StringComparison.OrdinalIgnoreCase);
+
         // The Home page's recall card navigates here with "recall:<promptId>"
         // so the queue's recall card focuses that prompt.
         string? focusRecallPromptId = null;
@@ -59,6 +69,20 @@ public sealed partial class QueuePage : Page
         if (openPasteDialog)
         {
             OpenPasteDialogWhenReady();
+        }
+
+        if (startRecording)
+        {
+            if (ViewModel.CanStartRecording)
+            {
+                // StartRecordingAsync reports its own failures in the status line.
+                await ViewModel.StartRecordingCommand.ExecuteAsync(null);
+            }
+            else
+            {
+                // A session is already open (recording or paused); do not stack a second one.
+                ViewModel.StatusText = "A recording is already in progress";
+            }
         }
     }
 

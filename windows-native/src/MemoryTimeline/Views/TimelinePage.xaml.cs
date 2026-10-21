@@ -10,6 +10,12 @@ namespace MemoryTimeline.Views;
 /// </summary>
 public sealed partial class TimelinePage : Page
 {
+    /// <summary>
+    /// Navigation parameter sent by the Jump List "New Event" quick action
+    /// (App.HandleActivationAction): opens the blank add-event dialog.
+    /// </summary>
+    public const string NewEventParameter = "new-event";
+
     public TimelineViewModel ViewModel { get; }
 
     public TimelinePage()
@@ -37,8 +43,15 @@ public sealed partial class TimelinePage : Page
             var draftId = parameter.Substring("draft:".Length).Trim();
             if (!string.IsNullOrEmpty(draftId))
             {
-                OpenEventDraftWhenReady(draftId);
+                OpenEventDialogWhenReady(() => TimelineControl.ShowEventDialogFromDraftAsync(draftId));
             }
+            return;
+        }
+
+        // Jump List "New Event": open the blank add-event dialog dated today.
+        if (string.Equals(parameter, NewEventParameter, StringComparison.OrdinalIgnoreCase))
+        {
+            OpenEventDialogWhenReady(() => TimelineControl.ShowNewEventDialogAsync());
             return;
         }
 
@@ -50,12 +63,12 @@ public sealed partial class TimelinePage : Page
     }
 
     /// <summary>
-    /// Opens the create-event dialog prefilled from the given draft once the
-    /// timeline control is loaded (a ContentDialog needs a live XamlRoot), then
-    /// defers the actual show through the DispatcherQueue so the layout pass
-    /// has completed.
+    /// Runs a dialog-opening action once the timeline control is loaded (a
+    /// ContentDialog needs a live XamlRoot), deferring the actual show through
+    /// the DispatcherQueue so the layout pass has completed. Used for draft
+    /// resume and the Jump List "New Event" action.
     /// </summary>
-    private void OpenEventDraftWhenReady(string draftId)
+    private void OpenEventDialogWhenReady(Func<Task> showDialogAsync)
     {
         void ShowDeferred()
         {
@@ -63,11 +76,13 @@ public sealed partial class TimelinePage : Page
             {
                 try
                 {
-                    await TimelineControl.ShowEventDialogFromDraftAsync(draftId);
+                    await showDialogAsync();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Draft resume is best-effort; the timeline still renders normally.
+                    // Opening the dialog is best-effort; the timeline still
+                    // renders normally. Say so instead of staying silent.
+                    ViewModel.StatusText = $"Could not open the event dialog: {ex.Message}";
                 }
             });
         }

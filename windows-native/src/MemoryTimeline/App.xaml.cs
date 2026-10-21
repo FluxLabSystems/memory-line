@@ -419,18 +419,23 @@ public partial class App : Application
                 return;
             }
 
-            var target = actionToken.ToLowerInvariant() switch
+            // Quick actions perform what their Jump List labels promise, not just
+            // a page change: "New Event" opens the add-event dialog
+            // (TimelinePage.NewEventParameter) and "Start Recording" starts
+            // capturing (QueuePage.StartRecordingParameter).
+            (string? target, string? parameter) = actionToken.ToLowerInvariant() switch
             {
-                "action:new-event" or "action:view-timeline" => "Timeline",
-                "action:start-recording" => "Queue",
-                "action:search" => "Search",
-                _ => null
+                "action:new-event" => ("Timeline", TimelinePage.NewEventParameter),
+                "action:view-timeline" => ("Timeline", (string?)null),
+                "action:start-recording" => ("Queue", QueuePage.StartRecordingParameter),
+                "action:search" => ("Search", (string?)null),
+                _ => ((string?)null, (string?)null)
             };
 
             if (target != null)
             {
                 var navigationService = Services.GetRequiredService<INavigationService>();
-                navigationService.NavigateTo(target);
+                navigationService.NavigateTo(target, parameter);
             }
         }
         catch (Exception ex)

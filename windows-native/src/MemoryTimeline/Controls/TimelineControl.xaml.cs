@@ -840,6 +840,16 @@ public sealed partial class TimelineControl : UserControl
         await ShowAddEventDialogAsync(dateAtPosition);
     }
 
+    /// <summary>
+    /// Opens the blank create-event dialog dated today. Entry point for the
+    /// Jump List "New Event" quick action (TimelinePage navigation parameter
+    /// "new-event"); the toolbar button uses the same dialog.
+    /// </summary>
+    public Task ShowNewEventDialogAsync()
+    {
+        return ShowAddEventDialogAsync(DateTime.Now);
+    }
+
     private async Task ShowAddEventDialogAsync(DateTime defaultDate)
     {
         _editingEventId = null;

@@ -68,4 +68,14 @@ public class SyncApiOptions
     /// keep writing theirs, so a generous window costs nothing.
     /// </summary>
     public int TemporaryFileGraceMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Hours without an accepted turn after which an assistant session is
+    /// reaped (its turns deleted, unanswered ones cancelled on the feed). The
+    /// design doc names no figure; a day outlasts any single drive.
+    /// </summary>
+    public int AssistantSessionIdleHours { get; set; } = 24;
+
+    /// <summary>Minutes between assistant session reaps (the first runs at startup).</summary>
+    public int AssistantReaperIntervalMinutes { get; set; } = 60;
 }

@@ -36,11 +36,13 @@ builder.Services.AddSingleton<IArtifactService, ArtifactService>();
 builder.Services.AddSingleton<ISyncChangeService, SyncChangeService>();
 builder.Services.AddSingleton<IAssistantService, AssistantService>();
 builder.Services.AddSingleton<IArtifactRetentionService, ArtifactRetentionService>();
+builder.Services.AddSingleton<IAssistantSessionReaper, AssistantSessionReaper>();
 
 // Housekeeping on timers: the artifact retention / temp-file sweep (design
-// §22 decision 7). Hosted services start after InitializeDatabaseAsync below
-// has created the schema.
+// §22 decision 7) and the idle assistant-session reaper (§6.6). Hosted
+// services start after InitializeDatabaseAsync below has created the schema.
 builder.Services.AddHostedService<RetentionSweepHostedService>();
+builder.Services.AddHostedService<AssistantSessionReaperHostedService>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

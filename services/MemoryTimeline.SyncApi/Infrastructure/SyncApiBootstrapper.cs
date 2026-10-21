@@ -67,6 +67,16 @@ public static class SyncApiBootstrapper
             throw new InvalidOperationException("SyncApi:TemporaryFileGraceMinutes must be zero or positive.");
         }
 
+        if (options.AssistantSessionIdleHours <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:AssistantSessionIdleHours must be positive.");
+        }
+
+        if (options.AssistantReaperIntervalMinutes <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:AssistantReaperIntervalMinutes must be positive.");
+        }
+
         var dataDir = Path.GetFullPath(string.IsNullOrWhiteSpace(options.DataDir) ? "data" : options.DataDir);
         Directory.CreateDirectory(dataDir);
         var artifactsDir = Path.Combine(dataDir, "artifacts");

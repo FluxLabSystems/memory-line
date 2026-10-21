@@ -26,9 +26,12 @@ Phase 3 added the **capture status handoff** and the **timeline projection
 feed** on top of that change log — no new endpoints, only new change types
 (see below).
 
-The assistant, trips, and detours endpoints exist in the API contract
-([`shared-contracts/openapi/memory-line-sync-v1.yaml`](../shared-contracts/openapi/memory-line-sync-v1.yaml))
-but are later phases — this service does not implement them yet.
+Phase 4 added the **assistant** endpoints (sessions and turns, routed to a
+responder over the same change log) and an idle-session reaper — see
+[Assistant](#assistant-design-19-phase-4). Phase 5's **trip and detour**
+endpoints are implemented as persistence and lifecycle — see
+[Trips and detours](#trips-and-detours-design-19-phase-5); detour
+*generation* needs a place provider the service does not ship with.
 
 ## Layout
 
@@ -80,6 +83,8 @@ value has a working default, so an empty configuration runs.
 | `ArtifactStorageBudgetBytes` | `SyncApi__ArtifactStorageBudgetBytes` | `0` (off) | Soft cap on bytes held by complete artifacts; over it, the sweep purges *acknowledged* artifacts oldest-first until back under. Unacknowledged artifacts are never purged for space. |
 | `RetentionSweepIntervalMinutes` | `SyncApi__RetentionSweepIntervalMinutes` | `360` | Minutes between retention sweeps; the first runs at startup. |
 | `TemporaryFileGraceMinutes` | `SyncApi__TemporaryFileGraceMinutes` | `60` | How long a `*.tmp` part/assembly file may go unwritten before the sweep treats it as crash-orphaned. |
+| `AssistantSessionIdleHours` | `SyncApi__AssistantSessionIdleHours` | `24` | Hours without an accepted turn after which an assistant session is reaped (the design doc names no figure). |
+| `AssistantReaperIntervalMinutes` | `SyncApi__AssistantReaperIntervalMinutes` | `60` | Minutes between idle-session reaps; the first runs at startup. |
 
 > **Note:** raising `SyncApi:MaxPartSizeBytes` above ~28.6 MB (Kestrel's
 > 30,000,000-byte default `MaxRequestBodySize`) additionally requires raising
@@ -311,6 +316,44 @@ without a second identifier.
   only; `GET /sync/pull` returns whatever is on the owner's log, so these types
   need no pull-side change and echo suppression treats them like everything
   else — a device receives its peers' projections and decisions, never its own.
+
+## Assistant (design §19 Phase 4)
+
+Five endpoints under `/api/v1/assistant` (contract v1.3): open and read a
+session, submit a turn, poll a turn, cancel a turn. **The service stores and
+routes; it never answers.** Windows is the brain — the archive, the retrieval
+index and the prompts live in `MemoryTimeline.Core` — so a submitted question
+is persisted as a `pending` turn and published as an `assistant_turn` change on
+the feed; whichever responder claims it pushes the answered turn back through
+`POST /sync/push`, and the asking device reads the answer either by polling
+`GET /assistant/turns/{turnId}` or off its own pull loop. Streaming rides the
+feed as ordered `assistant_turn_chunk` changes.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/assistant/sessions` | Open a conversation (preferred responder, optional surface/mode/trip). Only the opening device may use it. |
+| GET | `/api/v1/assistant/sessions/{sessionId}` | Read a session (another device's session is a plain 404). |
+| POST | `/api/v1/assistant/sessions/{sessionId}/turns` | Ask; idempotent on the client `turnId` (a replay returns the stored turn, answer included, with 200). |
+| GET | `/api/v1/assistant/turns/{turnId}` | Poll a turn; `result` is present once completed. |
+| POST | `/api/v1/assistant/turns/{turnId}/cancel` | Cancel; terminal and published so a responder mid-answer stops. A late answer for a cancelled turn is discarded. |
+
+- **Responder modes** (`windows` default, `provider`, `on_device`) are chosen
+  per turn; the service records which one actually answered and every result
+  carries a `grounding` value (`archive`, `client_context`, `none`).
+- **Idle sessions are reaped.** `AssistantSessionReaper` runs at startup and
+  every `AssistantReaperIntervalMinutes`: a session with no accepted turn for
+  `AssistantSessionIdleHours` is deleted with its turns, and any turn still
+  waiting on a responder is first marked `cancelled` and published with no
+  source device — so both the asker and a responder that wakes later see it,
+  and a late answer is dropped by the same terminal-state guard an explicit
+  cancel relies on. Questions and answers are personal memory content
+  (§14.5); a day-old conversation has no reason to stay on the service.
+- **What is not here: the Windows responder.** Nothing in this repository yet
+  claims an `assistant_turn` off the feed and answers it — `MemoryTimeline.Sync`
+  pulls and publishes capture status and projections, but has no assistant
+  responder. Until it exists, a turn asked from a phone or the Mac stays
+  `pending` and is eventually reaped. The Windows client's responder is
+  tracked separately.
 
 ## Retention sweep (design §22 decisions 7 and 9)
 

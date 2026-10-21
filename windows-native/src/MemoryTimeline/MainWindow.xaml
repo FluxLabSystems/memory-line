@@ -13,6 +13,19 @@
             <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="Refresh_Invoked"/>
             <!-- Ctrl+Shift+V opens the paste-text capture dialog on the Queue page -->
             <KeyboardAccelerator Key="V" Modifiers="Control,Shift" Invoked="PasteCapture_Invoked"/>
+            <!-- Ctrl+1..7 jump to the main pages. Chosen to stay clear of the
+                 page-level accelerators (Ctrl+E edit / Delete on the timeline)
+                 and of text-editing chords inside TextBoxes. -->
+            <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="NavigateToTimeline_Invoked"/>
+            <KeyboardAccelerator Key="Number2" Modifiers="Control" Invoked="NavigateToQueue_Invoked"/>
+            <KeyboardAccelerator Key="Number3" Modifiers="Control" Invoked="NavigateToReview_Invoked"/>
+            <KeyboardAccelerator Key="Number4" Modifiers="Control" Invoked="NavigateToConnections_Invoked"/>
+            <KeyboardAccelerator Key="Number5" Modifiers="Control" Invoked="NavigateToSearch_Invoked"/>
+            <KeyboardAccelerator Key="Number6" Modifiers="Control" Invoked="NavigateToAnalytics_Invoked"/>
+            <KeyboardAccelerator Key="Number7" Modifiers="Control" Invoked="NavigateToSettings_Invoked"/>
+            <!-- Alt+Left / Alt+Right walk the Frame's back/forward stack (Menu = Alt). -->
+            <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="GoBack_Invoked"/>
+            <KeyboardAccelerator Key="Right" Modifiers="Menu" Invoked="GoForward_Invoked"/>
         </Grid.KeyboardAccelerators>
         <!-- IsBackEnabled and the selected item are kept in sync with the Frame by
              MainWindow.OnNavigationServiceNavigated, so programmatic navigations

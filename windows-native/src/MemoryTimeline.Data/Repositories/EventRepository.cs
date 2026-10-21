@@ -90,15 +90,39 @@ public class EventRepository : IEventRepository
     public async Task DeleteAsync(Event entity)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
+        await RemoveCrossReferencesAsync(context, new[] { entity.EventId });
         // Remove attaches the detached entity and marks it Deleted.
         context.Events.Remove(entity);
         await context.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Stages the deletion of every cross-reference that names any of
+    /// <paramref name="eventIds"/> at either end, in the SAME context as the
+    /// event delete so one SaveChanges carries both. Both cross_references
+    /// foreign keys are ON DELETE RESTRICT and every connection runs with
+    /// foreign_keys=ON, so without this an event the Connections page has ever
+    /// related to another cannot be deleted at all — SQLite refuses the row
+    /// delete and the user sees a failure for a memory they chose to remove.
+    /// A cross-reference is a fact about a pair; it ends with either endpoint.
+    /// </summary>
+    private static async Task RemoveCrossReferencesAsync(AppDbContext context, IReadOnlyCollection<string> eventIds)
+    {
+        var references = await context.CrossReferences
+            .Where(cr => eventIds.Contains(cr.EventId1) || eventIds.Contains(cr.EventId2))
+            .ToListAsync();
+        if (references.Count > 0)
+        {
+            context.CrossReferences.RemoveRange(references);
+        }
+    }
+
     public async Task DeleteRangeAsync(IEnumerable<Event> entities)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
-        context.Events.RemoveRange(entities);
+        var list = entities.ToList();
+        await RemoveCrossReferencesAsync(context, list.Select(e => e.EventId).ToList());
+        context.Events.RemoveRange(list);
         await context.SaveChangesAsync();
     }
 

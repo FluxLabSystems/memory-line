@@ -63,7 +63,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private string _llmProvider = "Anthropic";
 
     [ObservableProperty]
-    private string _llmModel = "claude-3-5-sonnet-20241022";
+    private string _llmModel = SeededLlmModel;
 
     [ObservableProperty]
     private string _llmBaseUrl = string.Empty;
@@ -172,6 +172,18 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     public string AppName => "Memory Timeline";
     public string AppVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
     public string BuildDate => File.GetLastWriteTime(Assembly.GetExecutingAssembly().Location).ToString("yyyy-MM-dd");
+
+    // Seeded defaults for "Reset to Defaults", mirrored from
+    // AppDbContext.SeedDefaultSettings (theme "light", default_zoom_level
+    // "month", llm_provider "anthropic", llm_model "claude-sonnet-4-20250514",
+    // llm_base_url "", embedding_provider "local", audio_input_device_id "").
+    // Core does not expose the seed values as constants, so keep these in step
+    // with that seed when it changes.
+    private const string SeededThemeDisplay = "Light";
+    private const string SeededZoomLevelDisplay = "Month";
+    private const string SeededLlmProviderDisplay = "Anthropic";
+    private const string SeededLlmModel = "claude-sonnet-4-20250514";
+    private const string SeededEmbeddingProviderDisplay = "Local (on-device)";
 
     // Available options
     public List<string> ThemeOptions { get; } = new() { "System", "Light", "Dark", "Solarized Dark" };
@@ -394,30 +406,92 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Resets every setting on this page to the database seed defaults (not
+    /// an arbitrary "Dark"/old-model set) and removes both stored API keys.
+    /// Save skips blank key fields on purpose (a blank box means "unchanged"),
+    /// so the keys are cleared explicitly before saving.
+    /// </summary>
     [RelayCommand]
     private async Task ResetSettingsAsync()
     {
         try
         {
-            // Reset to defaults
-            SelectedTheme = "Dark";
-            SelectedZoomLevel = "Month";
-            LlmProvider = "Anthropic";
-            LlmModel = "claude-3-5-sonnet-20241022";
+            SelectedTheme = SeededThemeDisplay;
+            SelectedZoomLevel = SeededZoomLevelDisplay;
+            LlmProvider = SeededLlmProviderDisplay;
+            LlmModel = SeededLlmModel;
             LlmBaseUrl = string.Empty;
-            SelectedEmbeddingProvider = "Local (on-device)";
+            SelectedEmbeddingProvider = SeededEmbeddingProviderDisplay;
             SelectedAudioInputDevice = AudioInputDevices.FirstOrDefault();
-            ApiKey = string.Empty;
-            EmbeddingApiKey = string.Empty;
+
+            await ClearStoredApiKeyAsync();
+            await ClearStoredEmbeddingApiKeyAsync();
 
             await SaveSettingsAsync();
-            StatusMessage = "Settings reset to defaults";
+            StatusMessage = "Settings reset to defaults (API keys removed)";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error resetting settings");
-            StatusMessage = "Error resetting settings";
+            StatusMessage = $"Error resetting settings: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// "Clear key" next to the Anthropic key box: deletes the stored key.
+    /// Needed because Save treats an empty key field as "leave unchanged".
+    /// </summary>
+    [RelayCommand]
+    private async Task ClearApiKeyAsync()
+    {
+        try
+        {
+            await ClearStoredApiKeyAsync();
+            StatusMessage = "Anthropic API key removed";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing the Anthropic API key");
+            StatusMessage = $"Could not remove the API key: {ex.Message}";
+        }
+    }
+
+    /// <summary>"Clear key" next to the embedding key box: blanks the stored OpenAI key.</summary>
+    [RelayCommand]
+    private async Task ClearEmbeddingApiKeyAsync()
+    {
+        try
+        {
+            await ClearStoredEmbeddingApiKeyAsync();
+            StatusMessage = "Embedding API key removed";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing the embedding API key");
+            StatusMessage = $"Could not remove the embedding API key: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// The Anthropic key row ("ApiKey") is not seeded, so removing the key
+    /// means deleting the row - readers treat a missing row as "no key".
+    /// </summary>
+    private async Task ClearStoredApiKeyAsync()
+    {
+        await _settingsService.DeleteSettingAsync(SettingKeys.AnthropicApiKey);
+        ApiKey = string.Empty;
+    }
+
+    /// <summary>
+    /// embedding_api_key IS a seeded row (seed value ""), so it is blanked
+    /// rather than deleted to keep the seeded key set intact; readers treat
+    /// an empty value as "no key".
+    /// </summary>
+    private async Task ClearStoredEmbeddingApiKeyAsync()
+    {
+        await _settingsService.SetSettingAsync(SettingKeys.EmbeddingApiKey, string.Empty);
+        EmbeddingApiKey = string.Empty;
     }
 
     /// <summary>

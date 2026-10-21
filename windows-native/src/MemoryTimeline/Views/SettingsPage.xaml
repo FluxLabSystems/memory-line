@@ -115,13 +115,26 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="API Key"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <PasswordBox x:Name="ApiKeyBox"
-                                Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
-                                PlaceholderText="Enter API key"
-                                HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Your API key will be stored securely"
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="ApiKeyBox"
+                                    Grid.Column="0"
+                                    Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
+                                    PlaceholderText="Enter API key"
+                                    HorizontalAlignment="Stretch"/>
+                        <!-- Save leaves a blank key box alone ("unchanged"), so removal is explicit. -->
+                        <Button Grid.Column="1"
+                               Content="Clear key"
+                               Command="{x:Bind ViewModel.ClearApiKeyCommand}"
+                               ToolTipService.ToolTip="Remove the stored Anthropic API key"/>
+                    </Grid>
+                    <TextBlock Text="Anthropic key for Claude. Stored in the local settings database on this PC; leave the box blank to keep the saved key, or use Clear key to remove it."
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <StackPanel Spacing="8">
@@ -140,13 +153,25 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="Embedding API Key (OpenAI)"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <PasswordBox x:Name="EmbeddingApiKeyBox"
-                                Password="{x:Bind ViewModel.EmbeddingApiKey, Mode=TwoWay}"
-                                PlaceholderText="Enter OpenAI API key for embeddings"
-                                HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Only needed when the embedding provider is OpenAI (cloud)"
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="EmbeddingApiKeyBox"
+                                    Grid.Column="0"
+                                    Password="{x:Bind ViewModel.EmbeddingApiKey, Mode=TwoWay}"
+                                    PlaceholderText="Enter OpenAI API key for embeddings"
+                                    HorizontalAlignment="Stretch"/>
+                        <Button Grid.Column="1"
+                               Content="Clear key"
+                               Command="{x:Bind ViewModel.ClearEmbeddingApiKeyCommand}"
+                               ToolTipService.ToolTip="Remove the stored OpenAI embedding API key"/>
+                    </Grid>
+                    <TextBlock Text="Only needed when the embedding provider is OpenAI (cloud). Leave blank to keep the saved key, or use Clear key to remove it."
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <InfoBar IsOpen="{x:Bind ViewModel.ShowReEmbedWarning, Mode=OneWay}"

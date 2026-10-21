@@ -53,6 +53,27 @@ jobs:
         working-directory: website
         run: node check-links.mjs
 
+      # The rendered site is committed (website/_site) so the repository's
+      # Pages deployment is reviewable as a diff. That only works if whoever
+      # changes markdown also rebuilds and commits the output, so a stale
+      # _site fails the run. The page footer carries the build date; changes
+      # to that line alone are ignored (-I), everything else counts — as do
+      # files the build added or removed, which git status reports.
+      - name: Fail if the committed website/_site is stale
+        run: |
+          set -euo pipefail
+          git diff -I 'generated [0-9]{4}-[0-9]{2}-[0-9]{2}' --stat --exit-code -- website/_site > /tmp/site-diff.txt || {
+            echo "::error::website/_site is stale. Run 'npm --prefix website run build' and commit the result."
+            cat /tmp/site-diff.txt
+            exit 1
+          }
+          untracked="$(git status --porcelain --untracked-files=all -- website/_site)"
+          if [ -n "$untracked" ]; then
+            echo "::error::website/_site has files the committed tree does not (or vice versa). Rebuild and commit."
+            echo "$untracked"
+            exit 1
+          fi
+
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3

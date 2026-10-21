@@ -1,17 +1,30 @@
 name: Sync API Build
 
-# Compile + test of the Memory Line Sync API (ASP.NET Core, net8.0) and the
+# Compile + test of the Memory Line Sync API (ASP.NET Core, net10.0) and the
 # shared sync contracts library. Unlike the WinUI solution, these are plain
 # cross-platform .NET projects, so they build and run their full test suite on
 # a Linux runner with the dotnet CLI.
+#
+# The test suite includes the contract-compatibility gate
+# (ContractCompatibilityTests), which reads shared-contracts/openapi/*.yaml and
+# shared-contracts/README.md, so the whole shared-contracts tree is in the path
+# filter — not only the dotnet/ half.
 
 on:
   push:
     branches:
-      - claude/design-document-ingestion-27bl5z
+      - main
     paths:
       - 'services/**'
-      - 'shared-contracts/dotnet/**'
+      - 'shared-contracts/**'
+      - '.github/workflows/sync-api-build.yml'
+  # Any pull request touching the service or the contracts gets built,
+  # regardless of branch name; the push trigger above only covered a branch
+  # that had long since merged, so nothing ran on PRs at all.
+  pull_request:
+    paths:
+      - 'services/**'
+      - 'shared-contracts/**'
       - '.github/workflows/sync-api-build.yml'
   workflow_dispatch:
 

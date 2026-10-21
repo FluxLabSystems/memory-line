@@ -14,18 +14,15 @@ name: Windows Native Build
 on:
   push:
     branches:
-      - claude/multi-agent-code-review-bVmNX
-      - claude/design-document-ingestion-27bl5z
-      - claude/multi-agent-document-exec-597ynm
-      - claude/remove-electron-macos-prep-j9gl75
+      - main
     paths:
       - 'windows-native/**'
       - 'shared-contracts/dotnet/**'
       - '.github/workflows/windows-native-build.yml'
   # Any pull request touching the Windows sources gets built, regardless of
-  # branch name. The push list above is a per-branch opt-in that a new branch
-  # silently misses, which meant a PR could change the WinUI solution and merge
-  # with no Windows build having run at all.
+  # branch name. The push trigger used to be a per-branch opt-in listing four
+  # long-merged claude/* branches, which a new branch silently missed; it now
+  # covers main, so what lands is built as well as what is proposed.
   pull_request:
     paths:
       - 'windows-native/**'

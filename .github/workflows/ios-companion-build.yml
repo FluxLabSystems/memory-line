@@ -19,7 +19,6 @@ on:
   push:
     branches:
       - main
-      - claude/remove-electron-macos-prep-j9gl75
     paths:
       - 'ios-companion/**'
       - '.github/workflows/ios-companion-build.yml'

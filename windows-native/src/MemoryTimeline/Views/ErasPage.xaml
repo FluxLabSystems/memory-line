@@ -161,7 +161,30 @@
                                                 <TranslateTransform X="-10"/>
                                             </Grid.RenderTransform>
 
-                                            <StackPanel Spacing="2" PointerPressed="MilestoneMarker_PointerPressed">
+                                            <!-- Click selects; double-click edits; right-click / press-and-hold
+                                                 opens Edit/Delete (RightTapped captures the marker for the flyout,
+                                                 mirroring TimelineControl's event context menu). -->
+                                            <StackPanel Spacing="2"
+                                                        PointerPressed="MilestoneMarker_PointerPressed"
+                                                        RightTapped="MilestoneMarker_RightTapped"
+                                                        DoubleTapped="MilestoneMarker_DoubleTapped">
+                                                <StackPanel.ContextFlyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="Edit Milestone"
+                                                                        Click="EditMilestoneMenuItem_Click">
+                                                            <MenuFlyoutItem.Icon>
+                                                                <FontIcon Glyph="&#xE70F;"/>
+                                                            </MenuFlyoutItem.Icon>
+                                                        </MenuFlyoutItem>
+                                                        <MenuFlyoutSeparator/>
+                                                        <MenuFlyoutItem Text="Delete Milestone"
+                                                                        Click="DeleteMilestoneMenuItem_Click">
+                                                            <MenuFlyoutItem.Icon>
+                                                                <FontIcon Glyph="&#xE74D;"/>
+                                                            </MenuFlyoutItem.Icon>
+                                                        </MenuFlyoutItem>
+                                                    </MenuFlyout>
+                                                </StackPanel.ContextFlyout>
                                                 <!-- Milestone icon -->
                                                 <Path Data="{x:Bind IconPathData}"
                                                       Fill="{x:Bind ColorCode, Converter={StaticResource HexToBrushConverter}}"
@@ -492,6 +515,14 @@
                       PrimaryButtonClick="EraDialog_PrimaryButtonClick"
                       SecondaryButtonClick="EraDialog_SecondaryButtonClick">
             <StackPanel Spacing="16" MinWidth="450">
+                <!-- In-dialog error surface: a failed save keeps the dialog (and
+                     the typed values) open and shows the reason here. -->
+                <InfoBar x:Name="EraDialogErrorBar"
+                         Severity="Error"
+                         IsOpen="False"
+                         IsClosable="True"
+                         Title="Could not save era"/>
+
                 <TextBox x:Name="EraNameBox"
                         Header="Name"
                         PlaceholderText="e.g., High School, College, First Job"/>
@@ -641,6 +672,13 @@
                       DefaultButton="Primary"
                       PrimaryButtonClick="MilestoneDialog_PrimaryButtonClick">
             <StackPanel Spacing="16" MinWidth="400">
+                <!-- In-dialog error surface (see EraDialogErrorBar). -->
+                <InfoBar x:Name="MilestoneDialogErrorBar"
+                         Severity="Error"
+                         IsOpen="False"
+                         IsClosable="True"
+                         Title="Could not save milestone"/>
+
                 <TextBox x:Name="MilestoneNameBox"
                         Header="Name"
                         PlaceholderText="e.g., Graduation, Wedding, Moved to NYC"/>

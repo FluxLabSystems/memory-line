@@ -250,12 +250,11 @@ public class RemoteChangeApplier : IRemoteChangeApplier
     /// </summary>
     private static string BuildLocalAudioPath(string captureId, ArtifactSummary artifact)
     {
-        var cacheDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "MemoryTimeline",
-            "SyncedAudio");
-        Directory.CreateDirectory(cacheDirectory);
-        return Path.Combine(cacheDirectory, $"{captureId}_{artifact.ArtifactId}{ExtensionFor(artifact)}");
+        // The SyncedAudio tree is one of the recording roots the cleanup sweep
+        // and the normalizer know about; the layout is defined once, in Core.
+        var paths = RecordingStoragePaths.Default;
+        Directory.CreateDirectory(paths.SyncedAudioRoot);
+        return paths.BuildSyncedAudioPath(captureId, artifact.ArtifactId, ExtensionFor(artifact));
     }
 
     private static string ExtensionFor(ArtifactSummary artifact)

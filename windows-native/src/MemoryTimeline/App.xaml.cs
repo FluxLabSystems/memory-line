@@ -146,6 +146,10 @@ public partial class App : Application
                     // through this seam. The Phase 0 resolver only handles local
                     // file-path locators; Phase 1 swaps in a sync download client.
                     services.AddSingleton<IArtifactResolver, LocalFileArtifactResolver>();
+                    // Design §8.5: ingestion normalizes any non-16 kHz-WAV source
+                    // (an iPhone's AAC .m4a, an imported MP3) through this port
+                    // before queueing it; Media Foundation does the transcoding.
+                    services.AddSingleton<IAudioNormalizer, WindowsAudioNormalizer>();
                     services.AddSingleton<ICaptureIngestionService, CaptureIngestionService>();
 
                     // iOS companion Phase 1: sync client + background worker (design §7.4).

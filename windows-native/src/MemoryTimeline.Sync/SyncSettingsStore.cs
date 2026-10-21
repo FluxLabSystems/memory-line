@@ -7,9 +7,11 @@ namespace MemoryTimeline.Sync;
 /// <summary>
 /// <see cref="ISyncSettingsStore"/> over the app settings table via
 /// <see cref="ISettingsService"/>, using the <see cref="SettingKeys"/> Sync*
-/// constants. Tokens live in app_settings like the app's other keys for now;
-/// DPAPI encryption at rest is the tracked hardening follow-up. Token values
-/// are never logged.
+/// constants. Tokens live in app_settings like the app's other keys; both token
+/// keys are in <see cref="SecretProtection.SecretKeys"/>, so the settings
+/// service stores them through the registered <see cref="ISecretProtector"/>
+/// (DPAPI on Windows) and hands this store plaintext on read. Token values are
+/// never logged.
 /// </summary>
 public class SyncSettingsStore : ISyncSettingsStore
 {

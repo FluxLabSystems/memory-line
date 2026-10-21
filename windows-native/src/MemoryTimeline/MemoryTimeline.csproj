@@ -39,6 +39,10 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="Whisper.net" Version="1.5.0" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.5.0" />
+    <!-- DPAPI (ProtectedData) for secrets at rest in app_settings; see
+         Services/DpapiSecretProtector.cs. Windows-only, which is why it is
+         referenced here and not in Core. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

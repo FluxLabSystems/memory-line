@@ -112,6 +112,10 @@ public partial class App : Application
                     services.AddSingleton<ISyncOutboxRepository, SyncOutboxRepository>();
 
                     // Register core services (stateless over the factory/repositories)
+                    // Secrets at rest: SettingsService stores API keys and sync tokens
+                    // through this port (user-scoped DPAPI on Windows); Core defaults to
+                    // the passthrough when nothing is registered.
+                    services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
                     services.AddSingleton<ISettingsService, SettingsService>();
                     // Revision history (F12): the writer is an optional ctor
                     // dependency of EventService/EventExtractionService/

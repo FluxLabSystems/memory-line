@@ -33,6 +33,11 @@ public static class SettingKeys
     public const string WeeklyDigestEnabled = "weekly_digest_enabled"; // matches DB seed
     public const string LastToastDate = "last_toast_date";     // NOT seeded: absent = toast never shown
 
+    // Recording & transcription (2026-10)
+    public const string AudioInputDeviceId = "audio_input_device_id"; // matches DB seed (""); empty = the system default microphone
+    public const string WhisperModel = "whisper_model";        // matches DB seed ("base"); a ggml model name Whisper.net can download: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large-v1, large-v2, large-v3
+    public const string WhisperLanguage = "whisper_language";  // matches DB seed ("auto"); ISO-639-1 code, or "auto" to detect per recording
+
     // Backup & revision history (2026-08 F12)
     public const string BackupDestination = "backup_destination";           // matches DB seed ("")
     public const string BackupIncludeMedia = "backup_include_media";        // matches DB seed ("true")

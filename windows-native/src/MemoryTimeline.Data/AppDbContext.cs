@@ -521,6 +521,11 @@ public class AppDbContext : DbContext
             new AppSetting { SettingKey = "auto_generate_embeddings", SettingValue = "true", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "ask_top_k", SettingValue = "12", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "ask_include_transcripts", SettingValue = "false", UpdatedAt = SeedTimestamp },
+            // Recording & transcription (2026-10): the capture microphone and
+            // the Whisper model/language the transcriber reads on every run.
+            new AppSetting { SettingKey = "audio_input_device_id", SettingValue = "", UpdatedAt = SeedTimestamp },
+            new AppSetting { SettingKey = "whisper_model", SettingValue = "base", UpdatedAt = SeedTimestamp },
+            new AppSetting { SettingKey = "whisper_language", SettingValue = "auto", UpdatedAt = SeedTimestamp },
             // Home / resurfacing (2026-08). last_toast_date is deliberately not
             // seeded: an absent row means "the daily toast has never been shown".
             new AppSetting { SettingKey = "home_is_default_page", SettingValue = "true", UpdatedAt = SeedTimestamp },

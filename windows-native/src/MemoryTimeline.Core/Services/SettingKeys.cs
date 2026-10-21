@@ -41,6 +41,11 @@ public static class SettingKeys
     public const string GeocodingProvider = "geocoding_provider"; // matches DB seed ("nominatim")
     public const string MapDefaultZoom = "map_default_zoom";      // matches DB seed ("1.0" = whole world)
 
+    // Audio capture / transcription (2026-10). audio_input_device_id: empty = system default input device.
+    public const string AudioInputDeviceId = "audio_input_device_id";
+    public const string WhisperModel = "whisper_model";
+    public const string WhisperLanguage = "whisper_language";
+
     // --- Sync (iOS companion Phase 1) ---
     // Tokens live in app_settings like the other keys for now; DPAPI encryption
     // at rest is the tracked hardening follow-up (HARDENING-FOLLOWUPS.md).

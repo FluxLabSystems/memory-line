@@ -23,6 +23,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     private readonly IAudioRecordingService _recordingService;
     private readonly IAudioPlaybackService _playbackService;
     private readonly IRecallPromptService _recallPromptService;
+    private readonly ISettingsService _settingsService;
     private readonly ILogger<QueueViewModel> _logger;
 
     /// <summary>
@@ -151,6 +152,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         IAudioRecordingService recordingService,
         IAudioPlaybackService playbackService,
         IRecallPromptService recallPromptService,
+        ISettingsService settingsService,
         ILogger<QueueViewModel> logger)
     {
         _queueService = queueService;
@@ -159,6 +161,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         _recordingService = recordingService;
         _playbackService = playbackService;
         _recallPromptService = recallPromptService;
+        _settingsService = settingsService;
         _logger = logger;
 
         // Capture the UI dispatcher while we are still on the UI thread.
@@ -257,17 +260,38 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     {
         try
         {
+            // The configured microphone (Settings -> Audio Recording); null =
+            // system default. The format is fixed at what Whisper consumes.
+            var deviceId = await ReadConfiguredInputDeviceIdAsync();
             var settings = new AudioRecordingSettings
             {
                 SampleRate = 16000,
                 BitsPerSample = 16,
-                Channels = 1
+                Channels = 1,
+                DeviceId = deviceId
             };
 
-            await _recordingService.StartRecordingAsync(settings);
+            var usedFallbackDevice = false;
+            try
+            {
+                await _recordingService.StartRecordingAsync(settings);
+            }
+            catch (Exception ex) when (deviceId != null)
+            {
+                // The saved device is gone or busy (StartRecordingAsync cleaned
+                // up and stayed Idle): retry once on the system default rather
+                // than refusing to record at all, and say so.
+                _logger.LogWarning(ex, "Configured microphone {DeviceId} could not start; retrying with the system default", deviceId);
+                settings.DeviceId = null;
+                await _recordingService.StartRecordingAsync(settings);
+                usedFallbackDevice = true;
+            }
+
             IsRecording = true;
             IsPaused = false;
-            StatusText = "Recording...";
+            StatusText = usedFallbackDevice
+                ? "Recording... (the microphone chosen in Settings is unavailable; using the system default)"
+                : "Recording...";
 
             StartRecordingTimer();
 
@@ -340,6 +364,25 @@ public partial class QueueViewModel : ObservableObject, IDisposable
             // CancelRecording) so the NEXT successful plain recording is not
             // stamped as this prompt's answer.
             _answeringRecallPromptId = null;
+        }
+    }
+
+    /// <summary>
+    /// Reads audio_input_device_id; empty/whitespace (the seeded default and
+    /// the "System default" picker entry) means null = let MediaCapture pick
+    /// the Windows default input device.
+    /// </summary>
+    private async Task<string?> ReadConfiguredInputDeviceIdAsync()
+    {
+        try
+        {
+            var stored = await _settingsService.GetSettingAsync<string>(SettingKeys.AudioInputDeviceId, string.Empty);
+            return string.IsNullOrWhiteSpace(stored) ? null : stored.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the configured microphone; using the system default");
+            return null;
         }
     }
 

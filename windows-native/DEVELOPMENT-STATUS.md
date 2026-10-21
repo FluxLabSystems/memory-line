@@ -618,7 +618,7 @@ Implemented audio recording, queue management, and speech-to-text integration us
 
 - [x] **Speech-to-Text**
   - [x] ISpeechToTextService interface
-  - [x] Windows Speech Recognition implementation
+  - [x] Local Whisper implementation (`WhisperSpeechToTextService`, file-based, offline). The original Windows Speech Recognition implementation transcribed the live microphone instead of the file; it was reduced to a fail-fast stub in the 2026-07 audit pass and deleted in 2026-10.
   - [x] Mock STT service for testing
   - [x] Transcription progress reporting
   - [x] Confidence scoring
@@ -788,15 +788,13 @@ Added export/import functionality, Windows 11 integration features (notification
   - [x] Group-based organization
   - [x] Duplicate prevention
 
-- [x] **Windows Timeline Service**
-  - [x] IWindowsTimelineService interface
-  - [x] WindowsTimelineService implementation
-  - [x] Publish events to Windows Timeline
-  - [x] User Activity API integration
-  - [x] Adaptive Card visualization
-  - [x] Deep link support (memory-timeline://event/{id})
-  - [x] Activity update and removal
-  - [x] Protocol handler registration
+- ~~**Windows Timeline Service**~~ — **removed 2026-10.** `IWindowsTimelineService` /
+  `WindowsTimelineService` (User Activity API + Adaptive Cards, `memory-timeline://event/{id}`
+  deep links) were registered in DI but never called by anything, the User Activity channel
+  needs package identity this unpackaged app does not have, the protocol handler existed only
+  in an unused packaging manifest, and Windows 11 dropped the Timeline UI. The port plan (§4.4)
+  also calls for dropping it. Deep links into events now exist only as the Jump List's
+  `event:{id}` launch arguments and toast activations.
 
 - [x] **Settings UI Enhancement**
   - [x] Export/Import section added to SettingsPage

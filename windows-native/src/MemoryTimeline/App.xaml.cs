@@ -213,7 +213,9 @@ public partial class App : Application
                     // User backups (.mtbak) + restore + scheduled backup (F12)
                     services.AddSingleton<IBackupService, BackupService>();
                     services.AddSingleton<INotificationService, Services.NotificationService>();
-                    services.AddSingleton<IWindowsTimelineService, WindowsTimelineService>();
+                    // Windows Timeline (UserActivityChannel) integration was removed:
+                    // it had no callers, needs package identity this unpackaged app
+                    // does not have, and Windows 11 dropped the Timeline UI.
                     services.AddSingleton<IJumpListService, JumpListService>();
 
                     // Phase 7: Advanced Search, Analytics, & Audio Import services

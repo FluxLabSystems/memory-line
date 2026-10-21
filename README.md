@@ -48,7 +48,7 @@ Every hop persists its state, so a failure at any stage is recoverable and visib
 
 ### Home & rediscovery
 - **Home page** — the default landing page: **On This Day** anniversary cards (precision-aware — only memories with a real day anchor appear on a specific day), a recall-prompt card, recent activity, and a first-run empty state that walks a new archive through capture.
-- **Daily toast** — an optional once-a-day notification when today has an anniversary; clicking it (and JumpList/Windows Timeline entries) deep-links straight to the event.
+- **Daily toast** — an optional once-a-day notification when today has an anniversary; clicking it (and a Jump List recent-event entry) deep-links straight to the event.
 - **Guided recall prompts** — the app mines the archive for gaps (empty stretches, people with no events, era edges, thin one-line events, anniversary anchors) and asks specific questions on the Home and Queue pages. A dismissed or answered question is **never asked again**; answers can be typed or spoken and flow into the normal extraction queue.
 
 ### Timeline
@@ -87,9 +87,8 @@ Every hop persists its state, so a failure at any stage is recoverable and visib
 
 ### Windows 11 integration
 - Toast **notifications** (e.g. "processing complete").
-- **JumpList** quick actions and recent events.
-- **Windows Timeline** activity publishing (Adaptive Cards).
-- Light / Dark / System **theming**; touch and pen friendly.
+- **Jump List** quick actions (new event, start recording, timeline, search) and a recent-events group that fills as you open events. Note: the app ships **unpackaged**, and the `Windows.UI.StartScreen.JumpList` API needs package identity, so the Jump List may be absent on an unpackaged install — the app detects the failure and logs it once rather than crashing.
+- Light / Dark / System **theming**; touch-friendly timeline gestures (pinch-zoom, drag-pan). There is no Windows Ink / pen-annotation feature, and the former Windows Timeline (User Activities) integration was removed — it had no callers and Windows 11 dropped the Timeline UI.
 
 ---
 

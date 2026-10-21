@@ -1,6 +1,9 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using MemoryTimeline.Core.Services;
+using MemoryTimeline.Data.Models;
+using MemoryTimeline.Data.Repositories;
 using MemoryTimeline.Services;
 using Microsoft.Extensions.Logging;
 using System.Collections.ObjectModel;
@@ -15,8 +18,13 @@ public partial class ConnectionsViewModel : ObservableObject
     private readonly IRagService _ragService;
     private readonly IEventService _eventService;
     private readonly IEmbeddingService _embeddingService;
+    private readonly ITagRepository _tagRepository;
     private readonly INavigationService _navigationService;
     private readonly ILogger<ConnectionsViewModel> _logger;
+
+    // Start date of the selected event, kept so a tag change can publish
+    // EventUpdatedMessage (which carries it) without a second lookup.
+    private DateTime _selectedEventStartDate;
 
     [ObservableProperty]
     private string? _selectedEventId;
@@ -77,12 +85,14 @@ public partial class ConnectionsViewModel : ObservableObject
         IRagService ragService,
         IEventService eventService,
         IEmbeddingService embeddingService,
+        ITagRepository tagRepository,
         INavigationService navigationService,
         ILogger<ConnectionsViewModel> logger)
     {
         _ragService = ragService;
         _eventService = eventService;
         _embeddingService = embeddingService;
+        _tagRepository = tagRepository;
         _navigationService = navigationService;
         _logger = logger;
     }
@@ -121,6 +131,7 @@ public partial class ConnectionsViewModel : ObservableObject
             }
 
             SelectedEventTitle = eventDetails.Title;
+            _selectedEventStartDate = eventDetails.StartDate;
             HasSelectedEvent = true;
 
             // Embedding availability drives the CTA / "generate first" hint
@@ -296,6 +307,53 @@ public partial class ConnectionsViewModel : ObservableObject
         if (!string.IsNullOrEmpty(SelectedEventId))
         {
             await LoadConnectionsForEventAsync(SelectedEventId);
+        }
+    }
+
+    /// <summary>
+    /// "Add" on a tag suggestion: links the suggested tag to the selected
+    /// event (creating the tag row if it does not exist yet) through
+    /// IEventService.AddTagToEventAsync, drops the suggestion from the list,
+    /// and lets the timeline/search know the event changed. Failures surface
+    /// in the page's error InfoBar.
+    /// </summary>
+    [RelayCommand]
+    private async Task AddSuggestedTagAsync(TagSuggestionDto? suggestion)
+    {
+        var eventId = SelectedEventId;
+        if (suggestion == null || string.IsNullOrEmpty(eventId))
+        {
+            return;
+        }
+
+        var tagName = suggestion.TagName.Trim();
+        if (tagName.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            ErrorMessage = null;
+
+            var tag = await _tagRepository.GetByNameAsync(tagName)
+                      ?? await _tagRepository.AddAsync(new Tag { TagName = tagName });
+
+            await _eventService.AddTagToEventAsync(eventId, tag.TagId, isManual: true, confidence: suggestion.Confidence);
+
+            TagSuggestions.Remove(suggestion);
+            TagSuggestionsCount = TagSuggestions.Count;
+            StatusMessage = $"Added tag \"{tagName}\" to {SelectedEventTitle}";
+
+            // Tags are part of the event as the timeline and search show it.
+            WeakReferenceMessenger.Default.Send(new EventUpdatedMessage(eventId, _selectedEventStartDate));
+
+            _logger.LogInformation("Added suggested tag {Tag} to event {EventId}", tagName, eventId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error adding suggested tag {Tag} to event {EventId}", tagName, eventId);
+            ErrorMessage = $"Could not add tag \"{tagName}\": {ex.Message}";
         }
     }
 

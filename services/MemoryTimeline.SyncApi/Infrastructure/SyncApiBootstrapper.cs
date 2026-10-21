@@ -47,6 +47,26 @@ public static class SyncApiBootstrapper
             throw new InvalidOperationException("SyncApi:MaxPartSizeBytes must be positive.");
         }
 
+        if (options.ArtifactRetentionDays <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:ArtifactRetentionDays must be positive.");
+        }
+
+        if (options.ArtifactStorageBudgetBytes < 0)
+        {
+            throw new InvalidOperationException("SyncApi:ArtifactStorageBudgetBytes must be zero or positive.");
+        }
+
+        if (options.RetentionSweepIntervalMinutes <= 0)
+        {
+            throw new InvalidOperationException("SyncApi:RetentionSweepIntervalMinutes must be positive.");
+        }
+
+        if (options.TemporaryFileGraceMinutes < 0)
+        {
+            throw new InvalidOperationException("SyncApi:TemporaryFileGraceMinutes must be zero or positive.");
+        }
+
         var dataDir = Path.GetFullPath(string.IsNullOrWhiteSpace(options.DataDir) ? "data" : options.DataDir);
         Directory.CreateDirectory(dataDir);
         var artifactsDir = Path.Combine(dataDir, "artifacts");

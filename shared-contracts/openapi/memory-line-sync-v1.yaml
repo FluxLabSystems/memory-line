@@ -394,6 +394,14 @@ paths:
         rejected with 409 artifact_not_complete. Range requests are supported.
         The response media type is the artifact's declared mediaType
         (application/octet-stream when none was declared).
+
+
+        Once the service's retention sweep has purged the bytes (14 days after
+        Windows acknowledged archival with a completed capture_status, or
+        sooner under storage pressure — design doc section 22, decision 7) the
+        artifact's state is purged and the request is rejected with 410
+        artifact_purged. That is permanent, never retryable: the metadata row
+        survives, the content does not.
       parameters:
         - $ref: '#/components/parameters/ArtifactId'
       responses:
@@ -407,6 +415,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   # -------------------------------------------------------------------- sync
@@ -1036,6 +1045,15 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Gone:
+      description: >-
+        The addressed content existed but was removed on purpose and will not
+        come back (artifact_purged: the retention sweep deleted the bytes after
+        Windows acknowledged archival). Never retryable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     PayloadTooLarge:
       description: The request body exceeds a server limit (e.g. artifact part size). Not retryable as-is.
       content:
@@ -1282,11 +1300,16 @@ components:
           description: Lowercase hex SHA-256 of the artifact bytes.
         state:
           type: string
-          enum: [pending, uploading, complete, failed]
+          enum: [pending, uploading, complete, failed, purged]
           description: >-
             SERVER artifact lifecycle state (upload progress on the sync
             service). Distinct from the Windows-local upload_state vocabulary
             (pending_upload, uploaded, ...), which never crosses this API.
+            purged (added in v1.4) means the retention sweep removed the bytes
+            after Windows acknowledged archival; byteLength and sha256 keep the
+            measured values, and a download answers 410 artifact_purged. A
+            client that only downloads complete artifacts needs no change to
+            handle it.
 
     ArtifactInitiateRequest:
       type: object

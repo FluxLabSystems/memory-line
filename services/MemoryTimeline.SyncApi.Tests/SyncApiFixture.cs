@@ -62,6 +62,12 @@ public class SyncApiFixture : IDisposable
         });
     }
 
+    /// <summary>The host's service provider, for tests that drive a service directly (sweeps, reapers).</summary>
+    public IServiceProvider Services => _factory.Services;
+
+    /// <summary>The temporary data directory the host runs against (SQLite file, artifact blobs, key, code).</summary>
+    public string DataDirectory => _dataDir;
+
     /// <summary>Creates an unauthenticated client against the test host.</summary>
     public HttpClient CreateClient() => _factory.CreateClient();
 
@@ -280,6 +286,22 @@ public sealed class StrictRotationSyncApiFixture : SyncApiFixture
 {
     public StrictRotationSyncApiFixture()
         : base(new Dictionary<string, string> { ["SyncApi:RefreshTokenGraceSeconds"] = "0" })
+    {
+    }
+}
+
+/// <summary>
+/// Host configured with a tiny SyncApi:ArtifactStorageBudgetBytes
+/// (<see cref="BudgetBytes"/>) so the retention sweep's storage-pressure path
+/// can be exercised with 100-byte artifacts.
+/// </summary>
+public sealed class StoragePressureSyncApiFixture : SyncApiFixture
+{
+    /// <summary>Configured budget: room for one 100-byte artifact, not two.</summary>
+    public const long BudgetBytes = 150;
+
+    public StoragePressureSyncApiFixture()
+        : base(new Dictionary<string, string> { ["SyncApi:ArtifactStorageBudgetBytes"] = BudgetBytes.ToString() })
     {
     }
 }

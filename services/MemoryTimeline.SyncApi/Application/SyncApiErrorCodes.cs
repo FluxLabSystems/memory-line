@@ -25,6 +25,13 @@ public static class SyncApiErrorCodes
     public const string ArtifactLengthMismatch = "artifact_length_mismatch";
     public const string ArtifactHashMismatch = "artifact_hash_mismatch";
     public const string ArtifactNotComplete = "artifact_not_complete";
+
+    /// <summary>
+    /// The artifact's bytes were removed by the retention sweep (design §22
+    /// decision 7). Permanent — the metadata row survives, the content does
+    /// not — so a download answers 410, never a retryable error.
+    /// </summary>
+    public const string ArtifactPurged = "artifact_purged";
     public const string AssistantSessionNotFound = "assistant_session_not_found";
     public const string AssistantTurnNotFound = "assistant_turn_not_found";
     public const string AssistantTurnConflict = "assistant_turn_conflict";

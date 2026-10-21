@@ -161,6 +161,70 @@ public sealed class FileSystemArtifactStore : IArtifactStore
         }
     }
 
+    public bool DeleteAssembled(Guid artifactId)
+    {
+        DeleteParts(artifactId);
+
+        var path = GetAssembledPath(artifactId);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete the blob of purged artifact {ArtifactId}.", artifactId);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete the blob of purged artifact {ArtifactId}.", artifactId);
+        }
+
+        return false;
+    }
+
+    public int SweepTemporaryFiles(DateTime olderThanUtc)
+    {
+        if (!Directory.Exists(_artifactsDirectory))
+        {
+            return 0;
+        }
+
+        var removed = 0;
+        // Both layouts: "{guid}.bin.{n}.tmp" at the top level (assemblies) and
+        // "{guid}/part_00001.{n}.tmp" inside part directories.
+        foreach (var path in Directory.EnumerateFiles(_artifactsDirectory, "*.tmp", SearchOption.AllDirectories))
+        {
+            try
+            {
+                // A request still writing its file keeps bumping the write
+                // time, so anything older than the grace window is orphaned.
+                if (File.GetLastWriteTimeUtc(path) >= olderThanUtc)
+                {
+                    continue;
+                }
+
+                File.Delete(path);
+                removed++;
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete orphaned temporary file {Path}.", path);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete orphaned temporary file {Path}.", path);
+            }
+        }
+
+        return removed;
+    }
+
     private string GetPartPath(Guid artifactId, int partNumber)
         => Path.Combine(_artifactsDirectory, artifactId.ToString("D"), $"part_{partNumber:D5}");
 

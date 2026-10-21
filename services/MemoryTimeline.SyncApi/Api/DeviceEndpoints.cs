@@ -33,11 +33,15 @@ public static class DeviceEndpoints
         IDeviceService devices,
         CancellationToken cancellationToken)
     {
-        var idempotencyKey = context.Request.Headers[IdempotencyEndpointFilter.HeaderName].ToString();
-        var result = await devices.RegisterAsync(
-            request,
-            string.IsNullOrWhiteSpace(idempotencyKey) ? null : idempotencyKey,
-            cancellationToken);
+        // Same bound as the authenticated routes' filter; the register endpoint
+        // reads the header itself because no device exists yet to scope a
+        // stored record to.
+        if (!IdempotencyEndpointFilter.TryReadKey(context, out var idempotencyKey, out var rejection))
+        {
+            return rejection!;
+        }
+
+        var result = await devices.RegisterAsync(request, idempotencyKey, cancellationToken);
         return result.IsSuccess
             ? Results.Json(result.Value, statusCode: StatusCodes.Status201Created)
             : ApiErrorResults.ToResult(result.Error!, context);

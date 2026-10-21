@@ -35,6 +35,12 @@ builder.Services.AddSingleton<ICaptureService, CaptureService>();
 builder.Services.AddSingleton<IArtifactService, ArtifactService>();
 builder.Services.AddSingleton<ISyncChangeService, SyncChangeService>();
 builder.Services.AddSingleton<IAssistantService, AssistantService>();
+builder.Services.AddSingleton<IArtifactRetentionService, ArtifactRetentionService>();
+
+// Housekeeping on timers: the artifact retention / temp-file sweep (design
+// §22 decision 7). Hosted services start after InitializeDatabaseAsync below
+// has created the schema.
+builder.Services.AddHostedService<RetentionSweepHostedService>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

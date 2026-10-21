@@ -76,6 +76,10 @@ value has a working default, so an empty configuration runs.
 | `RefreshTokenGraceSeconds` | `SyncApi__RefreshTokenGraceSeconds` | `300` | How long the previous refresh token stays usable after a rotation, so a client that never received the rotation response can recover. `0` = strict rotation. |
 | `MaxPartSizeBytes` | `SyncApi__MaxPartSizeBytes` | `8388608` (8 MiB) | Maximum accepted bytes per uploaded artifact part. |
 | `TokenSigningKeyBase64` | `SyncApi__TokenSigningKeyBase64` | generated on first run, persisted to `{DataDir}/signing.key` | Base64 HMAC-SHA256 signing key, at least 32 bytes decoded. |
+| `ArtifactRetentionDays` | `SyncApi__ArtifactRetentionDays` | `14` | Days an artifact's bytes are kept after Windows acknowledges archival (a `capture_status` of `completed`) before the retention sweep purges them (design §22 decision 7). |
+| `ArtifactStorageBudgetBytes` | `SyncApi__ArtifactStorageBudgetBytes` | `0` (off) | Soft cap on bytes held by complete artifacts; over it, the sweep purges *acknowledged* artifacts oldest-first until back under. Unacknowledged artifacts are never purged for space. |
+| `RetentionSweepIntervalMinutes` | `SyncApi__RetentionSweepIntervalMinutes` | `360` | Minutes between retention sweeps; the first runs at startup. |
+| `TemporaryFileGraceMinutes` | `SyncApi__TemporaryFileGraceMinutes` | `60` | How long a `*.tmp` part/assembly file may go unwritten before the sweep treats it as crash-orphaned. |
 
 > **Note:** raising `SyncApi:MaxPartSizeBytes` above ~28.6 MB (Kestrel's
 > 30,000,000-byte default `MaxRequestBodySize`) additionally requires raising
@@ -308,6 +312,32 @@ without a second identifier.
   need no pull-side change and echo suppression treats them like everything
   else — a device receives its peers' projections and decisions, never its own.
 
+## Retention sweep (design §22 decisions 7 and 9)
+
+A background sweep (`RetentionSweepHostedService` → `ArtifactRetentionService`)
+runs at startup and every `RetentionSweepIntervalMinutes`:
+
+- **Artifact bytes are purged 14 days after Windows acknowledges archival**, or
+  sooner under storage pressure. "Acknowledged" means the capture's latest
+  Windows-authored `capture_status` is `completed`; the clock runs from the
+  moment the service received that status. Captures still `processing`,
+  `review_ready` or `failed` keep their audio indefinitely — Windows may need to
+  download it again, and a failed capture may be retried.
+- **Purge is a state, not a deletion.** The artifact row survives with
+  `state = purged` and its measured `byteLength`/`sha256`, so a late
+  `GET /artifacts/{id}/download` answers **410 `artifact_purged`** (never
+  retryable) instead of a retryable 500 a client would hammer forever. The row
+  is marked before the blob is deleted, so a crash between the two leaves a
+  blob the next sweep removes rather than a "complete" row with no bytes.
+- **Storage pressure** (`ArtifactStorageBudgetBytes` > 0): acknowledged
+  artifacts are purged oldest-acknowledgement-first until the store is under
+  budget; the sweep logs a warning if what remains over budget belongs to
+  captures Windows has not acknowledged, because those are never purged.
+- **Crash-orphaned temporary files** — the per-request `*.tmp` files part
+  uploads and assemblies write through — are deleted once they have gone
+  unwritten for `TemporaryFileGraceMinutes`. In-process failures already clean
+  up after themselves; this covers a process that died mid-write.
+
 ## Security notes (design §14)
 
 - **Auth model:** registration is gated by the owner pairing code; every
@@ -334,7 +364,8 @@ without a second identifier.
 ├── sync.db                # SQLite: owners, devices, captures, capture_artifacts,
 │                          #   capture_status (latest Windows-authored status per capture),
 │                          #   sync_changes (change log), push_receipts, idempotency_records
-├── artifacts/             # filesystem blob store (parts during upload, assembled artifacts after complete)
+├── artifacts/             # filesystem blob store (parts during upload, assembled artifacts after complete;
+│                          #   blobs of purged artifacts are gone, their rows stay with state=purged)
 ├── signing.key            # base64 HMAC token signing key (generated if not configured)
 └── pairing-code.txt       # current owner pairing code
 ```

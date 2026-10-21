@@ -284,18 +284,37 @@ public sealed class DeviceService : IDeviceService
         }
 
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var target = await db.Devices.FirstOrDefaultAsync(
-            d => d.DeviceId == targetGuid.ToString("D") && d.OwnerId == caller.OwnerId, cancellationToken);
+        var canonicalTargetId = targetGuid.ToString("D");
+        var owned = await db.Devices.AsNoTracking().AnyAsync(
+            d => d.DeviceId == canonicalTargetId && d.OwnerId == caller.OwnerId, cancellationToken);
+        if (!owned)
+        {
+            return ServiceResult<bool>.Fail(
+                StatusCodes.Status404NotFound, SyncApiErrorCodes.DeviceUnknown, "No such device.");
+        }
+
+        // The target may be refreshing its token at this very moment (a lost
+        // phone's background sync, say); the refresh hash is a concurrency
+        // token, so the save goes through the reload-and-retry helper rather
+        // than failing the revocation over a race it must win.
+        var revokedNow = false;
+        var target = await DeviceRowConcurrency.SaveAsync(
+            db,
+            canonicalTargetId,
+            d =>
+            {
+                revokedNow = d.RevokedAtUtc is null;
+                d.RevokedAtUtc ??= DateTime.UtcNow;
+            },
+            cancellationToken);
         if (target is null)
         {
             return ServiceResult<bool>.Fail(
                 StatusCodes.Status404NotFound, SyncApiErrorCodes.DeviceUnknown, "No such device.");
         }
 
-        if (target.RevokedAtUtc is null)
+        if (revokedNow)
         {
-            target.RevokedAtUtc = DateTime.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
             _logger.LogInformation(
                 "Device {TargetDeviceId} revoked by device {CallerDeviceId}.", target.DeviceId, caller.DeviceId);
         }

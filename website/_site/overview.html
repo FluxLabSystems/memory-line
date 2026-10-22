@@ -143,7 +143,7 @@
   <p class="doc-lede">The repository README: what Memory Timeline is, the memory pipeline, the full feature list, tech stack, architecture, setup, configuration, and privacy model.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>2,999</b> words</span>
+    <span class="doc-meta-item"><b>2,989</b> words</span>
     <span class="doc-meta-item"><b>14</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/README.md" target="_blank" rel="noopener noreferrer">
       README.md ↗
@@ -314,14 +314,14 @@ MemoryTimeline.Tests      xUnit unit, integration, and performance tests        
 <h3 id="prerequisites" class="anchored">Prerequisites<a class="heading-anchor" href="#prerequisites" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Windows 11</strong> (22H2 or later).</li>
-<li><strong>Visual Studio 2022</strong> (17.8+) with the <strong>.NET Desktop Development</strong> and <strong>Windows App SDK</strong> workloads.</li>
-<li>A <strong>.NET SDK</strong>: the repo pins the build to the <strong>.NET 10</strong> SDK via <code>windows-native/src/global.json</code>, to the <code>10.0.1xx</code> feature band. That band is deliberate — it declares MSBuild 17.14 as its minimum, so Visual Studio 2022 can still build it; bands <code>10.0.2xx</code>+ require MSBuild 18 / Visual Studio 2026.</li>
+<li><strong>Visual Studio 2026</strong> (18.0+) with the <strong>.NET Desktop Development</strong> and <strong>Windows App SDK</strong> workloads.</li>
+<li>A <strong>.NET SDK</strong>: the repo pins the build to the <strong>.NET 10</strong> SDK via <code>windows-native/src/global.json</code>, to <code>10.0.300</code> with <code>rollForward: latestFeature</code> (any 10.0.3xx-or-newer SDK). Those SDK bands require MSBuild 18, so Visual Studio 2022 can no longer build the repo.</li>
 </ul>
 <h3 id="build--run" class="anchored">Build &amp; run<a class="heading-anchor" href="#build--run" aria-label="Link to this section">#</a></h3>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-builtin">git</span> clone &lt;repository-url&gt;
 cd memory-line/windows-native/src
 
-<span class="tok-comment"># Open the solution in Visual Studio 2022 and press F5,</span>
+<span class="tok-comment"># Open the solution in Visual Studio 2026 and press F5,</span>
 <span class="tok-comment"># or build from the command line for x64 (the solution has no AnyCPU config):</span>
 <span class="tok-builtin">dotnet</span> build MemoryTimeline.sln <span class="tok-flag">-c</span> Debug <span class="tok-flag">-p</span>:Platform=x64</code></pre></div>
 <div class="callout callout-note"><div class="callout-body"><p><strong>Note on <code>dotnet build</code> vs. Visual Studio:</strong> WinUI 3 PRI resource generation uses a .NET Framework MSBuild task that loads under <strong>Visual Studio&#39;s <code>msbuild.exe</code></strong> but not under the <code>dotnet</code> CLI&#39;s build engine. Build from <strong>Visual Studio</strong> (or <code>msbuild</code>) for a full app build; the CI pipeline does the same on a Windows runner.</p>
@@ -576,7 +576,7 @@ See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/READ
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

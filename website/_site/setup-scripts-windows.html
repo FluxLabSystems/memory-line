@@ -149,7 +149,7 @@
 <h2 id="build-reality-important" class="anchored">Build Reality (Important)<a class="heading-anchor" href="#build-reality-important" aria-label="Link to this section">#</a></h2>
 <p>Before using the commands in this document, note the following about the current build:</p>
 <ul>
-<li><strong>Build with Visual Studio 2022 or <code>msbuild</code>, not <code>dotnet build</code>.</strong> The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under <code>dotnet build</code>. Use <code>msbuild</code> (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.</li>
+<li><strong>Build with Visual Studio 2026 or <code>msbuild</code>, not <code>dotnet build</code>.</strong> The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under <code>dotnet build</code>. Use <code>msbuild</code> (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.</li>
 <li><strong>The solution is x64-only.</strong> <code>MemoryTimeline.sln</code> defines only <code>Debug|x64</code> and <code>Release|x64</code>. Always pass the platform explicitly, e.g. <code>-p:Platform=x64</code> (msbuild) or select <code>x64</code> in Visual Studio. There is no <code>Any CPU</code> or <code>Win32/ARM64</code> solution configuration.</li>
 <li><strong>.NET SDK is pinned by <code>../src/global.json</code></strong> to version <code>8.0.100</code> with <code>rollForward: &quot;major&quot;</code>. This means a .NET 8 SDK (8.0.100+) or a newer major SDK such as .NET 9 will both satisfy the pin. <code>dotnet restore</code> still works normally for package restore.</li>
 </ul>
@@ -180,13 +180,13 @@
 <p><strong>What it installs:</strong></p>
 <p><strong>Core (Both Development and Production):</strong></p>
 <ul>
-<li>.NET 8 SDK</li>
+<li>.NET 10 SDK</li>
 <li>Windows App SDK 1.5+</li>
 <li>Windows Package Manager (winget)</li>
 </ul>
 <p><strong>Development Only:</strong></p>
 <ul>
-<li>Visual Studio 2022 (Community or higher)</li>
+<li>Visual Studio 2026 (Community or higher)</li>
 <li>Windows SDK (10.0.26100.0+)</li>
 <li>Git for Windows</li>
 </ul>
@@ -232,8 +232,8 @@
 </ul>
 <p><strong>Development Tools:</strong></p>
 <ul>
-<li>.NET SDK (8.0+)</li>
-<li>Visual Studio 2022 (17.8+)</li>
+<li>.NET SDK (10.0.3xx+)</li>
+<li>Visual Studio 2026 (18.0+)</li>
 <li>Windows SDK (10.0.26100.0+)</li>
 <li>Windows App SDK (1.5+)</li>
 <li>Git</li>
@@ -318,9 +318,9 @@ cd src
 <span class="tok-builtin">dotnet</span> test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj --configuration Release</code></pre></div>
 <h2 id="manual-installation" class="anchored">Manual Installation<a class="heading-anchor" href="#manual-installation" aria-label="Link to this section">#</a></h2>
 <p>If automatic installation fails, you can install components manually:</p>
-<h3 id="net-8-sdk" class="anchored">.NET 8 SDK<a class="heading-anchor" href="#net-8-sdk" aria-label="Link to this section">#</a></h3>
-<p>Download from: <a href="https://dotnet.microsoft.com/download/dotnet/8.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/8.0</a></p>
-<h3 id="visual-studio-2022" class="anchored">Visual Studio 2022<a class="heading-anchor" href="#visual-studio-2022" aria-label="Link to this section">#</a></h3>
+<h3 id="net-10-sdk" class="anchored">.NET 10 SDK<a class="heading-anchor" href="#net-10-sdk" aria-label="Link to this section">#</a></h3>
+<p>Download from: <a href="https://dotnet.microsoft.com/download/dotnet/10.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/10.0</a></p>
+<h3 id="visual-studio-2026" class="anchored">Visual Studio 2026<a class="heading-anchor" href="#visual-studio-2026" aria-label="Link to this section">#</a></h3>
 <p>Download from: <a href="https://visualstudio.microsoft.com/downloads/" target="_blank" rel="noopener noreferrer" class="external-link">https://visualstudio.microsoft.com/downloads/</a></p>
 <p>Required workloads:</p>
 <ul>
@@ -406,8 +406,8 @@ cd src
 <li class="toc-item toc-h3"><a href="#troubleshooting-installation-issues" data-toc-link>Troubleshooting Installation Issues</a></li>
 <li class="toc-item toc-h3"><a href="#cicd-integration" data-toc-link>CI/CD Integration</a></li>
 <li class="toc-item toc-h2"><a href="#manual-installation" data-toc-link>Manual Installation</a></li>
-<li class="toc-item toc-h3"><a href="#net-8-sdk" data-toc-link>.NET 8 SDK</a></li>
-<li class="toc-item toc-h3"><a href="#visual-studio-2022" data-toc-link>Visual Studio 2022</a></li>
+<li class="toc-item toc-h3"><a href="#net-10-sdk" data-toc-link>.NET 10 SDK</a></li>
+<li class="toc-item toc-h3"><a href="#visual-studio-2026" data-toc-link>Visual Studio 2026</a></li>
 <li class="toc-item toc-h3"><a href="#windows-sdk" data-toc-link>Windows SDK</a></li>
 <li class="toc-item toc-h3"><a href="#windows-app-sdk" data-toc-link>Windows App SDK</a></li>
 <li class="toc-item toc-h3"><a href="#git-for-windows" data-toc-link>Git for Windows</a></li>
@@ -423,7 +423,7 @@ cd src
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

@@ -145,13 +145,13 @@
   <p class="doc-lede">The main reference for the WinUI 3 app: pipeline, features, quick start, project structure, clean-architecture layers, DI composition, database schema, configuration, and troubleshooting.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,243</b> words</span>
+    <span class="doc-meta-item"><b>3,201</b> words</span>
     <span class="doc-meta-item"><b>15</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/README.md" target="_blank" rel="noopener noreferrer">
       windows-native/README.md ↗
     </a>
   </div>
-  <div class="tags"><span class="tag">WinUI 3</span><span class="tag">.NET 8</span><span class="tag">architecture</span><span class="tag">setup</span></div>
+  <div class="tags"><span class="tag">WinUI 3</span><span class="tag">.NET 10</span><span class="tag">architecture</span><span class="tag">setup</span></div>
 </header>
 <div class="doc-grid">
   <article class="prose">
@@ -260,7 +260,7 @@ Windows integration.</p>
 <li>Check version: <code>winver</code> in the Run dialog.</li>
 </ul>
 </li>
-<li><p><strong>Visual Studio</strong> — 2026 (18.0+) is the supported option, 2022 (17.14) works with a caveat.</p>
+<li><p><strong>Visual Studio 2026 (18.0+)</strong> — required; VS 2022 can no longer build this repo.</p>
 <ul>
 <li>Download: <a href="https://visualstudio.microsoft.com/" target="_blank" rel="noopener noreferrer" class="external-link">https://visualstudio.microsoft.com/</a></li>
 <li>Required workloads:<ul>
@@ -269,16 +269,14 @@ Windows integration.</p>
 </ul>
 </li>
 <li>The projects target <code>net10.0</code>, and Microsoft supports targeting .NET 10 only in Visual
-Studio 18.0+. VS 2022 17.14 emits an &quot;unsupported target&quot; <strong>warning</strong> rather than an error
-and does build, but it is off the supported path — prefer VS 2026 if you have the choice.</li>
+Studio 18.0+. The pinned SDK band (below) also requires MSBuild 18.</li>
 </ul>
 </li>
-<li><p><strong>The .NET 10 SDK, <code>10.0.1xx</code> feature band</strong> — pinned by <code>windows-native/src/global.json</code>
-(<code>&quot;version&quot;: &quot;10.0.100&quot;</code>, <code>&quot;rollForward&quot;: &quot;latestPatch&quot;</code>).</p>
+<li><p><strong>The .NET 10 SDK, 10.0.3xx or newer</strong> — pinned by <code>windows-native/src/global.json</code>
+(<code>&quot;version&quot;: &quot;10.0.300&quot;</code>, <code>&quot;rollForward&quot;: &quot;latestFeature&quot;</code>).</p>
 <ul>
-<li>The band is not arbitrary: <code>10.0.1xx</code> declares MSBuild 17.14 as its minimum, which is what
-keeps VS 2022 able to build. SDK bands <code>10.0.2xx</code> and later require MSBuild 18, i.e. VS 2026.
-Once the toolchain is fully on VS 2026, this pin can be raised.</li>
+<li>SDK bands <code>10.0.2xx</code> and later require MSBuild 18, i.e. VS 2026, so the repo no longer
+builds in VS 2022. Visual Studio 2026 ships a satisfying SDK.</li>
 <li>.NET 10 is required, not optional: .NET 8 and .NET 9 both reach end of support on
 2026-11-10, and the Windows SDK projection ref pack the build now uses is compiled against
 a newer runtime than net8.0 can consume (it fails with <code>CS1705</code> assembly-version conflicts).</li>
@@ -312,7 +310,7 @@ cd memory-line/windows-native/src
 <span class="tok-comment"># Full app build (Visual Studio MSBuild), Release | x64:</span>
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 
-<span class="tok-comment"># Or open MemoryTimeline.sln in Visual Studio 2022 and press F5 (debug) / Ctrl+F5 (run).</span></code></pre></div>
+<span class="tok-comment"># Or open MemoryTimeline.sln in Visual Studio 2026 and press F5 (debug) / Ctrl+F5 (run).</span></code></pre></div>
 <h3 id="first-run" class="anchored">First Run<a class="heading-anchor" href="#first-run" aria-label="Link to this section">#</a></h3>
 <ul>
 <li>The app creates its SQLite database at <code>%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db</code> (WAL mode).</li>
@@ -720,14 +718,14 @@ LLM token streaming, PDF narrative export, and more; see the deferred list in
 </ul>
 <p><strong>&quot;Windows App SDK not found&quot;</strong></p>
 <ul>
-<li>Install the <strong>Windows App SDK</strong> workload, or update Visual Studio to 17.8+.</li>
+<li>Install the <strong>Windows App SDK</strong> workload, or update Visual Studio to 18.0+.</li>
 </ul>
 <p><strong>&quot;SDK version not found&quot; / wrong SDK selected</strong></p>
 <ul>
-<li>The build is pinned to the <strong>.NET 10 SDK, <code>10.0.1xx</code> band</strong> (<code>global.json</code>, <code>10.0.100</code>,
-<code>rollForward: latestPatch</code>). Install it from <a href="https://dotnet.microsoft.com/download/dotnet/10.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/10.0</a>
-— a <code>10.0.2xx</code> or newer SDK will <em>not</em> satisfy this pin, which is intentional: those bands
-require MSBuild 18 (Visual Studio 2026), while <code>10.0.1xx</code> still works in Visual Studio 2022.</li>
+<li>The build is pinned to the <strong>.NET 10 SDK, 10.0.3xx or newer</strong> (<code>global.json</code>, <code>10.0.300</code>,
+<code>rollForward: latestFeature</code>). Install it from <a href="https://dotnet.microsoft.com/download/dotnet/10.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/10.0</a>
+— a <code>10.0.1xx</code>/<code>10.0.2xx</code> SDK will <em>not</em> satisfy this pin. These newer bands require MSBuild 18
+(Visual Studio 2026), so Visual Studio 2022 can no longer build the repo.</li>
 </ul>
 <h3 id="runtime-errors" class="anchored">Runtime Errors<a class="heading-anchor" href="#runtime-errors" aria-label="Link to this section">#</a></h3>
 <p><strong>&quot;Database file not found&quot;</strong></p>
@@ -861,7 +859,7 @@ than swallowing them.</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

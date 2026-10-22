@@ -15,7 +15,7 @@ export const site = {
   name: 'Memory Timeline',
   tagline: 'Capture memories by voice or text, let AI structure them, and explore your life as an interactive timeline.',
   description:
-    'Documentation for the Memory Timeline Windows Native app — a local-first .NET 8 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.',
+    'Documentation for the Memory Timeline Windows Native app — a local-first .NET 10 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.',
   repo: 'ethanbissbort/memory-line',
   repoUrl: 'https://github.com/ethanbissbort/memory-line',
   branch: 'main',
@@ -70,7 +70,7 @@ export const sections = [
   {
     id: 'windows-native',
     title: 'Windows Native app',
-    blurb: 'The primary, actively developed product: .NET 8 + WinUI 3.',
+    blurb: 'The primary, actively developed product: .NET 10 + WinUI 3.',
     pages: [
       {
         slug: 'windows-native',
@@ -79,7 +79,7 @@ export const sections = [
         description:
           'The main reference for the WinUI 3 app: pipeline, features, quick start, project structure, clean-architecture layers, DI composition, database schema, configuration, and troubleshooting.',
         audience: 'Developers',
-        tags: ['WinUI 3', '.NET 8', 'architecture', 'setup'],
+        tags: ['WinUI 3', '.NET 10', 'architecture', 'setup'],
         featured: true,
       },
       {
@@ -214,7 +214,7 @@ export const landing = {
   intro: [
     'Memory Timeline is a **local-first** desktop app for recording, organizing, and rediscovering your personal history. Speak a memory — or paste and type one — and the app transcribes it on-device with Whisper, has an LLM extract a structured event, and lets you review it onto an interactive timeline.',
     'Your data lives in a local SQLite database. Embeddings run locally by default, so nothing leaves your machine except the specific text you choose to send to the providers you configure — and geocoding is off unless you opt in.',
-    'This site documents the **Windows Native** app — the primary, actively developed product, built on .NET 8 and WinUI 3.',
+    'This site documents the **Windows Native** app — the primary, actively developed product, built on .NET 10 and WinUI 3.',
   ],
 
   // `key` values are filled in by the build from the real corpus.
@@ -222,7 +222,7 @@ export const landing = {
     { key: 'docs', value: '—', label: 'documents', hint: 'READMEs, guides, audits and design notes' },
     { key: 'words', value: '—', label: 'words', hint: 'all rendered and searchable here' },
     { value: '12', label: 'features shipped', hint: 'the F1–F12 wave, August 2026' },
-    { value: '4', label: 'projects', hint: 'App · Core · Data · Tests' },
+    { value: '6', label: 'projects', hint: 'App · Core · Data · Tests · Sync · SyncContracts' },
   ],
 
   pipeline: {
@@ -340,7 +340,7 @@ export const landing = {
 
   architecture: {
     title: 'Architecture',
-    lead: 'Clean, layered separation across four projects, with a message bus between features.',
+    lead: 'Clean, layered separation across six projects, with a message bus between features. Core, Data and Sync target plain net10.0 so a non-Windows head can run them; only the WinUI head and its tests are Windows-only.',
     layers: [
       {
         name: 'MemoryTimeline',
@@ -355,12 +355,22 @@ export const landing = {
       {
         name: 'MemoryTimeline.Data',
         role: 'Data access',
-        detail: 'EF Core 8 DbContext over SQLite in WAL mode, entity models, repositories, and the SchemaUpgrader that repairs schema drift at startup.',
+        detail: 'EF Core 10 DbContext over SQLite in WAL mode, entity models, repositories, and the SchemaUpgrader that repairs schema drift at startup.',
       },
       {
         name: 'MemoryTimeline.Tests',
         role: 'Verification',
         detail: 'xUnit unit, integration and performance tests.',
+      },
+      {
+        name: 'MemoryTimeline.Sync',
+        role: 'Sync client (no UI)',
+        detail: 'Pairing, push/pull/ack against the self-hosted sync service, artifact download, the background sync worker, outbox publishing and remote-change ingestion for the iOS and macOS companions.',
+      },
+      {
+        name: 'MemoryTimeline.SyncContracts',
+        role: 'Wire contracts',
+        detail: 'Shared DTOs from `shared-contracts/dotnet/`, referenced into this solution and the service. A separate `MemoryTimeline.Portability.Tests` project, outside the solution, runs the archive stack on the macOS CI job to prove Core, Data and Sync stay platform-neutral.',
       },
     ],
     decisions: [
@@ -386,8 +396,8 @@ export const landing = {
   stack: [
     ['UI', 'WinUI 3 + XAML, `x:Bind` compiled bindings'],
     ['MVVM', 'CommunityToolkit.Mvvm — `ObservableObject`, `[RelayCommand]`, `WeakReferenceMessenger`'],
-    ['Runtime', '.NET 8 (`net8.0-windows10.0.22621.0`)'],
-    ['Data', 'SQLite via EF Core 8, WAL mode, `IDbContextFactory` per-operation contexts'],
+    ['Runtime', '.NET 10 (`net10.0-windows10.0.26100.0` for the WinUI head and its tests; Core, Data and Sync target plain `net10.0`)'],
+    ['Data', 'SQLite via EF Core 10, WAL mode, `IDbContextFactory` per-operation contexts'],
     ['Audio', '`Windows.Media.Capture` and `Windows.Media.Playback`'],
     ['Speech-to-text', 'Whisper.net (ggml `base` model, local and offline)'],
     ['LLM', 'Anthropic Claude, or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM), routed per call'],
@@ -424,8 +434,8 @@ export const landing = {
     {
       icon: '📐',
       title: 'Design & history',
-      body: 'The plan that produced the native app, and the contracts written before the code.',
-      links: ['migration-to-native-windows', 'people-feature-contracts', 'development-history'],
+      body: 'The design notes written before the code, and the history of how the native app got here.',
+      links: ['macos-port-plan', 'people-feature-contracts', 'development-history'],
     },
   ],
 

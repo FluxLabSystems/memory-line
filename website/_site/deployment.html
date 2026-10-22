@@ -141,7 +141,7 @@
   <p class="doc-lede">Building Release|x64, runtime data layout, MSIX packaging, code signing, Microsoft Store submission, and side-loading.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Maintainers</span>
-    <span class="doc-meta-item"><b>2,053</b> words</span>
+    <span class="doc-meta-item"><b>2,023</b> words</span>
     <span class="doc-meta-item"><b>9</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEPLOYMENT.md ↗
@@ -172,14 +172,14 @@
 <h3 id="development-environment" class="anchored">Development Environment<a class="heading-anchor" href="#development-environment" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Windows 11 22H2</strong> or later (required for Windows App SDK 1.5+). The WinUI target cannot be built on Linux/macOS.</li>
-<li><strong>Visual Studio 2022</strong> (17.8 or later) with workloads:<ul>
+<li><strong>Visual Studio 2026</strong> (18.0 or later) with workloads:<ul>
 <li>.NET Desktop Development</li>
 <li>Universal Windows Platform development</li>
 <li>Windows App SDK C# Templates</li>
 </ul>
 </li>
-<li><strong>.NET SDK</strong> — the repo pins the SDK via <code>windows-native/src/global.json</code>:<div class="codeblock" data-lang="json"><div class="codeblock-bar"><span class="codeblock-lang">JSON</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-json">{ <span class="tok-key">&quot;sdk&quot;</span>: { <span class="tok-key">&quot;version&quot;</span>: <span class="tok-string">&quot;8.0.100&quot;</span>, <span class="tok-key">&quot;rollForward&quot;</span>: <span class="tok-string">&quot;major&quot;</span> } }</code></pre></div>
-This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <strong>roll forward to the next available major</strong> (e.g. .NET 9). It will <strong>not</strong> select the .NET 10 SDK, whose newer WinUI XAML/PRI tooling breaks this project&#39;s resource generation. If you only have a newer SDK installed, install a <strong>.NET 8 or .NET 9 SDK</strong> rather than relying on whatever is latest.</li>
+<li><strong>.NET SDK</strong> — the repo pins the SDK via <code>windows-native/src/global.json</code>:<div class="codeblock" data-lang="json"><div class="codeblock-bar"><span class="codeblock-lang">JSON</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-json">{ <span class="tok-key">&quot;sdk&quot;</span>: { <span class="tok-key">&quot;version&quot;</span>: <span class="tok-string">&quot;10.0.300&quot;</span>, <span class="tok-key">&quot;rollForward&quot;</span>: <span class="tok-string">&quot;latestFeature&quot;</span> } }</code></pre></div>
+This means: use a <strong>.NET 10 SDK, 10.0.3xx or newer</strong>. An older 10.0.1xx/2xx SDK will not satisfy it, because the newer bands require MSBuild 18 (Visual Studio 2026), which ships a suitable SDK.</li>
 <li><strong>Windows App SDK</strong> 1.5.x (restored as the <code>Microsoft.WindowsAppSDK</code> NuGet package)</li>
 </ul>
 <h3 id="for-packaging--store-deployment-phase-7--in-progress" class="anchored">For Packaging / Store Deployment (Phase 7 — in progress)<a class="heading-anchor" href="#for-packaging--store-deployment-phase-7--in-progress" aria-label="Link to this section">#</a></h3>
@@ -202,12 +202,12 @@ This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <s
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell">cd windows-native/src
 
 <span class="tok-comment"># Restore + build the whole solution with Visual Studio MSBuild.</span>
-<span class="tok-comment"># 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2022),</span>
+<span class="tok-comment"># 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2026),</span>
 <span class="tok-comment"># NOT 'dotnet build'.</span>
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m</code></pre></div>
 <h3 id="debug-build" class="anchored">Debug build<a class="heading-anchor" href="#debug-build" aria-label="Link to this section">#</a></h3>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64 /m</code></pre></div>
-<p>You can also simply open <code>windows-native/src/MemoryTimeline.sln</code> in Visual Studio 2022, select the <strong>Release / x64</strong> (or <strong>Debug / x64</strong>) configuration, and Build.</p>
+<p>You can also simply open <code>windows-native/src/MemoryTimeline.sln</code> in Visual Studio 2026, select the <strong>Release / x64</strong> (or <strong>Debug / x64</strong>) configuration, and Build.</p>
 <h3 id="build-output" class="anchored">Build Output<a class="heading-anchor" href="#build-output" aria-label="Link to this section">#</a></h3>
 <p>The compiled application is placed under the platform-specific output folder, for example:</p>
 <div class="codeblock" data-lang="text"><div class="codeblock-bar"><span class="codeblock-lang">text</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-text">windows-native/src/MemoryTimeline/bin/x64/Release/net8.0-windows10.0.26100.0/</code></pre></div>
@@ -677,7 +677,7 @@ reg add <span class="tok-string">&quot;HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Win
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

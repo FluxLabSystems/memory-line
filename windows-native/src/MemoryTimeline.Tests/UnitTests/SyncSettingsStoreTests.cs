@@ -101,4 +101,28 @@ public class SyncSettingsStoreTests
         AccessTokenExpiresAtUtc = DateTime.UtcNow.AddMinutes(15),
         RefreshToken = "refresh-token-1",
     };
+
+    [Fact]
+    public async Task SaveRegistrationAsync_OwesAFullProjectionBackfill()
+    {
+        // A new registration is a server that has never seen this archive:
+        // the worker must project everything again in its first cycle.
+        (await _store.IsProjectionBackfillPendingAsync()).Should().BeFalse("nothing is owed on a fresh install");
+
+        await _store.SaveRegistrationAsync("https://sync.example.test", CreateRegistration());
+
+        (await _store.IsProjectionBackfillPendingAsync()).Should().BeTrue();
+        (await _settingsService.GetSettingAsync<bool>(SettingKeys.TimelineProjectionBackfillPending)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SetProjectionBackfillPendingAsync_False_RemovesTheRowRatherThanStoringFalse()
+    {
+        // Absent means "nothing owed" (the key is deliberately not seeded).
+        await _store.SetProjectionBackfillPendingAsync(true);
+        await _store.SetProjectionBackfillPendingAsync(false);
+
+        (await _store.IsProjectionBackfillPendingAsync()).Should().BeFalse();
+        (await _settingsService.SettingExistsAsync(SettingKeys.TimelineProjectionBackfillPending)).Should().BeFalse();
+    }
 }

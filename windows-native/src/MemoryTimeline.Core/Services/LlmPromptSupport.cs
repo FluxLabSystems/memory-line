@@ -159,4 +159,49 @@ Now analyze the transcript and extract events:";
 
         return trimmed.Trim();
     }
+
+    /// <summary>
+    /// The output budget for extraction calls when <c>llm_max_tokens</c> is
+    /// absent or unusable. The seed is 4000; this is the value the services
+    /// hard-coded before the setting was read.
+    /// </summary>
+    internal const int DefaultMaxTokens = 4096;
+
+    /// <summary>The sampling temperature when <c>llm_temperature</c> is absent or unusable.</summary>
+    internal const double DefaultTemperature = 0.3;
+
+    /// <summary>Generation parameters shared by both LLM providers.</summary>
+    /// <param name="MaxTokens">Output budget for extraction calls.</param>
+    /// <param name="Temperature">Sampling temperature for every call.</param>
+    internal sealed record LlmGenerationSettings(int MaxTokens, double Temperature);
+
+    /// <summary>
+    /// Reads <c>llm_max_tokens</c> and <c>llm_temperature</c>, re-read on every
+    /// call like the provider and model so a Settings change applies live.
+    /// Both are parsed invariantly and validated: a missing, blank or
+    /// out-of-range value (max tokens must be positive; temperature must be
+    /// in 0..2, the range both APIs accept) falls back to the defaults, so a
+    /// stray row can never silence the model with a zero budget. Settings
+    /// read failures are already turned into the caller's default by the
+    /// settings service.
+    /// </summary>
+    internal static async Task<LlmGenerationSettings> ReadGenerationSettingsAsync(ISettingsService settings)
+    {
+        var maxTokensText = await settings.GetSettingAsync<string>(SettingKeys.LlmMaxTokens, string.Empty);
+        var temperatureText = await settings.GetSettingAsync<string>(SettingKeys.LlmTemperature, string.Empty);
+        return new LlmGenerationSettings(ParseMaxTokens(maxTokensText), ParseTemperature(temperatureText));
+    }
+
+    internal static int ParseMaxTokens(string? text) =>
+        int.TryParse(text?.Trim(), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : DefaultMaxTokens;
+
+    internal static double ParseTemperature(string? text) =>
+        double.TryParse(text?.Trim(), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value)
+        && !double.IsNaN(value) && value >= 0.0 && value <= 2.0
+            ? value
+            : DefaultTemperature;
 }

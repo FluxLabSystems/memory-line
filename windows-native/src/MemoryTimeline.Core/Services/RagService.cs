@@ -9,9 +9,11 @@ namespace MemoryTimeline.Core.Services;
 /// <summary>
 /// RAG (Retrieval-Augmented Generation) service implementation.
 /// Creates a short-lived DbContext per operation via IDbContextFactory.
-/// Cross-reference detection is heuristic (temporal proximity + shared
-/// category, confidences derived from embedding similarity) and results are
-/// persisted via <see cref="ICrossReferenceRepository"/>.
+/// Cross-reference detection is heuristic — temporal proximity, shared people,
+/// shared places, then shared category, with confidences derived from
+/// embedding similarity — and results are persisted via
+/// <see cref="ICrossReferenceRepository"/>. Causal and Consequential have no
+/// heuristic: they need an LLM judgement, which this service does not make.
 /// </summary>
 public class RagService : IRagService
 {
@@ -19,30 +21,66 @@ public class RagService : IRagService
     private readonly IEventService _eventService;
     private readonly IDbContextFactory<Data.AppDbContext> _contextFactory;
     private readonly ICrossReferenceRepository _crossReferenceRepository;
+    private readonly ISettingsService? _settingsService;
     private readonly ILogger<RagService> _logger;
 
+    /// <summary>
+    /// The similarity floor when <c>rag_similarity_threshold</c> is absent or
+    /// unusable, or when no settings service is injected (the value the
+    /// service hard-coded before the setting was read).
+    /// </summary>
+    internal const double DefaultSimilarityThreshold = 0.7;
+
+    /// <summary>
+    /// Creates the service. <paramref name="settingsService"/> is optional and
+    /// trailing so existing constructions keep compiling; without it the
+    /// similarity threshold is <see cref="DefaultSimilarityThreshold"/>.
+    /// </summary>
     public RagService(
         IEmbeddingService embeddingService,
         IEventService eventService,
         IDbContextFactory<Data.AppDbContext> contextFactory,
         ICrossReferenceRepository crossReferenceRepository,
-        ILogger<RagService> logger)
+        ILogger<RagService> logger,
+        ISettingsService? settingsService = null)
     {
         _embeddingService = embeddingService;
         _eventService = eventService;
         _contextFactory = contextFactory;
         _crossReferenceRepository = crossReferenceRepository;
         _logger = logger;
+        _settingsService = settingsService;
+    }
+
+    /// <summary>
+    /// The configured similarity floor: <c>rag_similarity_threshold</c>, read
+    /// per call so a Settings change applies live, validated to 0..1.
+    /// </summary>
+    internal async Task<double> GetSimilarityThresholdAsync()
+    {
+        if (_settingsService == null)
+        {
+            return DefaultSimilarityThreshold;
+        }
+
+        var text = await _settingsService.GetSettingAsync<string>(SettingKeys.RagSimilarityThreshold, string.Empty);
+        return double.TryParse(text?.Trim(), System.Globalization.NumberStyles.Float,
+                   System.Globalization.CultureInfo.InvariantCulture, out var value)
+               && !double.IsNaN(value) && value >= 0.0 && value <= 1.0
+            ? value
+            : DefaultSimilarityThreshold;
     }
 
     /// <summary>
     /// Finds similar events using embedding-based similarity search.
     /// </summary>
-    public async Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double threshold = 0.7)
+    public async Task<List<SimilarEvent>> FindSimilarEventsAsync(string eventId, int topK = 10, double? threshold = null)
     {
         try
         {
             _logger.LogInformation("Finding similar events for {EventId}", eventId);
+
+            var effectiveThreshold = threshold ?? await GetSimilarityThresholdAsync();
 
             await using var dbContext = await _contextFactory.CreateDbContextAsync();
 
@@ -103,7 +141,7 @@ public class RagService : IRagService
                 queryEmbedding,
                 candidateEmbeddings,
                 topK,
-                threshold);
+                effectiveThreshold);
 
             // Get event details
             var similarEvents = new List<SimilarEvent>();
@@ -168,7 +206,11 @@ public class RagService : IRagService
             }
             else
             {
-                var similarEvents = await FindSimilarEventsAsync(eventId, topK: 20, threshold: 0.6);
+                // Candidates are gathered below the display floor so a
+                // relationship can still be found for a borderline pair; the
+                // configured threshold only ever lowers this, never raises it.
+                var candidateFloor = Math.Min(0.6, await GetSimilarityThresholdAsync());
+                var similarEvents = await FindSimilarEventsAsync(eventId, topK: 20, threshold: candidateFloor);
                 foreach (var similar in similarEvents)
                 {
                     var evt = await _eventService.GetEventWithDetailsAsync(similar.EventId);
@@ -300,8 +342,8 @@ public class RagService : IRagService
         {
             _logger.LogInformation("Suggesting tags for event {EventId}", eventId);
 
-            // Find similar events
-            var similarEvents = await FindSimilarEventsAsync(eventId, topK: 10, threshold: 0.75);
+            // Find similar events at the configured floor
+            var similarEvents = await FindSimilarEventsAsync(eventId, topK: 10);
 
             if (similarEvents.Count == 0)
             {
@@ -423,12 +465,12 @@ public class RagService : IRagService
                 .Select(x => (x.EventId, x.Embedding!))
                 .ToList();
 
-            // Find similar events
+            // Find similar events at the configured floor
             var similarities = _embeddingService.FindKNearestNeighbors(
                 queryEmbedding,
                 candidateEmbeddings,
                 10,
-                0.7);
+                await GetSimilarityThresholdAsync());
 
             // Get tags from similar events
             var tagFrequency = new Dictionary<string, (int count, double totalSimilarity)>();
@@ -497,8 +539,11 @@ public class RagService : IRagService
 
     /// <summary>
     /// Heuristic relationship detection with honest labelling: confidences are
-    /// derived from embedding similarity and temporal proximity — never
-    /// hard-coded — and the reasoning states that the result is a heuristic.
+    /// derived from embedding similarity, temporal proximity and link overlap
+    /// — never hard-coded — and the reasoning states that the result is a
+    /// heuristic. Precedence: Temporal (within a week), Participatory (a person
+    /// in common), Locational (a place in common), Thematic (a category in
+    /// common); the first that applies is the relationship.
     /// </summary>
     private CrossReferenceResult? DetermineRelationshipHeuristically(Event source, Event target, double? similarity)
     {
@@ -527,6 +572,55 @@ public class RagService : IRagService
             };
         }
 
+        // Shared people and shared places are stronger evidence of a real
+        // relationship than a shared category (which every "work" event has
+        // with every other), so they are tested before the thematic fallback.
+        // Both read the navigations GetEventWithDetailsAsync loads; an event
+        // fetched without them simply has nothing in common here.
+        var sharedPeople = SharedNames(
+            source.EventPeople.Select(ep => (ep.PersonId, ep.Person?.Name)),
+            target.EventPeople.Select(ep => (ep.PersonId, ep.Person?.Name)));
+        if (sharedPeople.Count > 0)
+        {
+            var overlap = OverlapRatio(sharedPeople.Count, source.EventPeople.Count, target.EventPeople.Count);
+            var confidence = similarity.HasValue
+                ? Math.Clamp(0.5 * similarity.Value + 0.5 * (0.5 + 0.5 * overlap), 0.0, 1.0)
+                : Math.Clamp(0.45 + 0.3 * overlap, 0.0, 1.0);
+
+            return new CrossReferenceResult
+            {
+                SourceEventId = source.EventId,
+                TargetEventId = target.EventId,
+                RelationshipType = CrossReferenceType.Participatory,
+                Confidence = Math.Round(confidence, 3),
+                Reasoning = similarity.HasValue
+                    ? $"Heuristic: both events involve {FormatList(sharedPeople)} (embedding similarity {similarity.Value:0.00})"
+                    : $"Heuristic: both events involve {FormatList(sharedPeople)}"
+            };
+        }
+
+        var sharedPlaces = SharedNames(
+            source.EventLocations.Select(el => (el.LocationId, el.Location?.Name)),
+            target.EventLocations.Select(el => (el.LocationId, el.Location?.Name)));
+        if (sharedPlaces.Count > 0)
+        {
+            var overlap = OverlapRatio(sharedPlaces.Count, source.EventLocations.Count, target.EventLocations.Count);
+            var confidence = similarity.HasValue
+                ? Math.Clamp(0.5 * similarity.Value + 0.5 * (0.45 + 0.5 * overlap), 0.0, 1.0)
+                : Math.Clamp(0.4 + 0.3 * overlap, 0.0, 1.0);
+
+            return new CrossReferenceResult
+            {
+                SourceEventId = source.EventId,
+                TargetEventId = target.EventId,
+                RelationshipType = CrossReferenceType.Locational,
+                Confidence = Math.Round(confidence, 3),
+                Reasoning = similarity.HasValue
+                    ? $"Heuristic: both events took place at {FormatList(sharedPlaces)} (embedding similarity {similarity.Value:0.00})"
+                    : $"Heuristic: both events took place at {FormatList(sharedPlaces)}"
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(source.Category) &&
             string.Equals(source.Category, target.Category, StringComparison.OrdinalIgnoreCase))
         {
@@ -550,6 +644,38 @@ public class RagService : IRagService
 
         return null;
     }
+
+    /// <summary>
+    /// Display names of the junction rows two events have in common, matched
+    /// by id (a merged-away person still shares its id with itself). The name
+    /// falls back to the id when the navigation was not loaded.
+    /// </summary>
+    private static List<string> SharedNames(
+        IEnumerable<(string Id, string? Name)> source,
+        IEnumerable<(string Id, string? Name)> target)
+    {
+        var targetIds = target.Select(t => t.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return source
+            .Where(s => targetIds.Contains(s.Id))
+            .Select(s => string.IsNullOrWhiteSpace(s.Name) ? s.Id : s.Name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>Share of the smaller event's links that are shared: 1.0 when one is a subset of the other.</summary>
+    private static double OverlapRatio(int shared, int sourceCount, int targetCount)
+    {
+        var smaller = Math.Max(1, Math.Min(sourceCount, targetCount));
+        return Math.Clamp((double)shared / smaller, 0.0, 1.0);
+    }
+
+    private static string FormatList(IReadOnlyList<string> names) => names.Count switch
+    {
+        1 => names[0],
+        2 => $"{names[0]} and {names[1]}",
+        _ => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1],
+    };
 
     /// <summary>Canonical unordered key for an event pair.</summary>
     private static string PairKey(string eventId1, string eventId2)

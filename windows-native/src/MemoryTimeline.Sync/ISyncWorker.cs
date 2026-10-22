@@ -98,6 +98,9 @@ public class SyncCycleResult
 
     public int OutboxPublished { get; init; }
 
+    /// <summary>Projections queued by an owed full backfill during this cycle (0 when none was owed).</summary>
+    public int ProjectionsBackfilled { get; init; }
+
     public long Cursor { get; init; }
 
     public string? Error { get; init; }

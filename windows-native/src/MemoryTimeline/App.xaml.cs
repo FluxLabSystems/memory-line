@@ -112,6 +112,10 @@ public partial class App : Application
                     services.AddSingleton<ISyncOutboxRepository, SyncOutboxRepository>();
 
                     // Register core services (stateless over the factory/repositories)
+                    // Secrets at rest: SettingsService stores API keys and sync tokens
+                    // through this port (user-scoped DPAPI on Windows); Core defaults to
+                    // the passthrough when nothing is registered.
+                    services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
                     services.AddSingleton<ISettingsService, SettingsService>();
                     // Revision history (F12): the writer is an optional ctor
                     // dependency of EventService/EventExtractionService/
@@ -127,6 +131,9 @@ public partial class App : Application
                     // app-side WinRT implementation; MediaService itself is
                     // UI-free and lives in Core.
                     services.AddSingleton<IThumbnailGenerator, WindowsThumbnailGenerator>();
+                    // Recording files (recorder output, synced artifacts, normalized
+                    // WAVs): released when a queue row is removed, swept by Clear Cache.
+                    services.AddSingleton<IRecordingStorage, RecordingStorage>();
                     services.AddSingleton<IMediaService, MediaService>();
 
                     // Phase 3: Audio & Queue services
@@ -142,6 +149,10 @@ public partial class App : Application
                     // through this seam. The Phase 0 resolver only handles local
                     // file-path locators; Phase 1 swaps in a sync download client.
                     services.AddSingleton<IArtifactResolver, LocalFileArtifactResolver>();
+                    // Design §8.5: ingestion normalizes any non-16 kHz-WAV source
+                    // (an iPhone's AAC .m4a, an imported MP3) through this port
+                    // before queueing it; Media Foundation does the transcoding.
+                    services.AddSingleton<IAudioNormalizer, WindowsAudioNormalizer>();
                     services.AddSingleton<ICaptureIngestionService, CaptureIngestionService>();
 
                     // iOS companion Phase 1: sync client + background worker (design §7.4).
@@ -168,6 +179,12 @@ public partial class App : Application
                     // failing the sync cycle.
                     services.AddSingleton<ITimelineProjectionPublisher, TimelineProjectionPublisher>();
                     services.AddSingleton<IPendingEventDecisionApplier, PendingEventDecisionApplier>();
+                    // Phase 4 assistant: a companion's question arrives as an
+                    // assistant_turn change; the responder answers it through the
+                    // Ask service and queues the answer for the same cycle's push.
+                    // Optional on RemoteChangeApplier, so without this line a
+                    // phone's questions are silently skipped.
+                    services.AddSingleton<IAssistantTurnResponder, AssistantTurnResponder>();
                     services.AddSingleton<ILocalOutboxPublisher, LocalOutboxPublisher>();
                     services.AddSingleton<ISyncBackgroundWorker, SyncBackgroundWorker>();
 

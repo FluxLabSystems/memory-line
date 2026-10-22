@@ -3,6 +3,7 @@ using Anthropic.SDK.Constants;
 using Anthropic.SDK.Messaging;
 using MemoryTimeline.Data.Models;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -17,6 +18,7 @@ public class AnthropicLlmService : ILlmService
     private readonly ISettingsService _settingsService;
     private readonly ILogger<AnthropicLlmService> _logger;
     private readonly SemaphoreSlim _clientLock = new(1, 1);
+    private readonly ResiliencePipeline _retry;
     private AnthropicClient? _client;
     private string? _clientApiKey;
     private string? _model;
@@ -31,6 +33,9 @@ public class AnthropicLlmService : ILlmService
     {
         _settingsService = settingsService;
         _logger = logger;
+        // The SDK owns its HttpClient and surfaces failures as exceptions, so
+        // only transport failures can be told apart from a refused request.
+        _retry = HttpRetryPolicy.CreateForExceptions(_logger, "Claude API request");
     }
 
     /// <summary>
@@ -67,6 +72,11 @@ public class AnthropicLlmService : ILlmService
             // Build the prompt
             var prompt = BuildExtractionPrompt(transcript, context);
 
+            // llm_max_tokens / llm_temperature, re-read per call like the key
+            // and model. The seeded temperature (0.3) keeps structured output
+            // consistent; the budget bounds the extraction response.
+            var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
             _logger.LogDebug("Sending request to Claude API");
 
             // Call Claude API using the SDK (Anthropic.SDK v5.8.0 API)
@@ -79,13 +89,17 @@ public class AnthropicLlmService : ILlmService
             {
                 Messages = messages,
                 Model = ModelName,
-                MaxTokens = 4096,
-                Temperature = 0.3m, // Lower temperature for more consistent structured output
+                MaxTokens = generation.MaxTokens,
+                Temperature = (decimal)generation.Temperature,
                 Stream = false
             };
 
-            // CORRECT API: GetClaudeMessageAsync takes only parameters (not model name)
-            var response = await _client.Messages.GetClaudeMessageAsync(parameters);
+            // CORRECT API: GetClaudeMessageAsync takes only parameters (not model name).
+            // Captured once: InitializeClientAsync may swap _client on a later call.
+            var client = _client;
+            var response = await _retry.ExecuteAsync(
+                async token => await client.Messages.GetClaudeMessageAsync(parameters, token),
+                CancellationToken.None);
 
             _logger.LogInformation("Received response from Claude API");
 
@@ -193,6 +207,10 @@ public class AnthropicLlmService : ILlmService
             ? userPrompt
             : $"<system_instructions>\n{systemPrompt}\n</system_instructions>\n\n{userPrompt}";
 
+        // The caller owns the output budget here (each feature knows how long
+        // its answer may be); only the temperature comes from settings.
+        var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
         var parameters = new MessageParameters
         {
             Messages = new List<Message>
@@ -201,7 +219,7 @@ public class AnthropicLlmService : ILlmService
             },
             Model = ModelName,
             MaxTokens = maxTokens,
-            Temperature = 0.3m,
+            Temperature = (decimal)generation.Temperature,
             Stream = false
         };
 
@@ -210,7 +228,9 @@ public class AnthropicLlmService : ILlmService
         ct.ThrowIfCancellationRequested();
         // Forward the token so cancelling actually aborts the in-flight HTTP
         // request instead of only checking at the call boundaries.
-        var response = await _client.Messages.GetClaudeMessageAsync(parameters, ct);
+        var client = _client;
+        var response = await _retry.ExecuteAsync(
+            async token => await client.Messages.GetClaudeMessageAsync(parameters, token), ct);
         ct.ThrowIfCancellationRequested();
 
         var textContent = response?.Message?.Content?

@@ -21,6 +21,15 @@ final class MacAppEnvironmentTests: XCTestCase {
         XCTAssertFalse(name.hasSuffix(".local"), "Bonjour suffix should be trimmed for display")
     }
 
+    /// The Mac registers as the contract's `macos` platform (v1.5), spelled
+    /// exactly as the server's allow-list validates it. Not "other" any more,
+    /// and never the DTO's "ios" default.
+    func testDevicePlatformIsTheContractsMacosValue() {
+        XCTAssertEqual(MacAppEnvironment.devicePlatform, "macos")
+        XCTAssertNotEqual(MacAppEnvironment.devicePlatform, DeviceRegisterRequest(pairingCode: "", displayName: "").platform,
+                          "the DTO's default is the phone's platform; the Mac must always override it")
+    }
+
     /// The shared database opens at the same Application Support location the
     /// iOS companion uses, and its migrations run. This is the one piece of the
     /// shared stack whose behaviour is genuinely platform-dependent (the

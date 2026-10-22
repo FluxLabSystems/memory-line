@@ -154,16 +154,13 @@ final class MacAppEnvironment {
     func pair(serverURL: String, pairingCode: String) async throws {
         // `platform` MUST be set explicitly: DeviceRegisterRequest defaults it to
         // "ios" for the companion, and the memberwise initializer would happily
-        // register this Mac as an iPhone.
-        //
-        // "other", not "macos": the wire contract's enum is [ios, windows, other]
-        // (shared-contracts/openapi/memory-line-sync-v1.yaml) and the server
-        // rejects anything else outright (DeviceService.AllowedPlatforms). Adding
-        // a first-class "macos" value is a cross-cutting change tracked in
-        // docs/design/MACOS-PORT-PLAN.md §7.
+        // register this Mac as an iPhone. "macos" is first-class since contract
+        // v1.5 (the enum is [ios, windows, macos, other] and the server's
+        // DeviceService.AllowedPlatforms accepts it); a Mac paired before that
+        // keeps the "other" its device row was stored with.
         let request = DeviceRegisterRequest(
             pairingCode: pairingCode,
-            platform: "other",
+            platform: Self.devicePlatform,
             displayName: Self.deviceDisplayName,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
         let response = try await api.register(serverURL: serverURL, request: request)
@@ -248,6 +245,11 @@ final class MacAppEnvironment {
         // hostName is often the Bonjour form ("studio.local"); trim the suffix.
         return host.hasSuffix(".local") ? String(host.dropLast(6)) : host
     }
+
+    /// The `platform` this Mac registers with: the exact enum string of
+    /// `DeviceRegisterRequest.platform` in the v1.5 contract. Kept as a named
+    /// constant so the test suite pins the spelling the server validates.
+    nonisolated static let devicePlatform = "macos"
 
     // MARK: - Bootstrap
 

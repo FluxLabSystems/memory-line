@@ -268,8 +268,13 @@ struct SettingsView: View {
         return "Last checked for updates \(lastPulledAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
-    // MARK: - Transcription (Phase 4 placeholder, design §22.4)
+    // MARK: - Transcription (placeholder, design §22 decision 4)
 
+    /// Deliberately not built: the toggle would switch on an on-device Whisper
+    /// model that does not exist in this app yet, and shipping speech-to-text
+    /// without being able to run it is worse than an honest disabled switch.
+    /// The footer names what it actually waits on — the model, not the server,
+    /// whose assistant endpoints already exist.
     private var transcriptionSection: some View {
         Section {
             Toggle("On-device transcription", isOn: .constant(false))
@@ -277,7 +282,7 @@ struct SettingsView: View {
         } header: {
             Text("Transcription")
         } footer: {
-            Text("Coming with the assistant phase \u{2014} recordings are transcribed on your Windows machine.")
+            Text("Not available yet \u{2014} recordings are transcribed on your Windows PC. This waits on an on-device speech-to-text model being built into the app (design \u{00A7}22, decision 4), not on the sync service, whose assistant endpoints already exist.")
         }
     }
 

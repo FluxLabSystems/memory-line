@@ -179,6 +179,12 @@ public partial class App : Application
                     // failing the sync cycle.
                     services.AddSingleton<ITimelineProjectionPublisher, TimelineProjectionPublisher>();
                     services.AddSingleton<IPendingEventDecisionApplier, PendingEventDecisionApplier>();
+                    // Phase 4 assistant: a companion's question arrives as an
+                    // assistant_turn change; the responder answers it through the
+                    // Ask service and queues the answer for the same cycle's push.
+                    // Optional on RemoteChangeApplier, so without this line a
+                    // phone's questions are silently skipped.
+                    services.AddSingleton<IAssistantTurnResponder, AssistantTurnResponder>();
                     services.AddSingleton<ILocalOutboxPublisher, LocalOutboxPublisher>();
                     services.AddSingleton<ISyncBackgroundWorker, SyncBackgroundWorker>();
 

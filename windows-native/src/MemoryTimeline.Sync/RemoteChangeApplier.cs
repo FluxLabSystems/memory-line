@@ -9,9 +9,10 @@ namespace MemoryTimeline.Sync;
 
 /// <summary>
 /// <see cref="IRemoteChangeApplier"/> (design §7.4): capture upserts resolve to
-/// download-artifact → idempotent ingestion → optional queue processing, and a
+/// download-artifact → idempotent ingestion → optional queue processing, a
 /// <c>pending_event_decision</c> is handed to
-/// <see cref="IPendingEventDecisionApplier"/>; every other entity type/operation
+/// <see cref="IPendingEventDecisionApplier"/>, an <c>assistant_turn</c> to
+/// <see cref="IAssistantTurnResponder"/>; every other entity type/operation
 /// is skipped. The local audio cache path is keyed by capture AND artifact
 /// identity, so a later conflicting artifact for an already-ingested capture
 /// downloads to a different file and can never clobber the audio the ingested
@@ -27,14 +28,22 @@ public class RemoteChangeApplier : IRemoteChangeApplier
     private readonly ISyncSettingsStore _settingsStore;
     private readonly ILogger<RemoteChangeApplier> _logger;
     private readonly IPendingEventDecisionApplier? _decisionApplier;
+    private readonly IAssistantTurnResponder? _assistantResponder;
 
+    /// <summary>
+    /// Creates the applier. The two trailing collaborators are optional like
+    /// the status publisher elsewhere: without the decision applier a
+    /// companion's verdicts are skipped, without the responder a companion's
+    /// questions are skipped, and either way the cycle itself keeps running.
+    /// </summary>
     public RemoteChangeApplier(
         IArtifactTransferClient transferClient,
         ICaptureIngestionService ingestionService,
         IQueueService queueService,
         ISyncSettingsStore settingsStore,
         ILogger<RemoteChangeApplier> logger,
-        IPendingEventDecisionApplier? decisionApplier = null)
+        IPendingEventDecisionApplier? decisionApplier = null,
+        IAssistantTurnResponder? assistantResponder = null)
     {
         _transferClient = transferClient;
         _ingestionService = ingestionService;
@@ -42,6 +51,7 @@ public class RemoteChangeApplier : IRemoteChangeApplier
         _settingsStore = settingsStore;
         _logger = logger;
         _decisionApplier = decisionApplier;
+        _assistantResponder = assistantResponder;
     }
 
     /// <inheritdoc />
@@ -67,6 +77,25 @@ public class RemoteChangeApplier : IRemoteChangeApplier
                 }
 
                 return await _decisionApplier.ApplyAsync(change, cancellationToken);
+            }
+
+            // A question asked from a companion (Phase 4). Answered by the
+            // responder, which writes the answer to the outbox for the drain
+            // that follows this pull; chunks are a responder's own output and
+            // never arrive here as work.
+            if (string.Equals(
+                    change.EntityType,
+                    SyncChangeEntityType.AssistantTurn,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (_assistantResponder == null)
+                {
+                    _logger.LogDebug(
+                        "Skipping change {ChangeId}: no assistant turn responder is registered", change.ChangeId);
+                    return ChangeApplicationResult.Skipped;
+                }
+
+                return await _assistantResponder.ApplyAsync(change, cancellationToken);
             }
 
             if (!string.Equals(change.EntityType, SyncChangeEntityType.Capture, StringComparison.OrdinalIgnoreCase))

@@ -78,4 +78,13 @@ public static class ArtifactState
     public const string Uploading = "uploading";
     public const string Complete = "complete";
     public const string Failed = "failed";
+
+    /// <summary>
+    /// The bytes were removed by the service's retention sweep after Windows
+    /// acknowledged archival (design §22 decision 7); the summary keeps the
+    /// measured length and hash. A download answers 410 artifact_purged.
+    /// Added in v1.4 — older clients see an unknown state and must treat it
+    /// as "not downloadable", which is what their complete-only checks do.
+    /// </summary>
+    public const string Purged = "purged";
 }

@@ -134,8 +134,8 @@
   <p class="doc-lede">Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>2,042</b> words</span>
-    <span class="doc-meta-item"><b>9</b> min read</span>
+    <span class="doc-meta-item"><b>3,101</b> words</span>
+    <span class="doc-meta-item"><b>14</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/MACOS-PORT-PLAN.md" target="_blank" rel="noopener noreferrer">
       docs/design/MACOS-PORT-PLAN.md ↗
     </a>
@@ -144,8 +144,19 @@
 </header>
 <div class="doc-grid">
   <article class="prose">
-<p><strong>Status:</strong> groundwork landed; app is a walking skeleton<br><strong>Target:</strong> a native <strong>SwiftUI</strong> macOS app under <a href="https://github.com/ethanbissbort/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>, sharing code with the iOS companion<br><strong>Last updated:</strong> 2026-08-07  </p>
+<p><strong>Status:</strong> phases 0–4 shipped (skeleton, Keychain + sync pull, upload, capture, timeline
+projection, review decisions); phase 5&#39;s Ask pane is a thin client over the service&#39;s assistant
+endpoints with no Windows responder behind it yet; phase 6 (packaging) not started
+<strong>Target:</strong> a native <strong>SwiftUI</strong> macOS app under <a href="https://github.com/ethanbissbort/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>, sharing code with the iOS companion<br><strong>Last updated:</strong> 2026-10-21  </p>
 <hr>
+<blockquote><p><strong>Scope changed 2026-08-08.</strong> This plan was written for macOS as a <em>companion</em> to a
+Windows-owned archive. The target is now <strong>parity</strong>: Windows and macOS are peers, either
+can be a user&#39;s desktop, and the iOS companion feeds whichever one they have. A companion
+can be read-only; a main app cannot. Sections written under the old scope are being
+corrected in place rather than deleted — §3.3 is done, §5 is next, and anything still
+phrased as &quot;the Mac shows a copy of the Windows archive&quot; should be read with that shift in
+mind.</p>
+</blockquote>
 <h2 id="1-what-we-are-building-and-what-we-are-not" class="anchored">1. What we are building, and what we are not<a class="heading-anchor" href="#1-what-we-are-building-and-what-we-are-not" aria-label="Link to this section">#</a></h2>
 <p>Memory Line&#39;s primary product is the <strong>Windows Native</strong> app (.NET 10 / WinUI 3) under
 <code>windows-native/</code>. This plan covers bringing the same product to macOS.</p>
@@ -168,17 +179,17 @@ Mac app inherits on day one. The cost is that the C# service layer does not come
 </thead><tbody><tr>
 <td>Shared Swift core</td>
 <td><code>ios-companion/MemoryLineCompanion/Shared/</code></td>
-<td>11 of 13 files compile on macOS unchanged</td>
+<td>15 of 17 files compile on macOS unchanged (two iOS-only files excluded)</td>
 </tr>
 <tr>
 <td>Sync service</td>
 <td><code>services/MemoryTimeline.SyncApi</code></td>
-<td><code>net10.0</code>, runs on macOS/Linux</td>
+<td><code>net10.0</code>, runs on macOS/Linux; captures, sync, assistant, trips/detours</td>
 </tr>
 <tr>
 <td>Wire contracts</td>
 <td><code>shared-contracts/</code></td>
-<td>OpenAPI + JSON Schema + .NET DTOs, platform-neutral</td>
+<td>OpenAPI + JSON Schema + .NET DTOs, platform-neutral; a CI gate keeps the YAML and the DTOs together</td>
 </tr>
 <tr>
 <td>Business logic</td>
@@ -188,7 +199,7 @@ Mac app inherits on day one. The cost is that the C# service layer does not come
 <tr>
 <td>macOS app</td>
 <td><code>macos-native/</code></td>
-<td>skeleton: pairing + capture library</td>
+<td>pairing, capture + upload, timeline/eras/people/search projection, review verdicts, Ask client</td>
 </tr>
 </tbody></table></div>
 <h3 id="21-the-shared-swift-layer-file-by-file" class="anchored">2.1 The shared Swift layer, file by file<a class="heading-anchor" href="#21-the-shared-swift-layer-file-by-file" aria-label="Link to this section">#</a></h3>
@@ -255,6 +266,26 @@ Mac app inherits on day one. The cost is that the C# service layer does not come
 <td><span class="chip chip-ok">✅ shared</span></td>
 </tr>
 <tr>
+<td><code>Timeline/TimelineProjectionModels.swift</code></td>
+<td>Foundation</td>
+<td><span class="chip chip-ok">✅ shared</span></td>
+</tr>
+<tr>
+<td><code>Timeline/TimelineProjectionStore.swift</code></td>
+<td>Foundation, os</td>
+<td><span class="chip chip-ok">✅ shared</span></td>
+</tr>
+<tr>
+<td><code>Timeline/TimelineProjectionApplier.swift</code></td>
+<td>Foundation, os</td>
+<td><span class="chip chip-ok">✅ shared</span></td>
+</tr>
+<tr>
+<td><code>Timeline/TimelineProjectionColor.swift</code></td>
+<td>Foundation</td>
+<td><span class="chip chip-ok">✅ shared</span></td>
+</tr>
+<tr>
 <td><code>Support/ConfirmationFeedback.swift</code></td>
 <td>AVFAudio, <strong>UIKit</strong></td>
 <td><span class="chip chip-off">❌ iOS-only, excluded</span></td>
@@ -305,22 +336,43 @@ worth the risk for a flag that does nothing there. It requires the
 <code>keychain-access-groups</code> entitlement, already declared in
 <code>macos-native/Config/MemoryLineMac.entitlements</code>.</li>
 </ol>
-<h3 id="33-the-c-business-layer-does-not-come-to-macos--but-it-stayed-portable-anyway" class="anchored">3.3 The C# business layer does not come to macOS — but it stayed portable anyway<a class="heading-anchor" href="#33-the-c-business-layer-does-not-come-to-macos--but-it-stayed-portable-anyway" aria-label="Link to this section">#</a></h3>
+<h3 id="33-the-c-business-layer-does-come-to-macos--this-section-was-wrong" class="anchored">3.3 The C# business layer DOES come to macOS — this section was wrong<a class="heading-anchor" href="#33-the-c-business-layer-does-come-to-macos--this-section-was-wrong" aria-label="Link to this section">#</a></h3>
+<blockquote><p><strong>Corrected 2026-08-08.</strong> This section previously said &quot;the C# business layer does not
+come to macOS,&quot; and reasoned from there that every Core service — extraction, RAG, ask,
+narrative, resurfacing, recall prompts, export/import, timeline math — would need a Swift
+equivalent. That was written when the Mac was scoped as a <em>companion</em>. The target has
+since changed: macOS is to be a <strong>peer of Windows</strong>, a desktop app the iOS companion
+feeds, because a user&#39;s desktop may be either machine.</p>
+<p>The old text is left described rather than deleted because it mis-scoped a review as
+recently as this week: readers who trusted it sized the port as a reimplementation of
+logic that already runs on the target platform.</p>
+</blockquote>
 <p><code>MemoryTimeline.Core</code>, <code>.Data</code> and <code>.Sync</code> were decoupled from WinUI and retargeted from
-<code>net10.0-windows10.0.26100.0</code> to plain <code>net10.0</code>. That work is <strong>done and in the tree</strong>.</p>
-<p>The SwiftUI decision means the Mac app does not consume those assemblies. The retarget was
-still worth doing, and stays worth maintaining, for three reasons:</p>
-<ul>
-<li>It enforces the layering rule the project already had on paper — Core must not know
-about brushes, <code>Visibility</code>, or <code>Windows.Storage</code>.</li>
-<li>It keeps a headless option open: the extraction/RAG/narrative services can run on macOS
-or Linux (a sync-side worker, a batch tool) without a Windows machine.</li>
-<li>It makes Core testable off Windows.</li>
-</ul>
+<code>net10.0-windows10.0.26100.0</code> to plain <code>net10.0</code>. That work is <strong>done and in the tree</strong>, and
+it turns out to have been the expensive half of this port, already paid.</p>
+<p><strong>They do not merely compile off Windows — they run.</strong>
+<code>windows-native/src/MemoryTimeline.Portability.Tests/ArchiveStackRunsOffWindowsTests.cs</code>
+raises the full 25-table archive through the real <code>SchemaUpgrader</code>, writes and reads back an
+event through the real <code>EventService</code> and repository, and checks <code>DateDisplay.FormatPrecise</code>
+returns <code>&quot;Summer 2003&quot;</code> — on a non-Windows machine, against a real SQLite file. The macOS CI
+job runs it (<code>.github/workflows/macos-native-build.yml</code>). A red run there is an
+architectural finding, not a flaky test.</p>
+<p><code>grep -rn &quot;^using Windows\.\|^using Microsoft\.UI&quot; MemoryTimeline.Core MemoryTimeline.Data</code>
+returns nothing. The layering rule holds in fact, not just on paper.</p>
+<p><strong>The consequence for macOS:</strong> the services that would have been ruinous to reimplement —
+extraction prompts, date-precision inference, <code>EventRevisionWriter</code>&#39;s changed-field diff,
+<code>PersonService</code>&#39;s alias and tombstone chain, hybrid retrieval, timeline coordinate math —
+do not need reimplementing at all. The Mac can run the same assemblies. What genuinely
+needs new native code is the small set of platform seams Core already declares as
+interfaces (<code>ISpeechToTextService</code>, <code>IThumbnailGenerator</code>, <code>INotificationService</code>, file
+pickers) plus the SwiftUI presentation layer, which no option avoids.</p>
+<p><strong>What stays unproven, and why it stopped mattering:</strong> hosting those assemblies inside a
+sandboxed <code>.app</code> was never attempted — running them under <code>dotnet test</code> on a CI Mac is not
+the same as launching them from a signed, sandboxed bundle. It is no longer on the critical
+path: phases 3–5 were solved by publishing results from Windows as projections and by
+routing Ask through the service&#39;s assistant contract (§5), so the Mac runs no C# today. The
+spike is the fallback only if a responder ever has to run <em>on</em> the Mac instead of on Windows.</p>
 <p>The rule is written up in <a href="developer-guide.html"><code>claude.md</code></a> under &quot;Keeping Core portable&quot;.</p>
-<p><strong>The real consequence for macOS:</strong> every service in <code>MemoryTimeline.Core</code> — extraction,
-RAG, ask, narrative, resurfacing, recall prompts, export/import, timeline math — has no
-Swift equivalent. §5 is mostly about that.</p>
 <hr>
 <h2 id="4-platform-capabilities-the-mac-needs" class="anchored">4. Platform capabilities the Mac needs<a class="heading-anchor" href="#4-platform-capabilities-the-mac-needs" aria-label="Link to this section">#</a></h2>
 <p>Ordered by how much they block everything else.</p>
@@ -346,9 +398,13 @@ rather than a local choice are mirrored exactly and covered by tests — page un
 <code>hasMore</code>, persist the cursor <em>before</em> acking, hold the cursor when applying fails so the
 page replays, never ack a cursor that did not advance, and last-write-wins on the
 Windows-authored <code>updatedAtUtc</code> when a page is redelivered.</p>
-<p><strong>Known gap:</strong> the Mac applies <code>capture_status</code> changes but ignores <code>capture</code> and
-<code>capture_artifact</code> ones, so the Library shows status for captures it does not yet hold.
-Materialising capture rows from the feed (or recording its own) is Phase 2.</p>
+<p><strong>Upload side — also done.</strong> <code>MacUploadCoordinator</code> drains pending uploads on a foreground
+loop and every finalised recording enters it immediately, mirroring the iOS pipeline minus
+<code>BGTaskScheduler</code>; the Library surfaces its state so a failed upload is never silent.</p>
+<p><strong>Deliberate boundary, formerly a gap:</strong> the Mac applies <code>capture_status</code> and the projection
+but ignores <code>capture</code> and <code>capture_artifact</code> changes. Recordings made on the phone go to
+Windows for processing and never appear in this Mac&#39;s Library, which lists only what this
+Mac recorded; the status it shows is for its own captures.</p>
 <h3 id="43-storage-locations" class="anchored">4.3 Storage locations<a class="heading-anchor" href="#43-storage-locations" aria-label="Link to this section">#</a></h3>
 <p>Shared <code>AppDatabase.defaultURL()</code> uses <code>.applicationSupportDirectory</code>, which is correct on
 both platforms. Under the App Sandbox this resolves inside the container; that is intended.</p>
@@ -379,29 +435,29 @@ menu-bar item for quick capture.</p>
 <td>in the tree</td>
 </tr>
 <tr>
-<td><strong>1b — Upload</strong></td>
+<td><strong>1b — Upload</strong> ✅</td>
 <td>Drain pending uploads</td>
-<td>nothing to upload until Phase 2 gives the Mac a recorder; deferred deliberately</td>
+<td><code>MacUploadCoordinator</code>, a foreground loop; every finalised recording enters it at once</td>
 </tr>
 <tr>
-<td><strong>2 — Capture</strong></td>
-<td>macOS recorder, input device selection, menu-bar quick capture</td>
+<td><strong>2 — Capture</strong> ✅</td>
+<td>macOS recorder, input device selection, menu-bar quick capture, File ▸ New Recording (⌘N), <code>memoryline://record</code></td>
 <td>§4.1</td>
 </tr>
 <tr>
-<td><strong>3 — Timeline</strong></td>
-<td>The big one: timeline math, zoom levels, spans, swimlanes, uncertainty bands</td>
-<td>see §6</td>
+<td><strong>3 — Timeline</strong> ✅</td>
+<td>Read-only timeline, eras, people, review queue, fed by the projection feed</td>
+<td>see &quot;how phase 3 was actually solved&quot; below</td>
 </tr>
 <tr>
-<td><strong>4 — Review &amp; people</strong></td>
-<td>Pending-event review, approve/reject, contact book</td>
-<td>needs extraction (§6)</td>
+<td><strong>4 — Review decisions</strong> ✅</td>
+<td>Approve/reject a pending event <em>from</em> the Mac</td>
+<td>queued to disk, pushed as <code>pending_event_decision</code>, pruned when Windows confirms</td>
 </tr>
 <tr>
-<td><strong>5 — Ask &amp; narrative</strong></td>
+<td><strong>5 — Ask &amp; narrative</strong> ◐</td>
 <td>Retrieval + LLM answers with citations</td>
-<td>needs embeddings on-device or via service</td>
+<td>Ask: a thin client (<code>MacAskCoordinator</code>, <code>AskView</code>) submits turns to the service&#39;s assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; no Windows responder exists yet (tracked separately), so nothing answers today. Narrative: not started</td>
 </tr>
 <tr>
 <td><strong>6 — Packaging</strong></td>
@@ -409,24 +465,43 @@ menu-bar item for quick capture.</p>
 <td>entitlements already set</td>
 </tr>
 </tbody></table></div>
-<h3 id="the-decision-that-gates-phases-35" class="anchored">The decision that gates phases 3–5<a class="heading-anchor" href="#the-decision-that-gates-phases-35" aria-label="Link to this section">#</a></h3>
-<p>Everything from Phase 3 on needs the logic that currently lives in C# — extraction
-prompts, date-precision inference, hybrid retrieval, narrative grounding, timeline
-coordinate math. There are three ways to get it, and <strong>this has not been decided</strong>:</p>
-<ol>
-<li><strong>Reimplement in Swift.</strong> Full offline parity, no dependencies. Costs a second
-implementation of a large body of subtle logic, and the two will drift.</li>
-<li><strong>Move the logic behind the sync service.</strong> The Mac calls the service; the service runs
-the existing .NET code (already <code>net10.0</code>, already runs on macOS/Linux). One
-implementation, but the app stops being local-first and needs the service running.</li>
-<li><strong>Embed .NET as a library</strong> via a native AOT-compiled shared library the Swift app
-links. One implementation, stays local-first, but the build and debugging story is
-genuinely unpleasant.</li>
-</ol>
-<p>Recommendation: <strong>(1) for timeline math</strong> — it is self-contained, well-tested on the C#
-side, and small enough that duplication is cheap — and <strong>defer 2-vs-3 for the AI features</strong>
-until Phase 4 makes the cost concrete. Do not decide it now; do not let Phase 1–2 work
-assume an answer.</p>
+<h3 id="the-decision-that-gated-phases-35--resolved-by-a-fourth-option" class="anchored">The decision that gated phases 3–5 — resolved, by a fourth option<a class="heading-anchor" href="#the-decision-that-gated-phases-35--resolved-by-a-fourth-option" aria-label="Link to this section">#</a></h3>
+<p>This section originally said everything from Phase 3 on needed the logic living in C# —
+extraction prompts, date-precision inference, hybrid retrieval, narrative grounding,
+timeline coordinate math — and listed three ways to get it: reimplement in Swift, move it
+behind the sync service, or embed .NET as an AOT library. All three are ways of getting the
+<em>computation</em> onto the Mac.</p>
+<p><strong>The fourth option, and the one built: publish the result instead of the computation.</strong>
+Windows runs the logic it already has and puts the answer on the sync feed as a read-only
+projection — <code>shared-contracts/.../TimelineProjectionContracts.cs</code>. An event crosses with
+its tags, people and locations already denormalised, and with <code>displayDate</code> already
+formatted by the same <code>DateDisplay.FormatPrecise</code> the Windows UI binds to. The Mac draws
+what it is sent.</p>
+<p>Why this beats all three of the originals, for this product:</p>
+<ul>
+<li><strong>Nothing is reimplemented, so nothing can drift.</strong> The original recommendation was to
+reimplement date-precision formatting in Swift because it is &quot;self-contained and
+well-tested&quot;. It is also exactly the kind of logic where a second implementation is
+invisible when it diverges: a memory the user dated to a summer rendered as a precise day
+is wrong in a way no test on either side would catch, because each side is
+self-consistent.</li>
+<li><strong>It stays local-first.</strong> The Mac reads its own SQLite copy and needs no service running
+to draw a timeline, which options 2 and 3 could not both promise.</li>
+<li><strong>It answers &quot;who may write&quot; at the same time.</strong> Windows is the only writer by
+construction rather than by convention, and the one exception —
+<code>PendingEventDecisionPayload</code> — is narrow enough to defend: a verdict is one idempotent
+bit with no field values to merge, so accepting it does not make the system multi-writer.</li>
+</ul>
+<p>What this does <em>not</em> solve: Ask (Phase 5) is genuinely computation, not a projection. The
+Phase 4 assistant contract (<code>AssistantContracts.cs</code>) frames the answer as &quot;Windows is the
+brain, with an option to link an LLM provider or pre-process on device&quot; — option 2 in a
+different suit — and that is the route taken: the Mac&#39;s Ask pane is a client of the
+service&#39;s assistant endpoints and nothing else. The service stores, routes and reaps idle
+sessions; what is still missing is the Windows responder that claims an <code>assistant_turn</code>
+off the feed and answers it, which is tracked separately.</p>
+<p><strong>Consequence for the Mac&#39;s UI: it is a reader.</strong> Timeline, Review and People render a copy
+and offer no editing. That is the design, not a shortfall, and the screens say so rather
+than hiding it.</p>
 <hr>
 <h2 id="6-verification" class="anchored">6. Verification<a class="heading-anchor" href="#6-verification" aria-label="Link to this section">#</a></h2>
 <p><code>.github/workflows/macos-native-build.yml</code> runs on <code>macos-latest</code>:</p>
@@ -440,12 +515,10 @@ building them on a Mac is the only automated check that the declaration is true,
 the Windows workflow stays green whether or not a Windows-only type creeps back in. Both
 jobs gate — a non-gating check here would repeat exactly the failure the 2026-07 audit
 called out (finding #10, the .NET test suite that ran with <code>continue-on-error</code>).</p>
-<blockquote><p><strong>This job has not run yet.</strong> It is the first execution of <code>MemoryTimeline.Core</code> and
-<code>.Sync</code> on a non-Windows machine. <code>Microsoft.ML.OnnxRuntime</code> and <code>Anthropic.SDK</code> are
-expected to restore on macOS, but that is reasoning, not evidence. If the job fails on a
-native-asset restore rather than on a compile error, the fix belongs in the package
-reference, not in a retreat from the <code>net10.0</code> target.</p>
-</blockquote>
+<p>The <code>dotnet</code> job has since run green, so §3.3 is now evidence rather than reasoning:
+<code>Microsoft.ML.OnnxRuntime</code> and <code>Anthropic.SDK</code> do restore on macOS and those four projects
+do compile there. If it ever fails on a native-asset restore rather than a compile error,
+the fix belongs in the package reference, not in a retreat from the <code>net10.0</code> target.</p>
 <hr>
 <h3 id="34-the-mac-registers-as-other-because-the-contract-has-no-macos" class="anchored">3.4 The Mac registers as <code>other</code>, because the contract has no <code>macos</code><a class="heading-anchor" href="#34-the-mac-registers-as-other-because-the-contract-has-no-macos" aria-label="Link to this section">#</a></h3>
 <p><code>DeviceRegisterRequest.platform</code> is constrained to <code>[ios, windows, other]</code> by
@@ -470,13 +543,36 @@ that renders a platform label — worth doing before the Mac ships, not worth do
 server&#39;s <code>AllowedPlatforms</code>, and the Swift DTO&#39;s default. Until then the Mac is <code>other</code>.</li>
 <li><strong>Distribution:</strong> Mac App Store (sandbox already assumed) or Developer ID + Sparkle?
 Affects whether the sandbox exceptions in §4 stay viable.</li>
-<li><strong>Does the Mac record at all,</strong> or is it review-only with the iPhone as the capture
-device? Phase 2 is a large chunk of work that a review-only Mac would not need.</li>
 <li><strong>Minimum macOS version.</strong> Currently 14.0 (Sonoma), chosen to match the iOS 17 baseline
 and because <code>ContentUnavailableView</code> and the <code>@Observable</code> macro need it.</li>
 <li><strong>Shared UI vocabulary with Windows.</strong> The Windows app has a settled visual language for
 precision-honest dates, era colours, and category glyphs. The Mac should agree with it;
-nobody has written that down as a cross-platform spec.</li>
+nobody has written that down as a cross-platform spec. Note that <code>displayDate</code> already
+removes the worst of this risk — the precision-honest string is formatted once, on
+Windows, and every client renders it verbatim.</li>
+<li><strong>An <code>EraService</code> in Core.</strong> Eras are the only projected entity with no Core service, so
+their publish calls live in <code>ErasViewModel</code>; <code>ImportService</code> now publishes the eras it
+creates through <code>PublishImportedProjectionsAsync</code>, alongside imported events, which closed
+the gap where imported eras never reached a companion. What remains is that era publishing
+has no single owner, and eras still have no write-path test: nothing in this repo loads a
+ViewModel into the test host. See a4bb149.</li>
+<li><strong>May the phone author review verdicts?</strong> The Mac may (§5 phase 4), because that was asked
+and answered. The contract admits a decision from any companion, and the Mac&#39;s
+queue-to-disk outbox would share cleanly — but nobody has decided whether a phone should
+approve memories into an archive, so the iOS timeline is read-only.</li>
+</ul>
+<p><strong>Answered since this list was written:</strong></p>
+<ul>
+<li><del>Does the Mac record at all?</del> Yes — Phase 2 shipped a recorder, input-device selection
+and menu-bar quick capture.</li>
+<li><del>How does the C# business logic reach the Mac?</del> It does not run there; Windows publishes
+results as projections, and Ask goes through the service&#39;s assistant contract. Hosting the
+C# assemblies inside the <code>.app</code> was never tried and remains the fallback only if a
+responder ever has to run on the Mac (§3.3). See &quot;the decision that gated phases 3–5&quot; in §5.</li>
+<li><del>There is no iOS CI.</del> There is now — <code>.github/workflows/ios-companion-build.yml</code>. It
+needed a committed shared scheme first: Xcode writes schemes per-user under <code>xcuserdata/</code>,
+which is not in git, so <code>xcodebuild -scheme</code> had nothing to resolve and CI could not have
+been added without one.</li>
 </ul>
 
 <nav class="pager" aria-label="Document navigation">
@@ -499,14 +595,14 @@ nobody has written that down as a cross-platform spec.</li>
 <li class="toc-item toc-h2"><a href="#3-decisions-and-their-consequences" data-toc-link>3. Decisions and their consequences</a></li>
 <li class="toc-item toc-h3"><a href="#31-code-sharing-synchronized-folder-not-a-swift-package" data-toc-link>3.1 Code sharing: synchronized folder, not a Swift package</a></li>
 <li class="toc-item toc-h3"><a href="#32-keychain-the-mac-needs-its-own-item-and-a-modern-keychain--done" data-toc-link>3.2 Keychain: the Mac needs its own item and a modern keychain — done</a></li>
-<li class="toc-item toc-h3"><a href="#33-the-c-business-layer-does-not-come-to-macos--but-it-stayed-portable-anyway" data-toc-link>3.3 The C# business layer does not come to macOS — but it stayed portable anyway</a></li>
+<li class="toc-item toc-h3"><a href="#33-the-c-business-layer-does-come-to-macos--this-section-was-wrong" data-toc-link>3.3 The C# business layer DOES come to macOS — this section was wrong</a></li>
 <li class="toc-item toc-h2"><a href="#4-platform-capabilities-the-mac-needs" data-toc-link>4. Platform capabilities the Mac needs</a></li>
 <li class="toc-item toc-h3"><a href="#41-capture-recording" data-toc-link>4.1 Capture (recording)</a></li>
 <li class="toc-item toc-h3"><a href="#42-upload-and-status-sync--pull-side-done" data-toc-link>4.2 Upload and status sync — pull side done</a></li>
 <li class="toc-item toc-h3"><a href="#43-storage-locations" data-toc-link>4.3 Storage locations</a></li>
 <li class="toc-item toc-h3"><a href="#44-windows-only-integrations-with-no-macos-analogue" data-toc-link>4.4 Windows-only integrations with no macOS analogue</a></li>
 <li class="toc-item toc-h2"><a href="#5-phasing" data-toc-link>5. Phasing</a></li>
-<li class="toc-item toc-h3"><a href="#the-decision-that-gates-phases-35" data-toc-link>The decision that gates phases 3–5</a></li>
+<li class="toc-item toc-h3"><a href="#the-decision-that-gated-phases-35--resolved-by-a-fourth-option" data-toc-link>The decision that gated phases 3–5 — resolved, by a fourth option</a></li>
 <li class="toc-item toc-h2"><a href="#6-verification" data-toc-link>6. Verification</a></li>
 <li class="toc-item toc-h3"><a href="#34-the-mac-registers-as-other-because-the-contract-has-no-macos" data-toc-link>3.4 The Mac registers as other, because the contract has no macos</a></li>
 <li class="toc-item toc-h2"><a href="#7-open-questions" data-toc-link>7. Open questions</a></li>
@@ -518,7 +614,7 @@ nobody has written that down as a cross-platform spec.</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

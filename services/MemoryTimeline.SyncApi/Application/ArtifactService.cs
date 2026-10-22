@@ -360,6 +360,16 @@ public sealed class ArtifactService : IArtifactService
             return ServiceResult<ArtifactDownloadInfo>.Fail(error!);
         }
 
+        if (artifact.State == ArtifactState.Purged)
+        {
+            // Permanent by design: the retention sweep removed the bytes after
+            // Windows archived the capture. A retryable code here would have a
+            // client re-request forever for content that is not coming back.
+            return ServiceResult<ArtifactDownloadInfo>.Fail(
+                StatusCodes.Status410Gone, SyncApiErrorCodes.ArtifactPurged,
+                "The artifact content was removed by the retention sweep.");
+        }
+
         if (artifact.State != ArtifactState.Complete)
         {
             return ServiceResult<ArtifactDownloadInfo>.Fail(

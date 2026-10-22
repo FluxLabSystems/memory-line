@@ -215,16 +215,25 @@ public sealed class SyncChangeService : ISyncChangeService
         CancellationToken cancellationToken)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var device = await db.Devices.FirstOrDefaultAsync(d => d.DeviceId == caller.DeviceId, cancellationToken);
+
+        // The device row's refresh hash is a concurrency token, so an ack that
+        // races a token refresh would otherwise fail the save; the helper
+        // reloads and re-applies the cursor on top of the rotated row.
+        var device = await DeviceRowConcurrency.SaveAsync(
+            db,
+            caller.DeviceId,
+            d =>
+            {
+                d.AckedCursor = request.Cursor;
+                d.LastSeenAtUtc = DateTime.UtcNow;
+            },
+            cancellationToken);
         if (device is null)
         {
             return ServiceResult<bool>.Fail(
                 StatusCodes.Status401Unauthorized, SyncApiErrorCodes.DeviceUnknown, "No such device.");
         }
 
-        device.AckedCursor = request.Cursor;
-        device.LastSeenAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
         return ServiceResult<bool>.Ok(true);
     }
 

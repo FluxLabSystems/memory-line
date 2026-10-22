@@ -42,4 +42,52 @@ public class SyncApiOptions
     /// key is generated on first run and persisted to {DataDir}/signing.key.
     /// </summary>
     public string? TokenSigningKeyBase64 { get; set; }
+
+    /// <summary>
+    /// Days a completed artifact's bytes are kept after Windows acknowledges
+    /// archival (a <c>capture_status</c> of <c>completed</c>) before the
+    /// retention sweep purges them (design §22 decision 7). Artifacts of
+    /// captures Windows has not acknowledged are never purged by age.
+    /// </summary>
+    public int ArtifactRetentionDays { get; set; } = 14;
+
+    /// <summary>
+    /// Soft cap on the bytes held by complete artifacts. When exceeded, the
+    /// sweep purges acknowledged artifacts oldest-first until back under it
+    /// ("or sooner under storage pressure", §22 decision 7). 0 disables the
+    /// cap; unacknowledged artifacts are never purged for space.
+    /// </summary>
+    public long ArtifactStorageBudgetBytes { get; set; }
+
+    /// <summary>Minutes between retention sweeps (the first runs at startup).</summary>
+    public int RetentionSweepIntervalMinutes { get; set; } = 360;
+
+    /// <summary>
+    /// Minutes a temporary part or assembly file may go unwritten before the
+    /// sweep treats it as crash-orphaned and deletes it. In-flight requests
+    /// keep writing theirs, so a generous window costs nothing.
+    /// </summary>
+    public int TemporaryFileGraceMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Hours without an accepted turn after which an assistant session is
+    /// reaped (its turns deleted, unanswered ones cancelled on the feed). The
+    /// design doc names no figure; a day outlasts any single drive.
+    /// </summary>
+    public int AssistantSessionIdleHours { get; set; } = 24;
+
+    /// <summary>Minutes between assistant session reaps (the first runs at startup).</summary>
+    public int AssistantReaperIntervalMinutes { get; set; } = 60;
+
+    /// <summary>
+    /// Days a trip's route context snapshots are kept (design §22 decision 9:
+    /// trails auto-delete after 14 days). Each trip's newest snapshot survives
+    /// the sweep so detour generation on a long trip keeps a position.
+    /// Terminal (dismissed/expired) detour suggestions age out on the same
+    /// clock.
+    /// </summary>
+    public int RouteContextRetentionDays { get; set; } = 14;
+
+    /// <summary>Hours a generated detour suggestion stays actionable when the provider sets no expiry.</summary>
+    public int DetourSuggestionLifetimeHours { get; set; } = 6;
 }

@@ -5,7 +5,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using MemoryTimeline.SyncContracts;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MemoryTimeline.SyncApi.Tests;
 
@@ -42,8 +44,15 @@ public class SyncApiFixture : IDisposable
     {
     }
 
-    /// <summary>Boots the host with the standard settings plus <paramref name="extraSettings"/> (which win on key collisions).</summary>
-    protected SyncApiFixture(IReadOnlyDictionary<string, string>? extraSettings)
+    /// <summary>
+    /// Boots the host with the standard settings plus <paramref name="extraSettings"/>
+    /// (which win on key collisions), and lets a derived fixture swap services
+    /// through <paramref name="configureServices"/>, which runs after the
+    /// application's own registrations so a later singleton wins.
+    /// </summary>
+    protected SyncApiFixture(
+        IReadOnlyDictionary<string, string>? extraSettings,
+        Action<IServiceCollection>? configureServices = null)
     {
         _dataDir = Path.Combine(
             Path.GetTempPath(), "memory-line-syncapi-tests", Guid.NewGuid().ToString("N"));
@@ -59,8 +68,19 @@ public class SyncApiFixture : IDisposable
             {
                 builder.UseSetting(key, value);
             }
+
+            if (configureServices is not null)
+            {
+                builder.ConfigureTestServices(configureServices);
+            }
         });
     }
+
+    /// <summary>The host's service provider, for tests that drive a service directly (sweeps, reapers).</summary>
+    public IServiceProvider Services => _factory.Services;
+
+    /// <summary>The temporary data directory the host runs against (SQLite file, artifact blobs, key, code).</summary>
+    public string DataDirectory => _dataDir;
 
     /// <summary>Creates an unauthenticated client against the test host.</summary>
     public HttpClient CreateClient() => _factory.CreateClient();
@@ -280,6 +300,22 @@ public sealed class StrictRotationSyncApiFixture : SyncApiFixture
 {
     public StrictRotationSyncApiFixture()
         : base(new Dictionary<string, string> { ["SyncApi:RefreshTokenGraceSeconds"] = "0" })
+    {
+    }
+}
+
+/// <summary>
+/// Host configured with a tiny SyncApi:ArtifactStorageBudgetBytes
+/// (<see cref="BudgetBytes"/>) so the retention sweep's storage-pressure path
+/// can be exercised with 100-byte artifacts.
+/// </summary>
+public sealed class StoragePressureSyncApiFixture : SyncApiFixture
+{
+    /// <summary>Configured budget: room for one 100-byte artifact, not two.</summary>
+    public const long BudgetBytes = 150;
+
+    public StoragePressureSyncApiFixture()
+        : base(new Dictionary<string, string> { ["SyncApi:ArtifactStorageBudgetBytes"] = BudgetBytes.ToString() })
     {
     }
 }

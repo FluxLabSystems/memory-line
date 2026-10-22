@@ -116,9 +116,9 @@ final class MacAudioRecorderService: MacAudioRecording {
     private let store: any CaptureStore
     private let settings: any SettingsStore
     /// Invoked on the main actor once a capture is durable, so the upload
-    /// pipeline can start without waiting for its next tick. Optional because
-    /// nothing on macOS uploads yet (port plan §4.2, phase 1b); wire it to
-    /// `MacUploading.captureFinalized(_:)` when that lands.
+    /// pipeline can start without waiting for its next tick. The composition
+    /// root wires it to `MacUploading.captureFinalized(_:)`; it is optional
+    /// only so a test or a preview can build a recorder with no uploader.
     private let onFinalized: ((CaptureRecord) -> Void)?
     private let logger = AppLog.logger(category: "recorder")
 

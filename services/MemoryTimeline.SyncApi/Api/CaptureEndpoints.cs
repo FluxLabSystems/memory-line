@@ -90,29 +90,27 @@ public static class CaptureEndpoints
             : ApiErrorResults.ToResult(result.Error!, context);
     }
 
-    private static Task<IResult> CompleteAsync(
-        string captureId,
-        HttpContext context,
-        ICaptureService captures,
-        CancellationToken cancellationToken)
-        => TouchAsync(captureId, context, captures, cancellationToken);
-
-    private static Task<IResult> RetryAsync(
-        string captureId,
-        HttpContext context,
-        ICaptureService captures,
-        CancellationToken cancellationToken)
-        => TouchAsync(captureId, context, captures, cancellationToken);
-
-    /// <summary>Phase 1 minimal /complete and /retry: current capture state plus last-seen bookkeeping.</summary>
-    private static async Task<IResult> TouchAsync(
+    private static async Task<IResult> CompleteAsync(
         string captureId,
         HttpContext context,
         ICaptureService captures,
         CancellationToken cancellationToken)
     {
         var caller = DeviceAuthEndpointFilter.GetDevice(context);
-        var result = await captures.TouchAsync(caller, captureId, cancellationToken);
+        var result = await captures.CompleteAsync(caller, captureId, cancellationToken);
+        return result.IsSuccess
+            ? Results.Json(result.Value)
+            : ApiErrorResults.ToResult(result.Error!, context);
+    }
+
+    private static async Task<IResult> RetryAsync(
+        string captureId,
+        HttpContext context,
+        ICaptureService captures,
+        CancellationToken cancellationToken)
+    {
+        var caller = DeviceAuthEndpointFilter.GetDevice(context);
+        var result = await captures.RetryAsync(caller, captureId, cancellationToken);
         return result.IsSuccess
             ? Results.Json(result.Value)
             : ApiErrorResults.ToResult(result.Error!, context);

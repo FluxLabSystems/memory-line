@@ -156,9 +156,11 @@ internal static class EntityMappers
     /// <paramref name="sourceDeviceId"/> is the device that caused this
     /// revision, which echo suppression uses to keep the change away from it:
     /// the asking phone does not need its own question back, and a responder
-    /// does not need its own answer back.
+    /// does not need its own answer back. Null when the service itself caused
+    /// it (the idle-session reaper cancelling an unanswered turn), so every
+    /// device — asker and responder alike — receives it.
     /// </summary>
-    public static SyncChangeRow CreateAssistantTurnChange(AssistantTurnRow turn, string sourceDeviceId) => new()
+    public static SyncChangeRow CreateAssistantTurnChange(AssistantTurnRow turn, string? sourceDeviceId) => new()
     {
         OwnerId = turn.OwnerId,
         EntityType = SyncChangeEntityType.AssistantTurn,

@@ -148,7 +148,7 @@
   <p class="doc-lede">Phase-by-phase status, the 2026-08 F1–F12 feature wave with per-feature detail and deferred items, known limitations, and success criteria.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>5,791</b> words</span>
+    <span class="doc-meta-item"><b>5,779</b> words</span>
     <span class="doc-meta-item"><b>26</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEVELOPMENT-STATUS.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEVELOPMENT-STATUS.md ↗
@@ -199,12 +199,11 @@ then the perf-bound fix) because the two framework moves fail in confusingly
 similar ways — both surface as assembly-load and type-resolution errors.</p>
 <p><strong>Developer prerequisites changed</strong> — see <code>README.md</code> → Prerequisites:</p>
 <ul>
-<li>The <strong>.NET 10 SDK, <code>10.0.1xx</code> band</strong>, pinned by <code>src/global.json</code>. That band
-declares MSBuild 17.14 as its minimum, which is what keeps Visual Studio 2022
-able to build; bands <code>10.0.2xx</code>+ require MSBuild 18 / Visual Studio 2026.</li>
+<li>The <strong>.NET 10 SDK, 10.0.3xx or newer</strong>, pinned by <code>src/global.json</code>
+(<code>10.0.300</code>, <code>rollForward: latestFeature</code>). Bands <code>10.0.2xx</code>+ require
+MSBuild 18 / Visual Studio 2026, so VS 2022 can no longer build the repo.</li>
 <li><strong>Visual Studio 2026 is the supported IDE.</strong> Microsoft supports targeting
-.NET 10 only in VS 18.0+; VS 2022 17.14 builds with an &quot;unsupported target&quot;
-warning rather than an error. The CI runner (<code>windows-latest</code>) is already
+.NET 10 only in VS 18.0+, and the SDK pin requires it. The CI runner (<code>windows-latest</code>) is already
 VS 2026 / MSBuild 18.8.2.</li>
 </ul>
 <p><strong>Notes for whoever picks this up next:</strong></p>
@@ -1562,7 +1561,7 @@ code-sign, and prepare the Microsoft Store submission.</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

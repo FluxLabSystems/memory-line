@@ -38,6 +38,12 @@ public class SyncDbContext : DbContext
 
     public DbSet<AssistantTurnRow> AssistantTurns => Set<AssistantTurnRow>();
 
+    public DbSet<TripRow> Trips => Set<TripRow>();
+
+    public DbSet<RouteContextRow> RouteContexts => Set<RouteContextRow>();
+
+    public DbSet<DetourSuggestionRow> DetourSuggestions => Set<DetourSuggestionRow>();
+
     public DbSet<SyncChangeRow> SyncChanges => Set<SyncChangeRow>();
 
     public DbSet<PushReceipt> PushReceipts => Set<PushReceipt>();
@@ -196,6 +202,79 @@ public class SyncDbContext : DbContext
             // index makes that a lost race the service retries rather than two
             // turns silently sharing a position in the conversation.
             e.HasIndex(x => new { x.SessionId, x.Sequence }).IsUnique();
+        });
+
+        // Column names and types here are duplicated in
+        // SyncApiBootstrapper.EnsureTripTablesAsync, which creates these tables
+        // on databases that predate them — keep the two in step.
+        modelBuilder.Entity<TripRow>(e =>
+        {
+            e.ToTable("trips");
+            e.HasKey(x => x.TripId);
+            e.Property(x => x.TripId).HasColumnName("trip_id");
+            e.Property(x => x.OwnerId).HasColumnName("owner_id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
+            e.Property(x => x.EndedAtUtc).HasColumnName("ended_at_utc");
+            e.Property(x => x.OriginLabel).HasColumnName("origin_label");
+            e.Property(x => x.DestinationLabel).HasColumnName("destination_label");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PreferencesJson).HasColumnName("preferences_json");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => x.OwnerId);
+        });
+
+        modelBuilder.Entity<RouteContextRow>(e =>
+        {
+            e.ToTable("trip_route_contexts");
+            e.HasKey(x => x.RouteContextId);
+            e.Property(x => x.RouteContextId).HasColumnName("route_context_id");
+            e.Property(x => x.TripId).HasColumnName("trip_id");
+            e.Property(x => x.OwnerId).HasColumnName("owner_id");
+            e.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc");
+            e.Property(x => x.Latitude).HasColumnName("latitude");
+            e.Property(x => x.Longitude).HasColumnName("longitude");
+            e.Property(x => x.HorizontalAccuracyM).HasColumnName("horizontal_accuracy_m");
+            e.Property(x => x.HeadingDegrees).HasColumnName("heading_degrees");
+            e.Property(x => x.SpeedMps).HasColumnName("speed_mps");
+            e.Property(x => x.RouteProgress).HasColumnName("route_progress");
+            e.Property(x => x.RemainingDistanceM).HasColumnName("remaining_distance_m");
+            e.Property(x => x.RemainingDurationS).HasColumnName("remaining_duration_s");
+            e.Property(x => x.CurrentRoadName).HasColumnName("current_road_name");
+            e.Property(x => x.DestinationEtaUtc).HasColumnName("destination_eta_utc");
+            e.Property(x => x.Provider).HasColumnName("provider");
+            e.Property(x => x.ReceivedAtUtc).HasColumnName("received_at_utc");
+            e.HasIndex(x => new { x.TripId, x.CapturedAtUtc });
+        });
+
+        modelBuilder.Entity<DetourSuggestionRow>(e =>
+        {
+            e.ToTable("detour_suggestions");
+            e.HasKey(x => x.SuggestionId);
+            e.Property(x => x.SuggestionId).HasColumnName("suggestion_id");
+            e.Property(x => x.TripId).HasColumnName("trip_id");
+            e.Property(x => x.OwnerId).HasColumnName("owner_id");
+            e.Property(x => x.GeneratedAtUtc).HasColumnName("generated_at_utc");
+            e.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc");
+            e.Property(x => x.PlaceProvider).HasColumnName("place_provider");
+            e.Property(x => x.ProviderPlaceId).HasColumnName("provider_place_id");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.Latitude).HasColumnName("latitude");
+            e.Property(x => x.Longitude).HasColumnName("longitude");
+            e.Property(x => x.RouteAddedDistanceM).HasColumnName("route_added_distance_m");
+            e.Property(x => x.RouteAddedDurationS).HasColumnName("route_added_duration_s");
+            e.Property(x => x.OpenStatus).HasColumnName("open_status");
+            e.Property(x => x.NextOpenInterval).HasColumnName("next_open_interval");
+            e.Property(x => x.PriceSummary).HasColumnName("price_summary");
+            e.Property(x => x.AdmissionCurrency).HasColumnName("admission_currency");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.VerificationSourcesJson).HasColumnName("verification_sources_json");
+            e.Property(x => x.State).HasColumnName("state");
+            e.Property(x => x.StateChangedAtUtc).HasColumnName("state_changed_at_utc");
+            e.HasIndex(x => new { x.TripId, x.GeneratedAtUtc });
         });
 
         modelBuilder.Entity<SyncChangeRow>(e =>

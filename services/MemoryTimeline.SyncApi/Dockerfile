@@ -9,7 +9,7 @@
 #
 #   docker run -p 8080:8080 -v memory-line-sync-data:/data memory-line-sync
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Restore first with only the project files so dependency layers cache.
@@ -23,7 +23,7 @@ COPY services/MemoryTimeline.SyncApi/ services/MemoryTimeline.SyncApi/
 RUN dotnet publish services/MemoryTimeline.SyncApi/MemoryTimeline.SyncApi.csproj \
     -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 

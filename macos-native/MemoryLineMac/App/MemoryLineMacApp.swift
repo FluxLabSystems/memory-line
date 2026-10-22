@@ -20,12 +20,24 @@ struct MemoryLineMacApp: App {
                 // repair and network loops is a separate act that belongs where
                 // the UI can already show what is happening.
                 .task { await environment.start() }
+                // Info.plist registers memoryline:// for this app as the iOS
+                // companion does, so the same link forms route the same way.
+                .onOpenURL(perform: handleDeepLink)
         }
         .commands {
             // Replacing .newItem rather than adding: "New" in a capture app
             // means starting a recording, and leaving the stock File ▸ New
-            // alongside it would offer two different meanings of the word.
+            // alongside it would offer two different meanings of the word. ⌘N
+            // is the hotkey the recorder's double-fire guards exist for; the
+            // menu-bar item and the capture window reach the same recorder.
             CommandGroup(replacing: .newItem) {
+                Button(isRecordingActive ? "Stop and Save Recording" : "New Recording") {
+                    Task { await environment.toggleRecording() }
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+
+                Divider()
+
                 Button("Sync Now") {
                     Task { await environment.sync.pullNow() }
                 }
@@ -48,6 +60,28 @@ struct MemoryLineMacApp: App {
             SettingsScene()
                 .environment(environment)
                 .frame(width: 520)
+        }
+    }
+
+    private var isRecordingActive: Bool {
+        environment.recorder.state == .recording || environment.recorder.state == .paused
+    }
+
+    /// Handles `memoryline://` links, mirroring the iOS companion's routing:
+    /// `memoryline://record` toggles recording; `memoryline://open` (or a bare
+    /// scheme) only brings the app forward, which opening the URL already did.
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "memoryline" else { return }
+        let target = (url.host() ?? url.path)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
+        switch target {
+        case "record":
+            Task { await environment.toggleRecording() }
+        case "open", "":
+            break
+        default:
+            AppLog.ui.notice("ignored unknown deep link target \(target, privacy: .public)")
         }
     }
 }

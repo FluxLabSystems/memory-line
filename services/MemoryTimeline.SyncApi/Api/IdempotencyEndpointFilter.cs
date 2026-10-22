@@ -18,25 +18,54 @@ public sealed class IdempotencyEndpointFilter : IEndpointFilter
     /// <summary>Idempotency header name (shared-contracts OpenAPI parameter).</summary>
     public const string HeaderName = "Idempotency-Key";
 
-    private const int MaxKeyLength = 128;
+    /// <summary>Longest accepted key (the OpenAPI parameter's maxLength).</summary>
+    public const int MaxKeyLength = 128;
 
     /// <summary>Shared stateless instance (dependencies resolve per-request from RequestServices).</summary>
     public static readonly IdempotencyEndpointFilter Instance = new();
 
+    /// <summary>
+    /// Reads the Idempotency-Key header. <paramref name="key"/> is null when
+    /// the header is absent or blank. Returns false, with <paramref name="rejection"/>
+    /// set to the 400 to send, when the key exceeds <see cref="MaxKeyLength"/> —
+    /// one rule for every route that honours the header, including the
+    /// unauthenticated register endpoint, which cannot run this filter because
+    /// no device exists yet to scope the record to.
+    /// </summary>
+    public static bool TryReadKey(HttpContext http, out string? key, out IResult? rejection)
+    {
+        rejection = null;
+        var raw = http.Request.Headers[HeaderName].ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            key = null;
+            return true;
+        }
+
+        if (raw.Length > MaxKeyLength)
+        {
+            key = null;
+            rejection = ApiErrorResults.Error(
+                http, StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError,
+                $"{HeaderName} must be at most {MaxKeyLength} characters.");
+            return false;
+        }
+
+        key = raw;
+        return true;
+    }
+
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var key = http.Request.Headers[HeaderName].ToString();
-        if (string.IsNullOrWhiteSpace(key))
+        if (!TryReadKey(http, out var key, out var rejection))
         {
-            return await next(context);
+            return rejection;
         }
 
-        if (key.Length > MaxKeyLength)
+        if (key is null)
         {
-            return ApiErrorResults.Error(
-                http, StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError,
-                $"{HeaderName} must be at most {MaxKeyLength} characters.");
+            return await next(context);
         }
 
         if (http.Items[DeviceAuthEndpointFilter.DeviceItemKey] is not Device device)

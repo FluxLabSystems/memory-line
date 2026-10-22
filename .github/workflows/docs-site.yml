@@ -3,9 +3,16 @@ name: Documentation Site
 # Builds the static documentation website from the repository's markdown and
 # publishes it to GitHub Pages.
 #
-# The deploy job requires Settings -> Pages -> Source: "GitHub Actions" on the
-# repository. Until that is enabled the build job still runs and verifies that
-# the site generates cleanly; only the deploy step will fail.
+# Publishing is opt-in, gated on the repository variable DEPLOY_PAGES. Until
+# the owner enables it, every merge to main used to fail in the deploy job with
+# "Ensure GitHub Pages has been enabled" (a 404 from the Pages API), while the
+# build job had already proved the site generates cleanly. To turn publishing
+# on:
+#   1. Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+#   2. Settings -> Secrets and variables -> Actions -> Variables -> New
+#      repository variable: name DEPLOY_PAGES, value true.
+# Both the artifact upload and the deploy job read that variable; with it unset
+# (or anything but "true") they are skipped and the run stays green.
 
 on:
   push:
@@ -19,6 +26,7 @@ on:
     paths:
       - 'website/**'
       - '**/*.md'
+      - '.github/workflows/docs-site.yml'
   workflow_dispatch:
 
 permissions:
@@ -39,7 +47,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install docs dependencies
         working-directory: website
@@ -56,9 +64,13 @@ jobs:
       # The rendered site is committed (website/_site) so the repository's
       # Pages deployment is reviewable as a diff. That only works if whoever
       # changes markdown also rebuilds and commits the output, so a stale
-      # _site fails the run. The page footer carries the build date; changes
-      # to that line alone are ignored (-I), everything else counts — as do
-      # files the build added or removed, which git status reports.
+      # _site fails the run. The page footer carries a "generated" date that
+      # build.mjs derives from the newest git commit touching the site's
+      # sources, so a rebuild of unchanged sources is byte-identical — but a
+      # contributor builds before their commit exists, and this job builds
+      # after it does, so that one line can still legitimately differ. It is
+      # ignored (-I); everything else counts — as do files the build added or
+      # removed, which git status reports.
       - name: Fail if the committed website/_site is stale
         run: |
           set -euo pipefail
@@ -74,14 +86,18 @@ jobs:
             exit 1
           fi
 
+      # Only when publishing is enabled (see the header): an artifact nobody
+      # deploys is wasted minutes.
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && vars.DEPLOY_PAGES == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: website/_site
 
+  # Skipped — not failed — until the DEPLOY_PAGES repository variable is set
+  # to "true" and Pages is sourced from GitHub Actions (see the header).
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.DEPLOY_PAGES == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:

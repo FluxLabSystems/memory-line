@@ -125,7 +125,11 @@ jobs:
           if ($trx) {
             [xml]$x = Get-Content $trx.FullName
             $c = $x.TestRun.ResultSummary.Counters
-            "::error::TESTS total=$($c.total) passed=$($c.passed) failed=$($c.failed) exit=$code"
+            # A green run is a notice, not an error annotation: the counters are
+            # the same either way, but "::error::" on a passing run paints the
+            # commit red in the UI for no reason.
+            $level = if ($code -eq 0) { 'notice' } else { 'error' }
+            "::${level}::TESTS total=$($c.total) passed=$($c.passed) failed=$($c.failed) exit=$code"
             $x.TestRun.Results.UnitTestResult |
               Where-Object { $_.outcome -eq 'Failed' } | Select-Object -First 6 |
               ForEach-Object { "::error::FAILED $($_.testName): $($_.Output.ErrorInfo.Message)" }

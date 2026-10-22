@@ -124,7 +124,7 @@
     "storageLocator": {
       "type": "string",
       "minLength": 1,
-      "description": "Opaque locator understood by the receiver's artifact resolver. Phase 0 resolves local file paths; Phase 1 replaces the resolver with a sync-service download client without changing this contract."
+      "description": "Opaque locator understood by the receiver's artifact resolver. In practice a local file path: the Windows sync client downloads a remote artifact into its cache before building the envelope, so the resolver only verifies the file is there."
     }
   }
 }

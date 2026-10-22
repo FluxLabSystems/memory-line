@@ -42,9 +42,11 @@ public interface IArtifactTransferClient
 
 /// <summary>
 /// Sync configuration and device identity persisted in app settings
-/// (SettingKeys.Sync*). Token storage in the settings table matches the app's
-/// current key handling; moving secrets to DPAPI is the tracked hardening
-/// follow-up and applies here too.
+/// (SettingKeys.Sync*). The access and refresh tokens are stored the way the
+/// app's API keys are: in the settings table, DPAPI-protected at rest through
+/// the ISecretProtector port (SettingsService protects every key listed in
+/// SecretProtection.SecretKeys), so a backup restored under another Windows
+/// account reads them as empty and the machine must re-pair.
 /// </summary>
 public interface ISyncSettingsStore
 {

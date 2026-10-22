@@ -185,9 +185,9 @@ public class SyncRemoteChangeApplierTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyAsync_DeleteOperation_IsSkippedInPhase1()
+    public async Task ApplyAsync_DeleteOperation_IsSkippedAndTouchesNothing()
     {
-        // Arrange
+        // Arrange - a companion's delete never reaches into the archive
         var change = CreateCaptureChange(out _, out _);
         change.Operation = SyncOperation.Delete;
 

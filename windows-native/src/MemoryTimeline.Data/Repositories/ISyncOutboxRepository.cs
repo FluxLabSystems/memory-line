@@ -4,8 +4,10 @@ using Microsoft.EntityFrameworkCore;
 namespace MemoryTimeline.Data.Repositories;
 
 /// <summary>
-/// Repository for the local sync outbox. The (future, Phase 1) sync worker
-/// publishes undelivered records in outbox_id order and marks them delivered.
+/// Repository for the local sync outbox. LocalOutboxPublisher drains
+/// undelivered records in outbox_id order each sync cycle and marks them
+/// delivered; the projection and status publishers read the latest record
+/// per entity to avoid republishing an unchanged projection.
 /// </summary>
 public interface ISyncOutboxRepository
 {

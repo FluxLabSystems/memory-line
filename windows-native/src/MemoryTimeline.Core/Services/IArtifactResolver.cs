@@ -4,9 +4,13 @@ namespace MemoryTimeline.Core.Services;
 
 /// <summary>
 /// Resolves a capture artifact's opaque storage locator to a local, readable
-/// file path that the transcription pipeline can consume. This is the seam the
-/// Phase 1 sync client plugs into (download + cache); Phase 0 only handles
-/// locators that are already local file paths.
+/// file path that the transcription pipeline can consume. The sync client
+/// (RemoteChangeApplier) downloads each remote artifact into the SyncedAudio
+/// cache through IArtifactTransferClient before it builds the envelope, so
+/// the locator ingestion sees is already a local path and the registered
+/// resolver, <see cref="LocalFileArtifactResolver"/>, only has to find the
+/// file. A resolver that fetched a locator itself would plug in here without
+/// touching ingestion.
 /// </summary>
 public interface IArtifactResolver
 {
@@ -31,8 +35,9 @@ public class ArtifactResolution
 }
 
 /// <summary>
-/// Phase 0 resolver: the storage locator is a local file path (test client or
-/// same-machine handoff). Replaced by a sync-service download client in Phase 1.
+/// The registered resolver: the storage locator is a local file path, either
+/// a same-machine hand-off or the cache file RemoteChangeApplier downloaded
+/// before calling ingestion. Downloading lives in the applier, not here.
 /// </summary>
 public class LocalFileArtifactResolver : IArtifactResolver
 {

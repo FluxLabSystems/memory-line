@@ -57,10 +57,10 @@ public class RemoteCaptureEnvelope
     public string ExpectedSha256 { get; set; } = string.Empty;
 
     /// <summary>
-    /// Opaque locator understood by <see cref="Services.IArtifactResolver"/>.
-    /// Phase 0 resolves local file paths (test client / same-machine handoff);
-    /// Phase 1 replaces the resolver with a sync-service download client without
-    /// changing this contract.
+    /// Opaque locator understood by the registered
+    /// <see cref="Services.IArtifactResolver"/>. In practice a local file
+    /// path: the sync client downloads a remote artifact into its cache before
+    /// building the envelope, so the resolver only verifies the file is there.
     /// </summary>
     public string StorageLocator { get; set; } = string.Empty;
 }

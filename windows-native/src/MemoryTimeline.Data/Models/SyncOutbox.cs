@@ -7,8 +7,10 @@ namespace MemoryTimeline.Data.Models;
 /// Local sync outbox record. Domain changes that must eventually be published to
 /// the sync service are written here in the SAME SaveChanges as the domain change
 /// itself, so the local database and remote sync state cannot silently diverge.
-/// A (future, Phase 1) sync worker publishes undelivered records in outbox_id
-/// order and marks them delivered.
+/// LocalOutboxPublisher (MemoryTimeline.Sync) drains undelivered records in
+/// outbox_id order to POST /api/v1/sync/push at the end of every sync cycle
+/// and marks them delivered; a rejected record keeps its attempt count and
+/// last error and stays visible for the next cycle.
 /// See docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md §7.6.
 /// </summary>
 [Table("sync_outbox")]

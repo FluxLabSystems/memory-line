@@ -41,6 +41,9 @@ final class MacAppEnvironment {
     let inputs: MacAudioDeviceEnumerator
     /// The one thing this Mac writes to the change feed: review verdicts.
     let reviews: MacReviewCoordinator
+    /// The Ask conversation: questions submitted to the service, answers the
+    /// Windows PC sends back. This Mac never answers anything itself.
+    let ask: MacAskCoordinator
 
     private let logger = AppLog.logger(category: "environment")
 
@@ -72,6 +75,7 @@ final class MacAppEnvironment {
         self.uploads = uploads
         self.reviews = MacReviewCoordinator(
             settings: settings, api: api, store: decisions, projections: projections)
+        self.ask = MacAskCoordinator(settings: settings, api: api)
         self.inputs = MacAudioDeviceEnumerator()
         // Capture the local `uploads` rather than self: the closure has to be
         // valid before `self` is fully initialized. Every finalized recording
@@ -104,6 +108,35 @@ final class MacAppEnvironment {
     /// True once this Mac is paired and sync is enabled — the precondition for
     /// both background loops.
     private var canSync: Bool { sync.canSync }
+
+    /// Starts a recording when the recorder is idle (or stopped by an error)
+    /// and finalises the active one otherwise — the single transport action
+    /// the File ▸ New Recording command, its ⌘N shortcut and a
+    /// `memoryline://record` link all share, so three entry points cannot
+    /// drift into three behaviours. The input device is the one the capture
+    /// window persisted; the recorder treats an absent or unplugged one as
+    /// "follow the system default".
+    ///
+    /// Failures are logged rather than shown: a menu command and a URL have
+    /// no pane of their own. The capture window and the menu-bar item remain
+    /// the surfaces that explain a denied microphone or a start that failed,
+    /// and both read the recorder's state directly.
+    func toggleRecording() async {
+        switch recorder.state {
+        case .idle, .failed:
+            do {
+                try await recorder.start(deviceId: settings.string(MacCaptureSettingsKey.inputDeviceId))
+            } catch {
+                logger.error("recording could not start from a command: \(error.localizedDescription, privacy: .public)")
+            }
+        case .recording, .paused:
+            do {
+                _ = try await recorder.stop()
+            } catch {
+                logger.error("recording could not be saved from a command: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
 
     /// True when this Mac has completed pairing with a sync server.
     /// Backed by the settings store, so it is NOT observation-tracked; views
@@ -188,6 +221,9 @@ final class MacAppEnvironment {
         // to be deleted, and their client sequences belong to a device
         // registration that no longer exists.
         reviews.discardAll()
+        // So does the Ask conversation: its session belongs to that same
+        // registration, and its turns are the archive's words.
+        ask.reset()
         do {
             try projections.deleteAll()
         } catch {

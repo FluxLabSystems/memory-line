@@ -1,14 +1,19 @@
 # Memory Line — macOS
 
-A native **SwiftUI** macOS app. It pairs with the sync service, pulls the change feed on a
-timer, applies Windows-authored capture status, and browses the local library. Everything
-else is in flight — see [`docs/design/MACOS-PORT-PLAN.md`](../docs/design/MACOS-PORT-PLAN.md)
-for the plan, the decisions behind it, and the open questions.
+A native **SwiftUI** macOS app. It pairs with the sync service, records and uploads
+captures (with input-device selection and a menu-bar quick capture), pulls the change feed on
+a timer, renders the read-only archive projection Windows publishes (timeline, eras, people,
+search, review queue), sends approve/reject verdicts, and asks the assistant through the
+service. See [`docs/design/MACOS-PORT-PLAN.md`](../docs/design/MACOS-PORT-PLAN.md) for the
+plan, the decisions behind it, and the open questions.
 
 **Platform:** macOS 14 (Sonoma) or later
 **Toolchain:** Xcode 16+ (the project uses `objectVersion = 77` synchronized folder groups)
-**Status:** Phases 0–1 of 6. Builds and tests green in CI; not runtime-validated against a
-live sync server.
+**Status:** Port-plan phases 0–4 are in the tree (skeleton, Keychain + sync pull, upload,
+capture, timeline projection, review decisions); phase 5's Ask pane is a thin client over the
+service's assistant endpoints and waits on a Windows responder that is not built yet; phase 6
+(packaging) is not started. Builds and tests green in CI; not runtime-validated against a live
+sync server.
 
 ---
 
@@ -31,10 +36,11 @@ compiles the iOS companion's:
 ```
 ios-companion/MemoryLineCompanion/Shared/
 ├── Domain/         CaptureRecord, lifecycle states, settings keys, protocol seams
-├── Networking/     SyncAPIClient + the v1 wire DTOs
+├── Networking/     SyncAPIClient + the v1 wire DTOs (captures, sync, projections, assistant)
 ├── Persistence/    SQLiteDatabase, SQLiteCaptureStore, SQLiteSettingsStore
 ├── Security/       KeychainTokenStore
-└── Support/        AppLog, AudioStorage, FileHasher, CaptureStatusStore
+├── Support/        AppLog, AudioStorage, FileHasher, CaptureStatusStore (+ two iOS-only files)
+└── Timeline/       the read-only archive projection: models, SQLite store, applier, colours
 ```
 
 That directory is referenced from `MemoryLineMac.xcodeproj` as an Xcode **synchronized
@@ -70,29 +76,44 @@ the repository depends on that reference working.
 macos-native/
 ├── MemoryLineMac.xcodeproj/
 ├── Config/
-│   ├── MemoryLineMac-Info.plist       ATS, URL scheme, termination policy
+│   ├── MemoryLineMac-Info.plist       ATS, memoryline:// URL scheme, termination policy
 │   └── MemoryLineMac.entitlements     sandbox, network client, mic, Keychain group
 ├── MemoryLineMac/
 │   ├── App/
-│   │   ├── MemoryLineMacApp.swift     @main; window + Settings scenes
+│   │   ├── MemoryLineMacApp.swift     @main; window, menu-bar and Settings scenes,
+│   │   │                              File ▸ New Recording (⌘N), Sync Now (⌘R), deep links
 │   │   ├── MacAppEnvironment.swift    composition root (mirrors the iOS AppEnvironment)
 │   │   └── RootView.swift             sidebar navigation
 │   └── Features/
-│       ├── Library/LibraryView.swift       capture list + Windows-authored status
-│       └── Sync/
-│           ├── MacSyncCoordinator.swift    pull → apply → ack, on a foreground timer
-│           └── SettingsScene.swift         pairing / unpairing / sync status
-└── MemoryLineMacTests/
+│       ├── Ask/        AskView, MacAskCoordinator, AskSeams — questions to the service, answers from Windows
+│       ├── Capture/    CaptureView, MacAudioRecorderService (AVAudioEngine), MacAudioDeviceEnumerator,
+│       │               MenuBarCapture, CaptureSeams
+│       ├── Eras/       ErasView (projection)
+│       ├── Library/    LibraryView — this Mac's captures, upload state, Windows-authored status
+│       ├── People/     PeopleView (projection)
+│       ├── Review/     ReviewView, MacReviewCoordinator, ReviewDecisionStore, ReviewDecisionSeams
+│       ├── Search/     SearchView (projection)
+│       ├── Sync/       MacSyncCoordinator (pull → apply → ack), MacUploadCoordinator (drain), SettingsScene
+│       └── Timeline/   ArchiveTimelineView (projection)
+└── MemoryLineMacTests/   environment, sync, upload and review coordinator tests
 ```
 
-`MacAppEnvironment` deliberately omits the iOS app's recorder and upload coordinator:
-those are built on `AVAudioSession` and `BGTaskScheduler`, neither of which exists on
-macOS. Recording is Phase 2; there is nothing to upload until it lands.
+`MacAppEnvironment` builds its own recorder and uploader rather than sharing the iOS
+ones: `AudioRecorderService` and `UploadCoordinator` are built on `AVAudioSession` and
+`BGTaskScheduler`, neither of which exists on macOS. `MacAudioRecorderService` records on
+`AVAudioEngine` so the input device can be chosen per process, and `MacUploadCoordinator`
+drains pending uploads on a foreground loop; every finalised recording enters it at once.
+Their persistence discipline and request sequences mirror the iOS types exactly.
 
 `MacSyncCoordinator` replaces the iOS `StatusSyncCoordinator`. It is a reimplementation
 rather than shared code — that one needs `BackgroundTasks` and reconciles against capture
 records the phone created — but the pull/ack semantics are a server contract, so they are
-mirrored exactly and pinned by tests.
+mirrored exactly and pinned by tests. Both apply the timeline projection through the shared
+`TimelineProjectionApplier`.
+
+The Mac applies `capture_status` and the projection but ignores `capture` and
+`capture_artifact` changes: recordings made on the phone go to Windows for processing and
+never appear in this Mac's Library, which lists only what this Mac recorded.
 
 ---
 
@@ -102,7 +123,7 @@ mirrored exactly and pinned by tests.
 |---|---|
 | **Windows Native** (`windows-native/`) | The primary product. Owns extraction, review, and approval. |
 | **iOS companion** (`ios-companion/`) | Capture device. Records, uploads, shows Windows-authored status. |
-| **macOS** (this) | Intended as a full peer of the Windows app, not a companion. Phase 0. |
+| **macOS** (this) | Intended as a full peer of the Windows app, not a companion. Today it captures, uploads, reads the archive projection, sends review verdicts and asks the assistant; extraction, editing and approval still run on Windows. |
 
 All three meet at the self-hosted sync service (`services/`), never at a shared filesystem.
 

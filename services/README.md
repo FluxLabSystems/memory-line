@@ -29,9 +29,11 @@ feed** on top of that change log — no new endpoints, only new change types
 Phase 4 added the **assistant** endpoints (sessions and turns, routed to a
 responder over the same change log) and an idle-session reaper — see
 [Assistant](#assistant-design-19-phase-4). Phase 5's **trip and detour**
-endpoints are implemented as persistence and lifecycle — see
+endpoints are implemented — see
 [Trips and detours](#trips-and-detours-design-19-phase-5); detour
-*generation* needs a place provider the service does not ship with.
+*generation* runs against Google Places or Apple Maps once a provider and its
+key are configured (`Detours:Provider`), and honestly yields nothing until
+then.
 
 ## Layout
 
@@ -87,6 +89,39 @@ value has a working default, so an empty configuration runs.
 | `AssistantReaperIntervalMinutes` | `SyncApi__AssistantReaperIntervalMinutes` | `60` | Minutes between idle-session reaps; the first runs at startup. |
 | `RouteContextRetentionDays` | `SyncApi__RouteContextRetentionDays` | `14` | Days a trip's route-context trail is kept (design §22 decision 9); each trip's newest snapshot survives. Dismissed/expired detour suggestions age out on the same clock. |
 | `DetourSuggestionLifetimeHours` | `SyncApi__DetourSuggestionLifetimeHours` | `6` | How long a generated detour suggestion stays actionable when the provider sets no expiry. |
+
+#### Detour place provider (`Detours` section)
+
+The place provider behind `POST /trips/{tripId}/detours/generate` is chosen by
+the separate `Detours` section (design §22 decision 5: Google by default
+inside a request cap sized for the free tier, Apple selectable). With the
+section absent the service runs with the `none` provider and generation
+returns an empty list. An unknown provider name, or `google`/`apple` without
+`ApiKey`, **refuses to start** rather than quietly falling back to `none`.
+The key is never logged; neither is a provider's response body.
+
+| Setting | Environment variable | Default | Purpose |
+|---------|----------------------|---------|---------|
+| `Provider` | `Detours__Provider` | `none` | `none`, `google` (Places API (New) nearby search) or `apple` (Apple Maps Server API search); case-insensitive. |
+| `ApiKey` | `Detours__ApiKey` | — | Google Maps Platform API key (`google`), or the developer-signed Maps authorization token that is exchanged for short-lived access tokens (`apple`). Required for either. |
+| `DailyRequestCap` | `Detours__DailyRequestCap` | `150` | Provider searches allowed per UTC day across all trips. Once spent, generation yields nothing and logs a warning until the day rolls over; `0` disables the cap. Not persisted across restarts. Apple's token exchange does not count. Check your provider's current free quota before raising it. |
+| `MaxCandidates` | `Detours__MaxCandidates` | `5` | Most suggestions returned per generation, nearest first. |
+| `SearchRadiusMeters` | `Detours__SearchRadiusMeters` | `15000` | Radius around the trip's newest route-context position that is searched — a circle standing in for the design's route corridor, because a snapshot is a point and a heading, not a polyline. |
+| `RequestTimeoutSeconds` | `Detours__RequestTimeoutSeconds` | `10` | Per-request timeout for provider calls. Transport failures, timeouts and 408/429/5xx are retried up to three attempts with bounded jittered back-off (`HttpRetry`); other failures are not. |
+| `GooglePlaceTypes` | `Detours__GooglePlaceTypes__0`, `__1`, … | tourist_attraction, museum, historical_landmark, park, national_park, hiking_area, art_gallery, visitor_center, cafe, restaurant | Places API (New) "Table A" types searched. An unknown type fails the whole request. |
+| `ApplePoiCategories` | `Detours__ApplePoiCategories__0`, … | Museum, Park, NationalPark, AmusementPark, Aquarium, Zoo, Beach, Winery, Brewery, Cafe, Bakery, Restaurant | `includePoiCategories` of the Apple search. |
+| `AppleSearchQuery` | `Detours__AppleSearchQuery` | `attractions` | The `q` the Apple search is driven by (one query per generation keeps the request count predictable). |
+
+What each adapter relays and what it estimates is written into every
+suggestion's `verificationSourcesJson` (`place`, `hours`, `price`, `route`),
+so a card can show its provenance: name, place ID, category, coordinates and —
+from Google — open-now and price level come from the provider as they came;
+Apple's search carries no hours and no price, so those are `unknown`/null
+(design §10.3: unknown is labelled, never invented). Neither adapter routes a
+detour: `routeAddedDistanceM`/`routeAddedDurationS` are the straight line
+there and back at 50 km/h, and `route` says `straight_line_estimate`. A
+provider failure is logged by status code and answered with an empty list, so
+an outage never turns the endpoint into a 500.
 
 > **Note:** raising `SyncApi:MaxPartSizeBytes` above ~28.6 MB (Kestrel's
 > 30,000,000-byte default `MaxRequestBodySize`) additionally requires raising
@@ -318,6 +353,15 @@ without a second identifier.
   only; `GET /sync/pull` returns whatever is on the owner's log, so these types
   need no pull-side change and echo suppression treats them like everything
   else — a device receives its peers' projections and decisions, never its own.
+- **`recording_queue` and `capture_artifact` are reserved.** Both are in the
+  push allow-list and in the contract's `entityType` enums, and nothing
+  publishes or consumes them: the Phase 0 contract set them aside for the
+  Windows queue row and the artifact metadata as feed entities, and the
+  capture/artifact endpoints carry that information instead. The service
+  accepts them on push and relays them on pull (a client built against the v1
+  enum is not refused), the Windows applier skips them, and v1 never removes
+  an enum value — see "Reserved entity types" in
+  [`shared-contracts/README.md`](../shared-contracts/README.md).
 
 ## Assistant (design §19 Phase 4)
 
@@ -341,7 +385,18 @@ feed as ordered `assistant_turn_chunk` changes.
 
 - **Responder modes** (`windows` default, `provider`, `on_device`) are chosen
   per turn; the service records which one actually answered and every result
-  carries a `grounding` value (`archive`, `client_context`, `none`).
+  carries a `grounding` value (`archive`, `client_context`, `none`). **Only
+  `windows` is deployed.** The other two are accepted as vocabulary, but no
+  LLM provider is configured on the service and no device pre-processes
+  locally, so a turn that asks for `provider` or `on_device` (explicitly, or
+  by inheriting a session preference) is created already `failed` — the 201
+  response carries `status: failed`, `failureRetryable: false` and the
+  display-safe `failureReason` "No responder for mode *X* is deployed on this
+  sync service; ask again with the windows responder." Nothing is published
+  for it: there is nothing to answer, and the asker already has the answer. The
+  sequence number is still consumed, and a replay of the turn ID returns the
+  stored failure with 200. Before this, such a turn sat `pending` until the
+  idle reaper cancelled it a day later.
 - **Idle sessions are reaped.** `AssistantSessionReaper` runs at startup and
   every `AssistantReaperIntervalMinutes`: a session with no accepted turn for
   `AssistantSessionIdleHours` is deleted with its turns, and any turn still
@@ -350,12 +405,13 @@ feed as ordered `assistant_turn_chunk` changes.
   and a late answer is dropped by the same terminal-state guard an explicit
   cancel relies on. Questions and answers are personal memory content
   (§14.5); a day-old conversation has no reason to stay on the service.
-- **What is not here: the Windows responder.** Nothing in this repository yet
-  claims an `assistant_turn` off the feed and answers it — `MemoryTimeline.Sync`
-  pulls and publishes capture status and projections, but has no assistant
-  responder. Until it exists, a turn asked from a phone or the Mac stays
-  `pending` and is eventually reaped. The Windows client's responder is
-  tracked separately.
+- **The Windows responder lives in the Windows client.**
+  `AssistantTurnResponder` in `windows-native/src/MemoryTimeline.Sync` claims
+  `assistant_turn` changes off the feed, answers them through the Windows Ask
+  pipeline (`MemoryTimeline.Core`) and pushes the completed turn back; it runs
+  only while the Windows app is up, so a `windows` turn asked while the PC is
+  asleep stays `pending` until the PC's next sync — or until the idle reaper
+  cancels it. The service never answers anything itself.
 
 ## Trips and detours (design §19 Phase 5)
 
@@ -374,13 +430,21 @@ plain owner-scoped REST resources — nothing here rides the change feed.
 | GET | `/api/v1/trips/{tripId}/detours` | List suggestions, newest first; expiry is applied on read. |
 | POST | `/api/v1/detours/{suggestionId}/accept` · `/dismiss` · `/save` | Monotonic disposition: `proposed`/`heard`/`saved` → `accepted` or `dismissed` (both terminal); `save` from `proposed`/`heard`; `expired` is terminal. Same state is a no-op 200; a disallowed move is 409 `detour_invalid_transition`. |
 
-**What generates the suggestions: nothing, yet.** The detour agent (§10) needs
-a place provider — Google Places inside the free tier with an Apple failover per
-§22 decision 5 — and neither adapter exists. The service defines the seam
-(`IDetourSuggestionProvider`) and registers `NoDetourSuggestionProvider`, so
-`generate` answers an honest empty array rather than an invented place. A real
-adapter is a DI registration away; the lifecycle around it (persistence,
-expiry, exclusion of repeats, disposition) is built and tested against a fake.
+**What generates the suggestions.** The detour agent (§10) needs a place
+provider — Google Places inside the free tier with Apple selectable, per §22
+decision 5 — and the service ships both adapters behind the
+`IDetourSuggestionProvider` seam: `GooglePlacesDetourProvider` (Places API
+(New) nearby search) and `AppleMapsDetourProvider` (Maps Server API search,
+with the token exchange cached). Which one runs, with which key and under
+which daily request cap, is the `Detours` configuration section described
+under [Configuration](#configuration); with none configured,
+`NoDetourSuggestionProvider` is registered and `generate` answers an honest
+empty array rather than an invented place. The lifecycle around the provider
+(persistence, expiry, exclusion of repeats, disposition) is tested against a
+fake, and each adapter against a stub transport replaying the documented
+response shapes. Failover is a configuration change, not automatic: when
+Google's daily cap is spent the log says so, and `Detours__Provider=apple`
+(with Apple's token) carries the rest of the day.
 
 ## Retention sweep (design §22 decisions 7 and 9)
 

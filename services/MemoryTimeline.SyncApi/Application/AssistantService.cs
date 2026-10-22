@@ -27,6 +27,21 @@ public sealed class AssistantService : IAssistantService
     ];
 
     /// <summary>
+    /// Responders something actually answers for. The contract names three
+    /// modes, and all three are accepted as vocabulary, but only the Windows
+    /// client (<c>AssistantTurnResponder</c> in <c>MemoryTimeline.Sync</c>)
+    /// claims turns off the feed: no LLM provider is configured on the
+    /// service and no device pre-processes locally. A turn asking for either
+    /// of those is failed at once with a non-retryable reason instead of
+    /// sitting <c>pending</c> until the idle reaper cancels it a day later —
+    /// the asker is told immediately, which is the honest answer.
+    /// </summary>
+    private static readonly string[] DeployedResponders =
+    [
+        AssistantResponder.Windows,
+    ];
+
+    /// <summary>
     /// Number of times a submission retries after losing a race for the next
     /// sequence number in a session. Two devices cannot share a session, so the
     /// only contender is the same device submitting concurrently; one retry
@@ -162,6 +177,8 @@ public sealed class AssistantService : IAssistantService
             }
 
             var now = DateTime.UtcNow;
+            var responder = requestedResponder ?? session.PreferredResponder;
+            var deployed = DeployedResponders.Contains(responder);
             var turn = new AssistantTurnRow
             {
                 TurnId = turnId,
@@ -175,15 +192,22 @@ public sealed class AssistantService : IAssistantService
                 // a responder the moment it reached the change log would tell a
                 // polling client something the service does not actually know.
                 // A responder moves the turn on when it genuinely picks it up.
-                Status = AssistantTurnStatus.Pending,
-                RequestedResponder = requestedResponder ?? session.PreferredResponder,
+                //
+                // A mode nothing answers for is failed here and now instead
+                // (see DeployedResponders): terminal, non-retryable, with a
+                // display-safe reason the asker reads straight off the reply.
+                Status = deployed ? AssistantTurnStatus.Pending : AssistantTurnStatus.Failed,
+                RequestedResponder = responder,
                 ActualResponder = null,
                 ClientContextJson = request.ClientContext is null or { Count: 0 }
                     ? null
                     : JsonSerializer.Serialize(request.ClientContext, SyncJson.Options),
                 Stream = request.Stream,
+                FailureReason = deployed ? null : NoResponderReason(responder),
+                FailureRetryable = deployed ? null : false,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
+                CompletedAtUtc = deployed ? null : now,
                 Revision = 1,
             };
 
@@ -192,13 +216,19 @@ public sealed class AssistantService : IAssistantService
 
             db.AssistantTurns.Add(turn);
 
-            // The change row rides the same SaveChanges as the turn itself, so
-            // a turn can never exist without having been published (nothing to
-            // answer it) and a published turn can never be missing (nowhere for
-            // the answer to land). The caller is the change's source device, so
-            // echo suppression keeps the asking phone from pulling back its own
-            // question while every other device — Windows — sees it.
-            db.SyncChanges.Add(EntityMappers.CreateAssistantTurnChange(turn, caller.DeviceId));
+            if (deployed)
+            {
+                // The change row rides the same SaveChanges as the turn itself, so
+                // a turn can never exist without having been published (nothing to
+                // answer it) and a published turn can never be missing (nowhere for
+                // the answer to land). The caller is the change's source device, so
+                // echo suppression keeps the asking phone from pulling back its own
+                // question while every other device — Windows — sees it.
+                //
+                // A turn failed at birth is not published: there is nothing for a
+                // responder to do with it, and the asker already holds the answer.
+                db.SyncChanges.Add(EntityMappers.CreateAssistantTurnChange(turn, caller.DeviceId));
+            }
 
             try
             {
@@ -221,10 +251,21 @@ public sealed class AssistantService : IAssistantService
                 continue;
             }
 
-            _logger.LogInformation(
-                "Assistant turn {TurnId} accepted into session {SessionId} as sequence {Sequence} " +
-                "(requested responder {Responder}).",
-                turn.TurnId, turn.SessionId, turn.Sequence, turn.RequestedResponder);
+            if (deployed)
+            {
+                _logger.LogInformation(
+                    "Assistant turn {TurnId} accepted into session {SessionId} as sequence {Sequence} " +
+                    "(requested responder {Responder}).",
+                    turn.TurnId, turn.SessionId, turn.Sequence, turn.RequestedResponder);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Assistant turn {TurnId} in session {SessionId} (sequence {Sequence}) failed at once: " +
+                    "no responder for mode {Responder} is deployed.",
+                    turn.TurnId, turn.SessionId, turn.Sequence, turn.RequestedResponder);
+            }
+
             return ServiceResult<AssistantTurnWriteResult>.Ok(
                 new AssistantTurnWriteResult(EntityMappers.ToAssistantTurnResponse(turn), Created: true));
         }
@@ -436,6 +477,15 @@ public sealed class AssistantService : IAssistantService
     /// </summary>
     private static string ResponderMessage(string field)
         => $"{field} must be one of: windows, provider, on_device.";
+
+    /// <summary>
+    /// The display-safe, non-retryable reason a turn for an undeployed mode
+    /// fails with. Fixed text keyed on the mode — no paths, no credentials,
+    /// nothing from the question (design §14.5) — and it names the mode that
+    /// would work, so a client can fall back without guessing.
+    /// </summary>
+    internal static string NoResponderReason(string responder)
+        => $"No responder for mode {responder} is deployed on this sync service; ask again with the windows responder.";
 
     private static ServiceResult<T> ValidationFailure<T>(string message)
         => ServiceResult<T>.Fail(StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError, message);

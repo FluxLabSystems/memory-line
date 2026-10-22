@@ -27,6 +27,22 @@ companion, and the sync service. Source of truth:
   ignore properties they do not recognize, so an older client keeps working
   against a newer additive server.
 
+### Reserved entity types
+
+Two values of the `entityType` enums (`SyncChange`, `SyncPushEntry`, and the
+`SyncChangeEntityType` constants) are **reserved**: `recording_queue` and
+`capture_artifact`. The Phase 0 contract set them aside for the Windows queue
+row and the artifact metadata as change-feed entities, and the capture and
+artifact REST endpoints then came to carry that information instead. Nothing
+shipped publishes either value and nothing consumes one: the service accepts
+them on push (a client built against the v1 enum must not be refused) and
+relays them on pull, but the Windows `RemoteChangeApplier` applies only the
+types it knows and skips the rest, and the phone and the Mac apply
+`capture_status` and the timeline projections only. They stay in the enums
+because v1 never removes a value (above). Treat them as reserved, not as a
+channel: publishing one needs a documented payload schema, a consumer and a
+changelog entry first — an ordinary additive v1.x change.
+
 ## Client generation
 
 The C# wire types live in
@@ -65,6 +81,28 @@ commit**, add the changelog entry when `info.version` moves, and the gate
 proves the three stayed together.
 
 ## Changelog
+
+### v1.5 (2026-10-22) — capture location and the `macos` platform
+
+Purely additive. Lands together with the `info.version` bump to 1.5.0 in
+`openapi/memory-line-sync-v1.yaml` and the matching DTO changes in
+[`CaptureContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/CaptureContracts.cs)
+and [`DeviceContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/DeviceContracts.cs);
+the shipped DTOs are the implemented truth, as before.
+
+- **`location` on `CaptureResponse` and `CaptureChangePayload`.** The single
+  location snapshot a capture may carry — the `LocationContext` schema
+  (`latitude`, `longitude`, optional `horizontalAccuracyM`, `headingDegrees`,
+  `speedMps`) that `CaptureCreateRequest.locationContext` has accepted since
+  v1.0 — is now returned on the capture and relayed on its change payload so
+  Windows can keep it with the memory. Nullable, and null when the phone sent
+  none: the iOS companion attaches one only when its location opt-in is on
+  (design §14.4, off by default), coarse unless the precise option is also on,
+  and never logs it (§14.5).
+- **`macos` joins the device `platform` enum** on `DeviceRegisterRequest` and
+  `DeviceInfo`. The Mac app registers as `macos` instead of `other`
+  (`docs/design/MACOS-PORT-PLAN.md` §3.4); `other` remains valid, and a Mac
+  paired before this change keeps the `other` its device row was stored with.
 
 ### v1.4 (2026-10-21) — the YAML catches up with the shipped service
 

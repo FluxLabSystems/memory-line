@@ -39,10 +39,14 @@ builder.Services.AddSingleton<IArtifactRetentionService, ArtifactRetentionServic
 builder.Services.AddSingleton<IAssistantSessionReaper, AssistantSessionReaper>();
 builder.Services.AddSingleton<ITripService, TripService>();
 builder.Services.AddSingleton<IDetourService, DetourService>();
-// No place provider ships with the service (design §22 decision 5 names
-// Google Places with an Apple failover; neither adapter exists yet), so detour
-// generation is honest and yields nothing until one is registered here.
-builder.Services.AddSingleton<IDetourSuggestionProvider, NoDetourSuggestionProvider>();
+// The place provider behind detour generation is chosen by configuration
+// (design §22 decision 5: Google by default inside a daily request cap, Apple
+// selectable). With no "Detours" section the service runs with the "none"
+// provider and generation honestly yields nothing; a misconfigured provider
+// (unknown name, missing key) refuses to start rather than quietly doing that.
+var detourOptions = builder.Configuration.GetSection(DetourOptions.SectionName).Get<DetourOptions>()
+    ?? new DetourOptions();
+builder.Services.AddDetourSuggestionProvider(detourOptions);
 
 // Housekeeping on timers: the artifact retention / temp-file sweep (design
 // §22 decision 7) and the idle assistant-session reaper (§6.6). Hosted

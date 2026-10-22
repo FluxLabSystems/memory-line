@@ -10,14 +10,14 @@ namespace MemoryTimeline.Data.Repositories;
 public interface IEventRevisionRepository
 {
     /// <summary>Gets an event's revisions, newest first.</summary>
-    Task<List<EventRevision>> GetForEventAsync(string eventId);
+    Task<List<EventRevision>> GetForEventAsync(string eventId, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single revision by id, or null.</summary>
-    Task<EventRevision?> GetByIdAsync(string revisionId);
+    Task<EventRevision?> GetByIdAsync(string revisionId, CancellationToken cancellationToken = default);
 
     /// <summary>Appends a revision.</summary>
-    Task<EventRevision> AddAsync(EventRevision revision);
+    Task<EventRevision> AddAsync(EventRevision revision, CancellationToken cancellationToken = default);
 
     /// <summary>Counts revisions - all of them, or one event's when <paramref name="eventId"/> is given.</summary>
-    Task<int> CountAsync(string? eventId = null);
+    Task<int> CountAsync(string? eventId = null, CancellationToken cancellationToken = default);
 }

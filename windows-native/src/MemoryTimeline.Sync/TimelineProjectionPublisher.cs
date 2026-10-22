@@ -119,19 +119,19 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         // Order is the interface's prefix rule: eras before the events that
         // name them, events before the people whose counts they explain, the
         // review queue last.
-        foreach (var era in await _eraRepository.GetAllAsync())
+        foreach (var era in await _eraRepository.GetAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             Count(await PublishEraCoreAsync(era.EraId, force, cancellationToken), ref eras, ref unchanged);
         }
 
-        foreach (var evt in await _eventRepository.GetAllAsync())
+        foreach (var evt in await _eventRepository.GetAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             Count(await PublishEventCoreAsync(evt.EventId, force, cancellationToken), ref events, ref unchanged);
         }
 
-        foreach (var person in await _personRepository.GetAllAsync())
+        foreach (var person in await _personRepository.GetAllAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             Count(await PublishPersonCoreAsync(person.PersonId, force, cancellationToken), ref people, ref unchanged);
@@ -140,7 +140,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         // Only what is still awaiting review: an approved or rejected pending
         // event was tombstoned when it was decided, and that tombstone is the
         // last word on it.
-        foreach (var pending in await _pendingEventRepository.GetByStatusAsync(PendingStatus.PendingReview))
+        foreach (var pending in await _pendingEventRepository.GetByStatusAsync(PendingStatus.PendingReview, cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             Count(await PublishPendingEventCoreAsync(pending.PendingId, force, cancellationToken),
@@ -173,7 +173,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
 
         // The includes ARE the denormalisation source: tags, people and
         // locations are read off the navigations rather than re-queried.
-        var entity = await _eventRepository.GetByIdWithIncludesAsync(eventId);
+        var entity = await _eventRepository.GetByIdWithIncludesAsync(eventId, cancellationToken);
         if (entity == null)
         {
             _logger.LogDebug("Event {EventId} no longer exists; nothing is projected", eventId);
@@ -189,7 +189,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         ArgumentException.ThrowIfNullOrWhiteSpace(eraId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var entity = await _eraRepository.GetByIdAsync(eraId);
+        var entity = await _eraRepository.GetByIdAsync(eraId, cancellationToken);
         if (entity == null)
         {
             _logger.LogDebug("Era {EraId} no longer exists; nothing is projected", eraId);
@@ -205,7 +205,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         ArgumentException.ThrowIfNullOrWhiteSpace(personId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var entity = await _personRepository.GetByIdAsync(personId);
+        var entity = await _personRepository.GetByIdAsync(personId, cancellationToken);
         if (entity == null)
         {
             _logger.LogDebug("Person {PersonId} no longer exists; nothing is projected", personId);
@@ -222,7 +222,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         ArgumentException.ThrowIfNullOrWhiteSpace(pendingEventId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var entity = await _pendingEventRepository.GetByIdAsync(pendingEventId);
+        var entity = await _pendingEventRepository.GetByIdAsync(pendingEventId, cancellationToken);
         if (entity == null)
         {
             _logger.LogDebug(
@@ -247,7 +247,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         // A tombstone on top of a tombstone tells a consumer nothing it has not
         // already been told, and delete is the one operation that stays true no
         // matter how often it is replayed.
-        var latest = await _outboxRepository.GetLatestForEntityAsync(entityType, entityId);
+        var latest = await _outboxRepository.GetLatestForEntityAsync(entityType, entityId, cancellationToken);
         if (latest != null &&
             string.Equals(latest.Operation, SyncOutboxOperation.Delete, StringComparison.OrdinalIgnoreCase))
         {
@@ -266,7 +266,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
             // describe, and the consumer's job is to drop its copy.
             PayloadJson = null,
             CreatedAt = DateTime.UtcNow,
-        });
+        }, cancellationToken);
 
         _logger.LogInformation("Published deletion of {EntityType} {EntityId}", entityType, entityId);
     }

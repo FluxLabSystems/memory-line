@@ -49,14 +49,14 @@ public class RagServiceTests : IDisposable
 
         // Cross-reference repository defaults: nothing stored yet
         _crossReferenceRepositoryMock
-            .Setup(r => r.GetReferencesForEventAsync(It.IsAny<string>()))
+            .Setup(r => r.GetReferencesForEventAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<CrossReference>());
         _crossReferenceRepositoryMock
-            .Setup(r => r.GetReferenceAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .Setup(r => r.GetReferenceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((CrossReference?)null);
         _crossReferenceRepositoryMock
-            .Setup(r => r.AddAsync(It.IsAny<CrossReference>()))
-            .ReturnsAsync((CrossReference cr) => cr);
+            .Setup(r => r.AddAsync(It.IsAny<CrossReference>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CrossReference cr, CancellationToken _) => cr);
 
         SeedTestData();
     }
@@ -337,7 +337,7 @@ public class RagServiceTests : IDisposable
         results[0].Confidence.Should().BeGreaterThan(0).And.BeLessThanOrEqualTo(1);
 
         _crossReferenceRepositoryMock.Verify(r => r.AddAsync(It.Is<CrossReference>(cr =>
-            cr.EventId1 == "event1" && cr.EventId2 == "event4")), Times.Once);
+            cr.EventId1 == "event1" && cr.EventId2 == "event4"), It.IsAny<CancellationToken>()), Times.Once);
 
         _embeddingServiceMock.Verify(e => e.FindKNearestNeighbors(
             It.IsAny<float[]>(),

@@ -48,7 +48,7 @@ public class LocalOutboxPublisher : ILocalOutboxPublisher
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var batch = await _outboxRepository.GetPendingAsync(BatchSize);
+                var batch = await _outboxRepository.GetPendingAsync(BatchSize, cancellationToken);
                 if (batch.Count == 0)
                 {
                     break;
@@ -83,13 +83,13 @@ public class LocalOutboxPublisher : ILocalOutboxPublisher
                     if (resultsBySequence.TryGetValue(entry.OutboxId, out var result) &&
                         (result.Accepted || result.Duplicate))
                     {
-                        await _outboxRepository.MarkDeliveredAsync(entry.OutboxId);
+                        await _outboxRepository.MarkDeliveredAsync(entry.OutboxId, cancellationToken);
                         delivered++;
                     }
                     else
                     {
                         var error = result?.Error ?? "The sync service returned no result for this entry.";
-                        await _outboxRepository.RecordFailedAttemptAsync(entry.OutboxId, error);
+                        await _outboxRepository.RecordFailedAttemptAsync(entry.OutboxId, error, cancellationToken);
                         _logger.LogWarning(
                             "Outbox entry {OutboxId} ({EntityType} {EntityId}) was rejected by the sync service: {Error}",
                             entry.OutboxId, entry.EntityType, entry.EntityId, error);

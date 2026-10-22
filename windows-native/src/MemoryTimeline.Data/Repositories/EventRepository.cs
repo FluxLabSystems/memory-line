@@ -19,27 +19,27 @@ public class EventRepository : IEventRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<IEnumerable<Event>> GetAllAsync()
+    public async Task<IEnumerable<Event>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
             .OrderByDescending(e => e.StartDate)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Event?> GetByIdAsync(string id)
+    public async Task<Event?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
-            .FirstOrDefaultAsync(e => e.EventId == id);
+            .FirstOrDefaultAsync(e => e.EventId == id, cancellationToken);
     }
 
-    public async Task<Event?> GetByIdWithIncludesAsync(string id)
+    public async Task<Event?> GetByIdWithIncludesAsync(string id, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .Include(e => e.EventTags)
@@ -49,51 +49,51 @@ public class EventRepository : IEventRepository
             .Include(e => e.EventLocations)
                 .ThenInclude(el => el.Location)
             .Include(e => e.Embedding)
-            .FirstOrDefaultAsync(e => e.EventId == id);
+            .FirstOrDefaultAsync(e => e.EventId == id, cancellationToken);
     }
 
-    public async Task<IEnumerable<Event>> FindAsync(Expression<Func<Event, bool>> predicate)
+    public async Task<IEnumerable<Event>> FindAsync(Expression<Func<Event, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
             .Where(predicate)
             .OrderByDescending(e => e.StartDate)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Event> AddAsync(Event entity)
+    public async Task<Event> AddAsync(Event entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        await context.Events.AddAsync(entity);
-        await context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.Events.AddAsync(entity, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
         return entity;
     }
 
-    public async Task AddRangeAsync(IEnumerable<Event> entities)
+    public async Task AddRangeAsync(IEnumerable<Event> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        await context.Events.AddRangeAsync(entities);
-        await context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.Events.AddRangeAsync(entities, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(Event entity)
+    public async Task UpdateAsync(Event entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Entity is detached (loaded by a different, already-disposed context):
         // Update attaches it and marks it Modified.
         context.Events.Update(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(Event entity)
+    public async Task DeleteAsync(Event entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        await RemoveCrossReferencesAsync(context, new[] { entity.EventId });
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await RemoveCrossReferencesAsync(context, new[] { entity.EventId }, cancellationToken);
         // Remove attaches the detached entity and marks it Deleted.
         context.Events.Remove(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -106,39 +106,39 @@ public class EventRepository : IEventRepository
     /// delete and the user sees a failure for a memory they chose to remove.
     /// A cross-reference is a fact about a pair; it ends with either endpoint.
     /// </summary>
-    private static async Task RemoveCrossReferencesAsync(AppDbContext context, IReadOnlyCollection<string> eventIds)
+    private static async Task RemoveCrossReferencesAsync(AppDbContext context, IReadOnlyCollection<string> eventIds, CancellationToken cancellationToken = default)
     {
         var references = await context.CrossReferences
             .Where(cr => eventIds.Contains(cr.EventId1) || eventIds.Contains(cr.EventId2))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
         if (references.Count > 0)
         {
             context.CrossReferences.RemoveRange(references);
         }
     }
 
-    public async Task DeleteRangeAsync(IEnumerable<Event> entities)
+    public async Task DeleteRangeAsync(IEnumerable<Event> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var list = entities.ToList();
-        await RemoveCrossReferencesAsync(context, list.Select(e => e.EventId).ToList());
+        await RemoveCrossReferencesAsync(context, list.Select(e => e.EventId).ToList(), cancellationToken);
         context.Events.RemoveRange(list);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsAsync(Expression<Func<Event, bool>> predicate)
+    public async Task<bool> ExistsAsync(Expression<Func<Event, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.Events.AnyAsync(predicate);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Events.AnyAsync(predicate, cancellationToken);
     }
 
-    public async Task<int> CountAsync(Expression<Func<Event, bool>>? predicate = null)
+    public async Task<int> CountAsync(Expression<Func<Event, bool>>? predicate = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         if (predicate == null)
-            return await context.Events.CountAsync();
+            return await context.Events.CountAsync(cancellationToken);
 
-        return await context.Events.CountAsync(predicate);
+        return await context.Events.CountAsync(predicate, cancellationToken);
     }
 
     /// <summary>
@@ -156,9 +156,9 @@ public class EventRepository : IEventRepository
     private const int SeasonYearWindowMarginDays = 366;
     private const int DecadeWindowMarginDays = 3653;
 
-    public async Task<IEnumerable<Event>> GetByDateRangeAsync(DateTime startDate, DateTime endDate)
+    public async Task<IEnumerable<Event>> GetByDateRangeAsync(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Overlap predicate (same semantics as EraRepository.GetByDateRangeAsync):
         // an event is in range when it starts before the range ends and ends
         // (or, for point-in-time events, starts) after the range begins.
@@ -214,7 +214,7 @@ public class EventRepository : IEventRepository
             query = query.AsSplitQuery();
         }
 
-        return await query.ToListAsync();
+        return await query.ToListAsync(cancellationToken);
     }
 
     /// <summary>
@@ -237,34 +237,34 @@ public class EventRepository : IEventRepository
         return new DateTime(ticks, value.Kind);
     }
 
-    public async Task<IEnumerable<Event>> GetByCategoryAsync(string category)
+    public async Task<IEnumerable<Event>> GetByCategoryAsync(string category, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
             .Where(e => e.Category == category)
             .OrderByDescending(e => e.StartDate)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<Event>> GetByEraAsync(string eraId)
+    public async Task<IEnumerable<Event>> GetByEraAsync(string eraId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
             .Where(e => e.EraId == eraId)
             .OrderBy(e => e.StartDate)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<Event>> SearchAsync(string searchTerm)
+    public async Task<IEnumerable<Event>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
         // Note: Full-text search using FTS5 would require raw SQL
         // For now, using basic LIKE search
         var term = $"%{searchTerm}%";
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
@@ -272,7 +272,7 @@ public class EventRepository : IEventRepository
                        EF.Functions.Like(e.Description ?? "", term) ||
                        EF.Functions.Like(e.RawTranscript ?? "", term))
             .OrderByDescending(e => e.StartDate)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<(IEnumerable<Event> Events, int TotalCount)> GetPagedAsync(
@@ -280,9 +280,9 @@ public class EventRepository : IEventRepository
         int pageSize,
         DateTime? startDate = null,
         DateTime? endDate = null,
-        string? category = null)
+        string? category = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var query = context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
@@ -297,13 +297,13 @@ public class EventRepository : IEventRepository
         if (!string.IsNullOrEmpty(category))
             query = query.Where(e => e.Category == category);
 
-        var totalCount = await query.CountAsync();
+        var totalCount = await query.CountAsync(cancellationToken);
 
         var events = await query
             .OrderByDescending(e => e.StartDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return (events, totalCount);
     }

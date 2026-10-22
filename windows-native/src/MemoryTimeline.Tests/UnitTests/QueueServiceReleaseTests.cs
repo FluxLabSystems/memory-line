@@ -33,8 +33,8 @@ public class QueueServiceReleaseTests
     {
         // Arrange
         var item = new RecordingQueue { QueueId = "q-1", AudioFilePath = "/tmp/q-1.wav", Status = QueueStatus.Completed };
-        _repository.Setup(r => r.GetByIdAsync("q-1")).ReturnsAsync(item);
-        _repository.Setup(r => r.DeleteAsync(item)).Callback(() => _sequence.Add("delete")).Returns(Task.CompletedTask);
+        _repository.Setup(r => r.GetByIdAsync("q-1", It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _repository.Setup(r => r.DeleteAsync(item, It.IsAny<CancellationToken>())).Callback(() => _sequence.Add("delete")).Returns(Task.CompletedTask);
         _storage.Setup(s => s.ReleaseAsync(item, It.IsAny<CancellationToken>()))
             .Callback(() => _sequence.Add("release"))
             .ReturnsAsync(new RecordingReleaseResult(1, 100, 0, 1));
@@ -50,7 +50,7 @@ public class QueueServiceReleaseTests
     [Fact]
     public async Task RemoveQueueItemAsync_UnknownItem_ReleasesNothing()
     {
-        _repository.Setup(r => r.GetByIdAsync("missing")).ReturnsAsync((RecordingQueue?)null);
+        _repository.Setup(r => r.GetByIdAsync("missing", It.IsAny<CancellationToken>())).ReturnsAsync((RecordingQueue?)null);
 
         await CreateService().RemoveQueueItemAsync("missing");
 
@@ -62,8 +62,8 @@ public class QueueServiceReleaseTests
     {
         // Arrange
         var item = new RecordingQueue { QueueId = "q-2", AudioFilePath = "/tmp/q-2.wav" };
-        _repository.Setup(r => r.GetByIdAsync("q-2")).ReturnsAsync(item);
-        _repository.Setup(r => r.DeleteAsync(item)).Returns(Task.CompletedTask);
+        _repository.Setup(r => r.GetByIdAsync("q-2", It.IsAny<CancellationToken>())).ReturnsAsync(item);
+        _repository.Setup(r => r.DeleteAsync(item, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _storage.Setup(s => s.ReleaseAsync(item, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("file locked"));
 
@@ -72,7 +72,7 @@ public class QueueServiceReleaseTests
 
         // Assert - the row is gone; the file is the cache sweep's problem
         await act.Should().NotThrowAsync();
-        _repository.Verify(r => r.DeleteAsync(item), Times.Once);
+        _repository.Verify(r => r.DeleteAsync(item, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -84,8 +84,8 @@ public class QueueServiceReleaseTests
             new RecordingQueue { QueueId = "c-1", AudioFilePath = "/tmp/c-1.wav", Status = QueueStatus.Completed },
             new RecordingQueue { QueueId = "c-2", AudioFilePath = string.Empty, SourceType = QueueSourceType.Text, Status = QueueStatus.Completed },
         };
-        _repository.Setup(r => r.GetByStatusAsync(QueueStatus.Completed)).ReturnsAsync(items);
-        _repository.Setup(r => r.DeleteAsync(It.IsAny<RecordingQueue>())).Returns(Task.CompletedTask);
+        _repository.Setup(r => r.GetByStatusAsync(QueueStatus.Completed, It.IsAny<CancellationToken>())).ReturnsAsync(items);
+        _repository.Setup(r => r.DeleteAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _storage.Setup(s => s.ReleaseAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RecordingReleaseResult(0, 0, 0, 0));
 

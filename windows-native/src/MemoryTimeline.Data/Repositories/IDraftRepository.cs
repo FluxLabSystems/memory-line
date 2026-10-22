@@ -11,10 +11,10 @@ public interface IDraftRepository : IRepository<Draft>
     /// Gets all drafts of the given type (see <see cref="DraftTypes"/>),
     /// ordered by most recently updated first.
     /// </summary>
-    Task<IEnumerable<Draft>> GetByTypeAsync(string draftType);
+    Task<IEnumerable<Draft>> GetByTypeAsync(string draftType, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets all drafts ordered by most recently updated first.
     /// </summary>
-    Task<IEnumerable<Draft>> GetAllOrderedAsync();
+    Task<IEnumerable<Draft>> GetAllOrderedAsync(CancellationToken cancellationToken = default);
 }

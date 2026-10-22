@@ -9,24 +9,24 @@ namespace MemoryTimeline.Data.Repositories;
 /// </summary>
 public interface ISyncOutboxRepository
 {
-    Task<SyncOutbox> AddAsync(SyncOutbox entry);
+    Task<SyncOutbox> AddAsync(SyncOutbox entry, CancellationToken cancellationToken = default);
 
     /// <summary>Undelivered records in strict outbox_id (creation) order.</summary>
-    Task<IReadOnlyList<SyncOutbox>> GetPendingAsync(int limit = 100);
+    Task<IReadOnlyList<SyncOutbox>> GetPendingAsync(int limit = 100, CancellationToken cancellationToken = default);
 
-    Task<int> GetPendingCountAsync();
+    Task<int> GetPendingCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Most recently created record for one entity, delivered or not. Publishers
     /// that project mutable state (e.g. capture processing status) use it to
     /// suppress re-publishing a projection that has not changed.
     /// </summary>
-    Task<SyncOutbox?> GetLatestForEntityAsync(string entityType, string entityId);
+    Task<SyncOutbox?> GetLatestForEntityAsync(string entityType, string entityId, CancellationToken cancellationToken = default);
 
-    Task MarkDeliveredAsync(long outboxId);
+    Task MarkDeliveredAsync(long outboxId, CancellationToken cancellationToken = default);
 
     /// <summary>Records a failed delivery attempt without consuming the record.</summary>
-    Task RecordFailedAttemptAsync(long outboxId, string error);
+    Task RecordFailedAttemptAsync(long outboxId, string error, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -44,59 +44,59 @@ public class SyncOutboxRepository : ISyncOutboxRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<SyncOutbox> AddAsync(SyncOutbox entry)
+    public async Task<SyncOutbox> AddAsync(SyncOutbox entry, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.SyncOutboxEntries.Add(entry);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return entry;
     }
 
-    public async Task<IReadOnlyList<SyncOutbox>> GetPendingAsync(int limit = 100)
+    public async Task<IReadOnlyList<SyncOutbox>> GetPendingAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.SyncOutboxEntries
             .AsNoTracking()
             .Where(o => o.DeliveredAt == null)
             .OrderBy(o => o.OutboxId)
             .Take(limit)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<int> GetPendingCountAsync()
+    public async Task<int> GetPendingCountAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.SyncOutboxEntries.CountAsync(o => o.DeliveredAt == null);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.SyncOutboxEntries.CountAsync(o => o.DeliveredAt == null, cancellationToken);
     }
 
-    public async Task<SyncOutbox?> GetLatestForEntityAsync(string entityType, string entityId)
+    public async Task<SyncOutbox?> GetLatestForEntityAsync(string entityType, string entityId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Covered by IX_sync_outbox_entity_type_entity_id.
         return await context.SyncOutboxEntries
             .AsNoTracking()
             .Where(o => o.EntityType == entityType && o.EntityId == entityId)
             .OrderByDescending(o => o.OutboxId)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task MarkDeliveredAsync(long outboxId)
+    public async Task MarkDeliveredAsync(long outboxId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        var entry = await context.SyncOutboxEntries.FirstOrDefaultAsync(o => o.OutboxId == outboxId);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await context.SyncOutboxEntries.FirstOrDefaultAsync(o => o.OutboxId == outboxId, cancellationToken);
         if (entry == null || entry.DeliveredAt != null)
         {
             return;
         }
 
         entry.DeliveredAt = DateTime.UtcNow;
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task RecordFailedAttemptAsync(long outboxId, string error)
+    public async Task RecordFailedAttemptAsync(long outboxId, string error, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        var entry = await context.SyncOutboxEntries.FirstOrDefaultAsync(o => o.OutboxId == outboxId);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var entry = await context.SyncOutboxEntries.FirstOrDefaultAsync(o => o.OutboxId == outboxId, cancellationToken);
         if (entry == null)
         {
             return;
@@ -104,6 +104,6 @@ public class SyncOutboxRepository : ISyncOutboxRepository
 
         entry.AttemptCount++;
         entry.LastError = error;
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 }

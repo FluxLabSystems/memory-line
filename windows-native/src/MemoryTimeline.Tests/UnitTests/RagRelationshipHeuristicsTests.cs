@@ -26,12 +26,12 @@ public class RagRelationshipHeuristicsTests
 
     public RagRelationshipHeuristicsTests()
     {
-        _crossReferences.Setup(r => r.GetReferencesForEventAsync(It.IsAny<string>()))
+        _crossReferences.Setup(r => r.GetReferencesForEventAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Enumerable.Empty<CrossReference>());
-        _crossReferences.Setup(r => r.GetReferenceAsync(It.IsAny<string>(), It.IsAny<string>()))
+        _crossReferences.Setup(r => r.GetReferenceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((CrossReference?)null);
-        _crossReferences.Setup(r => r.AddAsync(It.IsAny<CrossReference>()))
-            .ReturnsAsync((CrossReference cr) => cr);
+        _crossReferences.Setup(r => r.AddAsync(It.IsAny<CrossReference>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CrossReference cr, CancellationToken _) => cr);
         _eventService.Setup(s => s.GetEventWithDetailsAsync(It.IsAny<string>()))
             .ReturnsAsync((string id) => _events.TryGetValue(id, out var evt) ? evt : null);
 
@@ -64,7 +64,7 @@ public class RagRelationshipHeuristicsTests
         // Persisted under the stored "person" type.
         _crossReferences.Verify(r => r.AddAsync(It.Is<CrossReference>(cr =>
             cr.EventId1 == "source" && cr.EventId2 == "target"
-            && cr.RelationshipType == RelationshipType.Person.ToStringValue())), Times.Once);
+            && cr.RelationshipType == RelationshipType.Person.ToStringValue()), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class RagRelationshipHeuristicsTests
         result.Reasoning.Should().Contain("Paris").And.NotContain("Lyon");
 
         _crossReferences.Verify(r => r.AddAsync(It.Is<CrossReference>(cr =>
-            cr.RelationshipType == RelationshipType.Location.ToStringValue())), Times.Once);
+            cr.RelationshipType == RelationshipType.Location.ToStringValue()), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class RagRelationshipHeuristicsTests
         var results = await _ragService.DetectCrossReferencesAsync("source", new[] { "target" });
 
         results.Should().BeEmpty();
-        _crossReferences.Verify(r => r.AddAsync(It.IsAny<CrossReference>()), Times.Never);
+        _crossReferences.Verify(r => r.AddAsync(It.IsAny<CrossReference>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

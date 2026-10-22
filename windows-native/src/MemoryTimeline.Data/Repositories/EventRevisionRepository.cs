@@ -18,42 +18,42 @@ public class EventRevisionRepository : IEventRevisionRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<List<EventRevision>> GetForEventAsync(string eventId)
+    public async Task<List<EventRevision>> GetForEventAsync(string eventId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventRevisions
             .AsNoTracking() // Read-only optimization
             .Where(r => r.EventId == eventId)
             .OrderByDescending(r => r.RevisedAt)
             .ThenByDescending(r => r.RevisionId) // deterministic tie-break for same-instant writes
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<EventRevision?> GetByIdAsync(string revisionId)
+    public async Task<EventRevision?> GetByIdAsync(string revisionId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventRevisions
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.RevisionId == revisionId);
+            .FirstOrDefaultAsync(r => r.RevisionId == revisionId, cancellationToken);
     }
 
-    public async Task<EventRevision> AddAsync(EventRevision revision)
+    public async Task<EventRevision> AddAsync(EventRevision revision, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        await context.EventRevisions.AddAsync(revision);
-        await context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.EventRevisions.AddAsync(revision, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
         return revision;
     }
 
-    public async Task<int> CountAsync(string? eventId = null)
+    public async Task<int> CountAsync(string? eventId = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var query = context.EventRevisions.AsNoTracking();
         if (!string.IsNullOrEmpty(eventId))
         {
             query = query.Where(r => r.EventId == eventId);
         }
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 }

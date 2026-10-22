@@ -18,94 +18,94 @@ public class EventEmbeddingRepository : IEventEmbeddingRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<EventEmbedding?> GetByIdAsync(string id)
+    public async Task<EventEmbedding?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.Include(e => e.Event).FirstOrDefaultAsync(e => e.EmbeddingId == id);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.Include(e => e.Event).FirstOrDefaultAsync(e => e.EmbeddingId == id, cancellationToken);
     }
 
-    public async Task<IEnumerable<EventEmbedding>> GetAllAsync()
+    public async Task<IEnumerable<EventEmbedding>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.AsNoTracking().ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.AsNoTracking().ToListAsync(cancellationToken);
     }
 
-    public async Task<EventEmbedding> AddAsync(EventEmbedding entity)
+    public async Task<EventEmbedding> AddAsync(EventEmbedding entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.EventEmbeddings.Add(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return entity;
     }
 
-    public async Task UpdateAsync(EventEmbedding entity)
+    public async Task UpdateAsync(EventEmbedding entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Entity is detached; Update attaches it and marks it Modified.
         context.EventEmbeddings.Update(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(EventEmbedding entity)
+    public async Task DeleteAsync(EventEmbedding entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Remove attaches the detached entity and marks it Deleted.
         context.EventEmbeddings.Remove(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task AddRangeAsync(IEnumerable<EventEmbedding> entities)
+    public async Task AddRangeAsync(IEnumerable<EventEmbedding> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.EventEmbeddings.AddRange(entities);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteRangeAsync(IEnumerable<EventEmbedding> entities)
+    public async Task DeleteRangeAsync(IEnumerable<EventEmbedding> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.EventEmbeddings.RemoveRange(entities);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>> predicate)
+    public async Task<bool> ExistsAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.AnyAsync(predicate);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.AnyAsync(predicate, cancellationToken);
     }
 
-    public async Task<int> CountAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>>? predicate = null)
+    public async Task<int> CountAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>>? predicate = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return predicate == null
-            ? await context.EventEmbeddings.CountAsync()
-            : await context.EventEmbeddings.CountAsync(predicate);
+            ? await context.EventEmbeddings.CountAsync(cancellationToken)
+            : await context.EventEmbeddings.CountAsync(predicate, cancellationToken);
     }
 
-    public async Task<IEnumerable<EventEmbedding>> FindAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>> predicate)
+    public async Task<IEnumerable<EventEmbedding>> FindAsync(System.Linq.Expressions.Expression<Func<EventEmbedding, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.AsNoTracking().Where(predicate).ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.AsNoTracking().Where(predicate).ToListAsync(cancellationToken);
     }
 
-    public async Task<EventEmbedding?> GetByEventIdAsync(string eventId)
+    public async Task<EventEmbedding?> GetByEventIdAsync(string eventId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.FirstOrDefaultAsync(e => e.EventId == eventId);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.FirstOrDefaultAsync(e => e.EventId == eventId, cancellationToken);
     }
 
-    public async Task<IEnumerable<EventEmbedding>> GetByProviderAsync(string provider)
+    public async Task<IEnumerable<EventEmbedding>> GetByProviderAsync(string provider, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.AsNoTracking().Where(e => e.EmbeddingProvider == provider).ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.AsNoTracking().Where(e => e.EmbeddingProvider == provider).ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<EventEmbedding>> FindSimilarAsync(double[] queryVector, int topK = 10, double minimumSimilarity = 0.7)
+    public async Task<IEnumerable<EventEmbedding>> FindSimilarAsync(double[] queryVector, int topK = 10, double minimumSimilarity = 0.7, CancellationToken cancellationToken = default)
     {
         // This is a simplified implementation - in production, use vector similarity search
         // For SQLite, we'd need to implement cosine similarity in-memory
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        var allEmbeddings = await context.EventEmbeddings.AsNoTracking().Include(e => e.Event).ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var allEmbeddings = await context.EventEmbeddings.AsNoTracking().Include(e => e.Event).ToListAsync(cancellationToken);
 
         var similarities = allEmbeddings.Select(e => new
         {
@@ -121,10 +121,10 @@ public class EventEmbeddingRepository : IEventEmbeddingRepository
         return similarities;
     }
 
-    public async Task<int> GetCountByProviderAsync(string provider)
+    public async Task<int> GetCountByProviderAsync(string provider, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.EventEmbeddings.CountAsync(e => e.EmbeddingProvider == provider);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.EventEmbeddings.CountAsync(e => e.EmbeddingProvider == provider, cancellationToken);
     }
 
     private static double[] DeserializeVector(string vectorString)

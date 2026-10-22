@@ -31,8 +31,8 @@ public class TextQueueServiceTests
         _loggerMock = new Mock<ILogger<QueueService>>();
 
         // Echo the entity back so the service returns the stored row's id.
-        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>()))
-            .ReturnsAsync((RecordingQueue q) => q);
+        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RecordingQueue q, CancellationToken _) => q);
 
         _queueService = new QueueService(
             _repositoryMock.Object,
@@ -47,9 +47,9 @@ public class TextQueueServiceTests
         // Arrange — multibyte characters prove the size is a UTF-8 BYTE count
         var text = "Ma journée à Zürich — I met François for coffee.";
         RecordingQueue? captured = null;
-        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>()))
-            .Callback<RecordingQueue>(q => captured = q)
-            .ReturnsAsync((RecordingQueue q) => q);
+        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()))
+            .Callback<RecordingQueue, CancellationToken>((q, _) => captured = q)
+            .ReturnsAsync((RecordingQueue q, CancellationToken _) => q);
 
         // Act
         var queueId = await _queueService.EnqueueTextAsync(text, "Journal 2014-03");
@@ -95,7 +95,7 @@ public class TextQueueServiceTests
 
         // Assert — clear rejection, nothing written
         await act.Should().ThrowAsync<ArgumentException>();
-        _repositoryMock.Verify(r => r.AddAsync(It.IsAny<RecordingQueue>()), Times.Never);
+        _repositoryMock.Verify(r => r.AddAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -103,9 +103,9 @@ public class TextQueueServiceTests
     {
         // Arrange
         RecordingQueue? captured = null;
-        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>()))
-            .Callback<RecordingQueue>(q => captured = q)
-            .ReturnsAsync((RecordingQueue q) => q);
+        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()))
+            .Callback<RecordingQueue, CancellationToken>((q, _) => captured = q)
+            .ReturnsAsync((RecordingQueue q, CancellationToken _) => q);
         var longLabel = "  " + new string('x', 250) + "  ";
 
         // Act
@@ -122,9 +122,9 @@ public class TextQueueServiceTests
     {
         // Arrange
         RecordingQueue? captured = null;
-        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>()))
-            .Callback<RecordingQueue>(q => captured = q)
-            .ReturnsAsync((RecordingQueue q) => q);
+        _repositoryMock.Setup(r => r.AddAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()))
+            .Callback<RecordingQueue, CancellationToken>((q, _) => captured = q)
+            .ReturnsAsync((RecordingQueue q, CancellationToken _) => q);
 
         // Act
         await _queueService.EnqueueTextAsync("Some text", "   ");

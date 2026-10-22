@@ -33,7 +33,7 @@ public class CaptureStatusPublisherTests
         _contextFactory = TestDbContextFactory.CreateInMemory();
         _outboxRepository = new SyncOutboxRepository(_contextFactory);
         _pendingEventRepository
-            .Setup(r => r.GetByQueueIdAsync(It.IsAny<string>()))
+            .Setup(r => r.GetByQueueIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<PendingEvent>());
         _publisher = new CaptureStatusPublisher(
             _outboxRepository,
@@ -117,7 +117,7 @@ public class CaptureStatusPublisherTests
         item.Status = QueueStatus.Completed;
         item.ProcessingStage = QueueProcessingStage.ReviewReady;
         _pendingEventRepository
-            .Setup(r => r.GetByQueueIdAsync(item.QueueId))
+            .Setup(r => r.GetByQueueIdAsync(item.QueueId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[]
             {
                 PendingEventWith(PendingStatus.PendingReview),
@@ -303,13 +303,13 @@ public class CaptureStatusPublisherTests
         // Arrange - review_ready published with everything still pending
         var item = DeviceCapture(QueueStatus.Completed, QueueProcessingStage.ReviewReady);
         _pendingEventRepository
-            .Setup(r => r.GetByQueueIdAsync(item.QueueId))
+            .Setup(r => r.GetByQueueIdAsync(item.QueueId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { PendingEventWith(PendingStatus.PendingReview) });
         await _publisher.PublishAsync(item);
 
         // Act - the user approves it on Windows; stage does not move
         _pendingEventRepository
-            .Setup(r => r.GetByQueueIdAsync(item.QueueId))
+            .Setup(r => r.GetByQueueIdAsync(item.QueueId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { PendingEventWith(PendingStatus.Approved) });
         await _publisher.PublishAsync(item);
 
@@ -348,7 +348,7 @@ public class CaptureStatusPublisherTests
         // Arrange
         var item = DeviceCapture(QueueStatus.Completed, QueueProcessingStage.ReviewReady);
         _pendingEventRepository
-            .Setup(r => r.GetByQueueIdAsync(item.QueueId))
+            .Setup(r => r.GetByQueueIdAsync(item.QueueId, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("database is locked"));
 
         // Act

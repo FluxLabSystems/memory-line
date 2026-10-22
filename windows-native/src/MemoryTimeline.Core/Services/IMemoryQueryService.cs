@@ -22,9 +22,23 @@ public interface IMemoryQueryService
     Task<MemoryAnswer> AskAsync(string question, MemoryQueryOptions? options = null, CancellationToken ct = default);
 
     /// <summary>
-    /// Streaming variant of <see cref="AskAsync"/>: yields the answer text in
-    /// word-sized chunks. Citations and metadata are not part of the stream —
-    /// use <see cref="AskAsync"/> when they are needed.
+    /// As <see cref="AskAsync(string, MemoryQueryOptions?, CancellationToken)"/>,
+    /// but reports the display answer incrementally through
+    /// <paramref name="partialAnswer"/> while the model writes it — the
+    /// provider's real token stream, with citation markers rewritten to [n]
+    /// on the fly. The returned answer is authoritative: its text is the
+    /// final, fully post-processed form and can differ from the concatenated
+    /// chunks in whitespace, so callers replace the streamed text with it.
+    /// An honest refusal is reported as a single chunk.
+    /// </summary>
+    Task<MemoryAnswer> AskAsync(string question, MemoryQueryOptions? options, IProgress<string> partialAnswer, CancellationToken ct = default);
+
+    /// <summary>
+    /// Streaming variant of <see cref="AskAsync(string, MemoryQueryOptions?, CancellationToken)"/>:
+    /// yields the display answer as the model produces it. Citations and
+    /// metadata are not part of the stream — use the progress-reporting
+    /// <see cref="AskAsync(string, MemoryQueryOptions?, IProgress{string}, CancellationToken)"/>
+    /// when both are needed.
     /// </summary>
     IAsyncEnumerable<string> AskStreamingAsync(string question, MemoryQueryOptions? options = null, CancellationToken ct = default);
 }

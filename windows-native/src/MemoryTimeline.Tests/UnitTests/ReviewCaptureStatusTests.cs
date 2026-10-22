@@ -466,7 +466,7 @@ public class ReviewCaptureStatusTests : IDisposable
     private void GivenExtractionReturns(params string[] titles)
     {
         _llmService
-            .Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+            .Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EventExtractionResult
             {
                 Success = true,

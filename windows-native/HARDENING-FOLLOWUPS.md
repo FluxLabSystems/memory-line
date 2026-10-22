@@ -11,7 +11,7 @@ non-trivial refactor, a public-API/DI change spanning layers, or a team decision
 > task) and run the built test assembly with `dotnet vstest`**, as CI does, to validate
 > all applied fixes.
 
-> **Status key (updated 2026-10-22):** ✅ resolved · ⬜ still open.
+> **Status key (updated 2026-10-22):** ✅ resolved · ⬜ still open (needs a decision or work).
 
 ## High priority
 
@@ -46,7 +46,7 @@ background work (ctor change → flagged rather than applied).
 **Resolution:** the shared-context `Task.Run` went away with the factory rework; the
 embedding path opens its own context per operation.
 
-### 3. Migration + snapshot drift  *(Data agent — Critical for migration-based release)* — ✅ baseline regenerated (runtime path unchanged)
+### 3. Migration + snapshot drift  *(Data agent — Critical for migration-based release)* — ✅ resolved (2026-10-22)
 `AppDbContextModelSnapshot` is an empty stub and `InitialCreate` is far behind the
 model (missing tables `era_categories`, `era_tags`, `milestones`, `saved_searches`;
 missing columns on `eras`/`events`/`tags`; missing `cross_references` FKs; missing
@@ -55,12 +55,15 @@ seed `InsertData`). Runtime is fine today because startup uses `EnsureCreatedAsy
 **Fix:** on a machine with the SDK, regenerate the baseline
 (`dotnet ef migrations add InitialCreate --force`) before shipping migrations.
 
-**Current state (2026-10-22):** a baseline migration
+**Resolution (2026-10-22):** a baseline migration
 (`Data/Migrations/20261022004346_InitialCreate` + snapshot; 25 tables, both seeds) was
-generated with `dotnet ef` through the new `AppDbContextDesignTimeFactory`. Startup still
-uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL repairs) and
-nothing calls `Migrate()`; moving existing EnsureCreated-built databases onto migrations
-still needs a history-table baseline step, which remains open.
+generated with `dotnet ef` through the new `AppDbContextDesignTimeFactory`, and
+`SchemaUpgrader.EnsureSchemaAsync` now runs `Database.MigrateAsync`. An unversioned
+database (built by `EnsureCreated` under an older build) is repaired by the idempotent
+DDL, baselined with `InitialCreate` (the history row is written through
+`IHistoryRepository`) and migrated forward; the first post-baseline migration is
+`AddCaptureLocation`. From here on a schema change ships as a migration only — the
+repair is frozen at the baseline shape (see `claude.md`, "Adding a feature").
 
 ## Medium priority
 
@@ -79,11 +82,10 @@ still needs a history-table baseline step, which remains open.
   `EventRepository.DeleteAsync`/`DeleteRangeAsync` remove the cross-references naming
   the event at either end in the same `SaveChanges`, proven by a file-backed SQLite test
   with `PRAGMA foreign_keys` on.
-- ⬜ **Analytics color bindings** — `CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color`
-  are `string` bound directly to `Brush` properties via `x:Bind` in `AnalyticsPage.xaml`.
-  Expose a `Brush`/`SolidColorBrush` on the model (as the timeline DTOs do with
-  `ColorBrush`) or add a string→Brush converter. *Not re-verified in the 2026-10 pass;
-  the project's convention is now hex strings in Core + `HexToBrushConverter` in the view.*
+- ✅ **Analytics color bindings** — `CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color`
+  are hex strings; the four `x:Bind Color` sites in `AnalyticsPage.xaml` (category bars,
+  tag cloud, person nodes, heatmap cells) now go through `HexToBrushConverter`, the
+  project convention for every color that crosses the Core → view boundary (2026-10-22).
 
 ## Low priority
 
@@ -94,15 +96,27 @@ still needs a history-table baseline step, which remains open.
   read. A backup restored under another Windows account reads those secrets as empty and
   they must be re-entered. Keys can also be removed from Settings ("Clear key" / Reset
   to Defaults).
-- ⬜ **`CancellationToken` not plumbable** through `IRepository<T>` and specialized repo
-  interfaces — add `CancellationToken ct = default` in a coordinated interface change.
-- ⬜ **`DateTime.Kind` round-trip** — SQLite returns `Unspecified`; add a UTC
-  `ValueConverter` on `DateTime` properties to avoid local/UTC comparison bugs.
-  *Related: `Microsoft.Data.Sqlite.Pre10TimeZoneHandling` is pinned at both entry
-  points; auditing the stored values is still open (see DEVELOPMENT-STATUS).*
-- ⬜ **Inclusive viewport boundaries** — `EventLayoutEngine.GetVisibleLayouts` /
-  `TimelineViewport.IsEventVisible` treat edge-touching (zero-area) events as visible
-  on both ends. Internally consistent (tests aligned to it); confirm it's intended.
+- ✅ **`CancellationToken` not plumbable** — resolved in the same change set (2026-10-22):
+  every repository method takes `CancellationToken cancellationToken = default` and passes
+  it to EF, and the Sync callers forward theirs; on the Core side queue processing
+  (`ProcessNextItemAsync` / `ProcessAllPendingAsync`) takes a token that reaches the
+  Whisper decode and the extraction model call, so a cancelled item goes back to Pending
+  instead of failing.
+- ⬜ **`DateTime.Kind` round-trip** — SQLite returns `Unspecified`; a UTC `ValueConverter`
+  on `DateTime` properties would avoid local/UTC comparison bugs.
+  *`Microsoft.Data.Sqlite.Pre10TimeZoneHandling` is pinned at both entry points (app and
+  tests) so stored values keep reading as they were written.* **Owner decision needed**
+  before anything changes: either (a) add the UTC converter and audit/convert the values
+  already stored under the old rules (a one-off data migration of every `DateTime` column —
+  user databases hold both local and UTC values today), or (b) keep the pre-10 switch pinned
+  indefinitely and document `Unspecified` as the contract. Until that call is made, no code
+  change is planned here.
+- ✅ **Inclusive viewport boundaries** — closed: inclusive is intended. The predicate the
+  timeline actually renders with is `TimelineCoordinateConverter.IsRangeVisible` (closed on
+  both ends, matching the data layer's overlap query, so an edge-touching event is loaded
+  and drawn consistently); the decision is recorded on it and on
+  `TimelineViewport.IsEventVisible`. `EventLayoutEngine` / `EventLayout.cs` had no
+  production caller and were deleted together with `EventLayoutEngineTests.cs` (2026-10).
 - ✅ **Singleton `AnthropicLlmService` caches `_model`** at first init — a later model
   change in settings needs an app restart. *Resolved: `RoutingLlmService` is the
   registered `ILlmService` and re-reads provider/model/key on every call, so Settings

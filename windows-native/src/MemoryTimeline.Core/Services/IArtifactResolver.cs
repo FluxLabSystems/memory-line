@@ -35,9 +35,12 @@ public class ArtifactResolution
 }
 
 /// <summary>
-/// The registered resolver: the storage locator is a local file path, either
-/// a same-machine hand-off or the cache file RemoteChangeApplier downloaded
-/// before calling ingestion. Downloading lives in the applier, not here.
+/// The production resolver: the storage locator is a local file path. Local
+/// recordings and imports hand their file over directly, and a capture from
+/// another device is downloaded by the sync layer (ArtifactTransferClient,
+/// driven by RemoteChangeApplier) to a local file BEFORE ingestion, so its
+/// locator is a local path too. Phase 1 added the download step in front of
+/// this resolver rather than replacing it.
 /// </summary>
 public class LocalFileArtifactResolver : IArtifactResolver
 {

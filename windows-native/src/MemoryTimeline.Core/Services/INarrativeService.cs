@@ -104,9 +104,12 @@ public class NarrativeRequest
     public bool IncludeCitations { get; set; } = true;
 
     /// <summary>
-    /// Reserved: include referenced media in the narrative/export. Media
-    /// support (EventMedia) is being built separately; the flag is carried on
-    /// the request but has no effect yet.
+    /// When true, the media attached to the narrative's source events
+    /// (<c>event_media</c>) is referenced in the exported document: images as
+    /// inline image references with their caption, other attachments as links.
+    /// The flag is copied onto <see cref="Narrative.IncludeMedia"/> so the
+    /// export knows the choice without a second request object. Generation
+    /// itself never sees the media — the model is given text only.
     /// </summary>
     public bool IncludeMedia { get; set; } = true;
 
@@ -143,6 +146,12 @@ public class Narrative
 
     /// <summary>Every event id that fed the narrative, in chronological order.</summary>
     public List<string> SourceEventIds { get; set; } = new();
+
+    /// <summary>
+    /// Whether the export should reference the media attached to the source
+    /// events (copied from <see cref="NarrativeRequest.IncludeMedia"/>).
+    /// </summary>
+    public bool IncludeMedia { get; set; }
 }
 
 /// <summary>

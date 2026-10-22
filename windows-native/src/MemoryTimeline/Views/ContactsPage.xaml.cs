@@ -7,7 +7,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace MemoryTimeline.Views;
 
@@ -41,8 +44,20 @@ public sealed partial class ContactsPage : Page
     /// <summary>PersonId being edited, or null when the editor is creating a new person.</summary>
     private string? _editingPersonId;
 
-    /// <summary>Photo path of the person being edited (not editable here, but preserved on save).</summary>
+    /// <summary>
+    /// Stored (media-root-relative) photo path of the person being edited;
+    /// preserved on save unless a new photo is chosen or the photo is removed.
+    /// </summary>
     private string? _editingPhotoPath;
+
+    /// <summary>A newly chosen photo file, imported into the media tree on Save.</summary>
+    private string? _pendingPhotoSourcePath;
+
+    /// <summary>True when the user removed the photo in this editing session.</summary>
+    private bool _photoRemoved;
+
+    /// <summary>Copies chosen photos into the managed media tree and resolves stored paths.</summary>
+    private readonly IMediaService _mediaService;
 
     /// <summary>Draft id the editor was resumed from; deleted after a successful real save.</summary>
     private string? _currentDraftId;
@@ -60,6 +75,7 @@ public sealed partial class ContactsPage : Page
     {
         InitializeComponent();
         ViewModel = App.Current.Services.GetRequiredService<ContactsViewModel>();
+        _mediaService = App.Current.Services.GetRequiredService<IMediaService>();
     }
 
     /// <summary>
@@ -276,7 +292,7 @@ public sealed partial class ContactsPage : Page
     private void PrepareEditorForAdd()
     {
         _editingPersonId = null;
-        _editingPhotoPath = null;
+        SetEditorPhoto(null, "?");
         _currentDraftId = null;
         PersonDialog.Title = "Add Person";
         SetEditorFields(
@@ -289,7 +305,7 @@ public sealed partial class ContactsPage : Page
     private void PrepareEditorForEdit(PersonDto person)
     {
         _editingPersonId = person.PersonId;
-        _editingPhotoPath = person.PhotoPath;
+        SetEditorPhoto(person.PhotoPath, person.Name);
         _currentDraftId = null;
         PersonDialog.Title = "Edit Person";
         SetEditorFields(
@@ -302,7 +318,7 @@ public sealed partial class ContactsPage : Page
     private void PrepareEditorFromDraft(PersonDraftPayload payload, string draftId)
     {
         _editingPersonId = null;
-        _editingPhotoPath = null;
+        SetEditorPhoto(null, payload.Name); // drafts carry no photo
         _currentDraftId = draftId;
         PersonDialog.Title = "Resume Person Draft";
         SetEditorFields(
@@ -368,6 +384,95 @@ public sealed partial class ContactsPage : Page
         finally
         {
             _syncingEditor = false;
+        }
+    }
+
+    /// <summary>
+    /// Shows the stored photo (or the initials placeholder) in the editor and
+    /// resets the pending choose/remove state for a new editing session.
+    /// </summary>
+    private void SetEditorPhoto(string? storedPhotoPath, string displayName)
+    {
+        _editingPhotoPath = storedPhotoPath;
+        _pendingPhotoSourcePath = null;
+        _photoRemoved = false;
+        EditorPhotoPreview.DisplayName = string.IsNullOrWhiteSpace(displayName) ? "?" : displayName;
+        EditorPhotoPreview.ProfilePicture = TryLoadImage(_mediaService.GetAbsolutePersonPhotoPath(storedPhotoPath));
+        RemovePhotoButton.IsEnabled = storedPhotoPath != null;
+    }
+
+    /// <summary>A BitmapImage for an absolute path, or null when unset/missing/unloadable.</summary>
+    private static BitmapImage? TryLoadImage(string? absolutePath)
+    {
+        if (string.IsNullOrWhiteSpace(absolutePath) || !File.Exists(absolutePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new BitmapImage(new Uri(absolutePath));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// "Choose photo…": single-file picker over the image allowlist (unpackaged
+    /// interop, as the other pickers). The file is only previewed here; it is
+    /// copied into the media tree when the person is saved.
+    /// </summary>
+    private async void ChoosePhoto_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var openPicker = new FileOpenPicker
+            {
+                ViewMode = PickerViewMode.Thumbnail,
+                SuggestedStartLocation = PickerLocationId.PicturesLibrary
+            };
+            foreach (var extension in MediaAttachmentRules.ImageExtensions)
+            {
+                openPicker.FileTypeFilter.Add(extension);
+            }
+
+            var hwnd = WindowNative.GetWindowHandle(App.Current.Window);
+            InitializeWithWindow.Initialize(openPicker, hwnd);
+
+            var file = await openPicker.PickSingleFileAsync();
+            if (file == null || string.IsNullOrEmpty(file.Path))
+            {
+                return;
+            }
+
+            _pendingPhotoSourcePath = file.Path;
+            _photoRemoved = false;
+            EditorPhotoPreview.ProfilePicture = TryLoadImage(file.Path);
+            RemovePhotoButton.IsEnabled = true;
+        }
+        catch (Exception ex)
+        {
+            ShowEditorValidation($"The photo could not be opened: {ex.Message}");
+        }
+    }
+
+    /// <summary>"Remove": clears the photo (applied on Save).</summary>
+    private void RemovePhoto_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingPhotoSourcePath = null;
+        _photoRemoved = true;
+        EditorPhotoPreview.ProfilePicture = null;
+        RemovePhotoButton.IsEnabled = false;
+    }
+
+    /// <summary>A co-occurring person in the Connections card selects that person.</summary>
+    private async void CoOccurring_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is PersonCoOccurrence person)
+        {
+            await ViewModel.SelectPersonByIdAsync(person.PersonId);
         }
     }
 
@@ -452,6 +557,28 @@ public sealed partial class ContactsPage : Page
         var deferral = args.GetDeferral();
         try
         {
+            // Resolve the photo first: a chosen file is copied into the media
+            // tree now and its stored path goes on the DTO. If the save below
+            // then fails, the copy is an orphan the next Clear Cache collects.
+            if (_pendingPhotoSourcePath != null)
+            {
+                try
+                {
+                    _editingPhotoPath = await _mediaService.ImportPersonPhotoAsync(_pendingPhotoSourcePath);
+                    _pendingPhotoSourcePath = null;
+                }
+                catch (Exception ex)
+                {
+                    ShowEditorValidation($"The photo could not be added: {ex.Message}");
+                    args.Cancel = true;
+                    return;
+                }
+            }
+            else if (_photoRemoved)
+            {
+                _editingPhotoPath = null;
+            }
+
             var person = BuildPersonFromEditor();
             var error = await ViewModel.SavePersonAsync(person, isNew: _editingPersonId == null);
             if (error != null)

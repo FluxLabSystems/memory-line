@@ -246,8 +246,10 @@ public class QueueService : IQueueService
     /// <summary>
     /// Processes the next pending item in the queue.
     /// </summary>
-    public async Task ProcessNextItemAsync()
+    public async Task ProcessNextItemAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Ensure only one item is processed at a time
         if (!await _processingSemaphore.WaitAsync(0))
         {
@@ -266,7 +268,7 @@ public class QueueService : IQueueService
                 return;
             }
 
-            var result = await ProcessQueueItemAsync(nextItem);
+            var result = await ProcessQueueItemAsync(nextItem, cancellationToken);
 
             // Show notification for single item processing.
             // Notification failure must never break processing.
@@ -293,8 +295,10 @@ public class QueueService : IQueueService
     /// <summary>
     /// Processes all pending items in the queue.
     /// </summary>
-    public async Task ProcessAllPendingAsync()
+    public async Task ProcessAllPendingAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!await _processingSemaphore.WaitAsync(0))
         {
             _logger.LogWarning("Queue processing already in progress");
@@ -312,7 +316,11 @@ public class QueueService : IQueueService
 
             foreach (var item in pendingItems)
             {
-                var result = await ProcessQueueItemAsync(item);
+                // Between items: a cancelled batch stops here, leaving the
+                // remaining items Pending for a later run.
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var result = await ProcessQueueItemAsync(item, cancellationToken);
                 if (result.success)
                 {
                     successCount++;
@@ -510,7 +518,7 @@ public class QueueService : IQueueService
                     RaiseProgressChanged(item.QueueId, p.percentage, p.message);
                 });
 
-                var eventCount = await _extractionService.ProcessRecordingAsync(item.QueueId, progress);
+                var eventCount = await _extractionService.ProcessRecordingAsync(item.QueueId, progress, cancellationToken);
 
                 RaiseProgressChanged(item.QueueId, 100, $"Completed - {eventCount} events extracted");
 

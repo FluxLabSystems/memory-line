@@ -70,6 +70,14 @@ public partial class ContactsViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<string> _selectedPersonAliases = new();
 
+    /// <summary>Living people who share the most events with the selected person (profile aggregate).</summary>
+    [ObservableProperty]
+    private ObservableCollection<PersonCoOccurrence> _selectedPersonCoOccurring = new();
+
+    /// <summary>Locations of the selected person's events, most frequent first (profile aggregate).</summary>
+    [ObservableProperty]
+    private ObservableCollection<PersonLocationCount> _selectedPersonTopLocations = new();
+
     /// <summary>Text of the add-alias box in the detail pane.</summary>
     [ObservableProperty]
     private string _newAliasText = string.Empty;
@@ -124,6 +132,15 @@ public partial class ContactsViewModel : ObservableObject
 
     /// <summary>True when a person is selected but has no aliases yet.</summary>
     public bool HasNoAliases => SelectedPerson != null && SelectedPersonAliases.Count == 0;
+
+    /// <summary>True when the selected person shares events with someone.</summary>
+    public bool HasCoOccurring => SelectedPersonCoOccurring.Count > 0;
+
+    /// <summary>True when the selected person's events have at least one location.</summary>
+    public bool HasTopLocations => SelectedPersonTopLocations.Count > 0;
+
+    /// <summary>True when the Connections card has anything to show.</summary>
+    public bool HasConnections => HasCoOccurring || HasTopLocations;
 
     /// <summary>
     /// The first merge suggestion found, if any (for the Review action).
@@ -361,6 +378,7 @@ public partial class ContactsViewModel : ObservableObject
         NewAliasText = string.Empty;
         _ = LoadSelectedPersonEventsAsync();
         _ = LoadSelectedPersonAliasesAsync();
+        _ = LoadSelectedPersonConnectionsAsync();
     }
 
     partial void OnErrorMessageChanged(string value) => OnPropertyChanged(nameof(HasError));
@@ -523,6 +541,53 @@ public partial class ContactsViewModel : ObservableObject
             _logger.LogError(ex, "Error loading aliases for person {PersonId}", person.PersonId);
             ErrorMessage = "Couldn't load this person's aliases.";
         }
+    }
+
+    /// <summary>
+    /// Loads the Connections card for the selected person: the top
+    /// co-occurring people and top locations that
+    /// <see cref="IPersonService.GetProfileAsync"/> aggregates.
+    /// </summary>
+    private async Task LoadSelectedPersonConnectionsAsync()
+    {
+        var person = SelectedPerson;
+        SelectedPersonCoOccurring = new ObservableCollection<PersonCoOccurrence>();
+        SelectedPersonTopLocations = new ObservableCollection<PersonLocationCount>();
+        NotifyConnectionsChanged();
+
+        if (person == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var profile = await _personService.GetProfileAsync(person.PersonId);
+            if (!ReferenceEquals(SelectedPerson, person))
+            {
+                return; // Selection moved on while loading.
+            }
+
+            if (profile != null)
+            {
+                SelectedPersonCoOccurring = new ObservableCollection<PersonCoOccurrence>(profile.TopCoOccurring);
+                SelectedPersonTopLocations = new ObservableCollection<PersonLocationCount>(profile.TopLocations);
+            }
+
+            NotifyConnectionsChanged();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading connections for person {PersonId}", person.PersonId);
+            ErrorMessage = "Couldn't load this person's connections.";
+        }
+    }
+
+    private void NotifyConnectionsChanged()
+    {
+        OnPropertyChanged(nameof(HasCoOccurring));
+        OnPropertyChanged(nameof(HasTopLocations));
+        OnPropertyChanged(nameof(HasConnections));
     }
 
     /// <summary>

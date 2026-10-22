@@ -167,6 +167,30 @@ The rule is written up in [`claude.md`](../../claude.md) under "Keeping Core por
 
 ---
 
+### 3.4 The Mac registers as `macos` — first-class since contract v1.5
+
+`DeviceRegisterRequest.platform` was constrained to `[ios, windows, other]` until contract
+v1.5 added `macos` (`shared-contracts/openapi/memory-line-sync-v1.yaml`, mirrored by
+`DeviceService.AllowedPlatforms`, which still rejects anything outside the enum with a 400).
+The Mac app sends `"macos"` (`MacAppEnvironment.devicePlatform`, pinned by a test); a Mac
+paired before v1.5 keeps the `other` its device row was stored with, and `other` remains a
+valid value. Windows Settings → Sync shows the platform string as stored.
+
+Two smaller traps in the same call, both already handled in `MacAppEnvironment.pair`:
+
+- The Swift DTO **defaults `platform` to `"ios"`**. Using the memberwise initializer
+  without passing it registers a Mac as an iPhone, silently and permanently — the value is
+  stored on the device row.
+- `displayName` on iOS is `UIDevice.current.name`; the Mac uses the host name with the
+  Bonjour `.local` suffix trimmed. This is what the user sees in Windows Settings → Sync,
+  so a blank or `studio.local`-shaped name is a real papercut.
+
+Making `macos` first-class meant changing the OpenAPI enum, `AllowedPlatforms` and the Swift
+literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
+string and needed no change.
+
+---
+
 ## 4. Platform capabilities the Mac needs
 
 Ordered by how much they block everything else.
@@ -301,30 +325,6 @@ The `dotnet` job has since run green, so §3.3 is now evidence rather than reaso
 `Microsoft.ML.OnnxRuntime` and `Anthropic.SDK` do restore on macOS and those four projects
 do compile there. If it ever fails on a native-asset restore rather than a compile error,
 the fix belongs in the package reference, not in a retreat from the `net10.0` target.
-
----
-
-### 3.4 The Mac registers as `macos` — first-class since contract v1.5
-
-`DeviceRegisterRequest.platform` was constrained to `[ios, windows, other]` until contract
-v1.5 added `macos` (`shared-contracts/openapi/memory-line-sync-v1.yaml`, mirrored by
-`DeviceService.AllowedPlatforms`, which still rejects anything outside the enum with a 400).
-The Mac app sends `"macos"` (`MacAppEnvironment.devicePlatform`, pinned by a test); a Mac
-paired before v1.5 keeps the `other` its device row was stored with, and `other` remains a
-valid value. Windows Settings → Sync shows the platform string as stored.
-
-Two smaller traps in the same call, both already handled in `MacAppEnvironment.pair`:
-
-- The Swift DTO **defaults `platform` to `"ios"`**. Using the memberwise initializer
-  without passing it registers a Mac as an iPhone, silently and permanently — the value is
-  stored on the device row.
-- `displayName` on iOS is `UIDevice.current.name`; the Mac uses the host name with the
-  Bonjour `.local` suffix trimmed. This is what the user sees in Windows Settings → Sync,
-  so a blank or `studio.local`-shaped name is a real papercut.
-
-Making `macos` first-class meant changing the OpenAPI enum, `AllowedPlatforms` and the Swift
-literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
-string and needed no change.
 
 ---
 

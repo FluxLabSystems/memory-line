@@ -356,7 +356,7 @@ public class QueueServiceTests
 
         // Assert
         _extractionServiceMock.Verify(e => e.ProcessRecordingAsync(
-            It.IsAny<string>(), It.IsAny<IProgress<(int, string)>>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public class QueueServiceTests
 
         // Assert - neither extraction nor any status write happened
         _extractionServiceMock.Verify(e => e.ProcessRecordingAsync(
-            It.IsAny<string>(), It.IsAny<IProgress<(int, string)>>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()), Times.Never);
         _repositoryMock.Verify(r => r.UpdateAsync(It.IsAny<RecordingQueue>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -406,7 +406,7 @@ public class QueueServiceTests
             .Callback<RecordingQueue, CancellationToken>((q, _) => updates.Add((q.Status, q.ProcessingStage)))
             .Returns(Task.CompletedTask);
 
-        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>()))
+        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(2);
 
         // Act
@@ -443,7 +443,7 @@ public class QueueServiceTests
             .Callback<RecordingQueue, CancellationToken>((q, _) => updates.Add((q.Status, q.ProcessingStage)))
             .Returns(Task.CompletedTask);
 
-        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>()))
+        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
 
         // Act
@@ -477,7 +477,7 @@ public class QueueServiceTests
             .Callback<RecordingQueue, CancellationToken>((q, _) => updates.Add((q.Status, q.ProcessingStage)))
             .Returns(Task.CompletedTask);
 
-        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>()))
+        _extractionServiceMock.Setup(e => e.ProcessRecordingAsync(queueId, It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ConfigurationException("LLM API key is not configured"));
 
         // Act
@@ -486,11 +486,108 @@ public class QueueServiceTests
         // Assert - non-retryable: extraction attempted exactly once, item failed
         // with the configuration stage
         _extractionServiceMock.Verify(e => e.ProcessRecordingAsync(
-            queueId, It.IsAny<IProgress<(int, string)>>()), Times.Once);
+            queueId, It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()), Times.Once);
         updates.Should().NotBeEmpty();
         updates[^1].Status.Should().Be(QueueStatus.Failed);
         updates[^1].Stage.Should().Be(QueueProcessingStage.FailedConfiguration);
         queueItem.ErrorMessage.Should().Be("LLM API key is not configured");
+    }
+
+    [Fact]
+    public async Task ProcessNextItemAsync_ForwardsTheTokenAndPutsACancelledItemBackToPending()
+    {
+        // Arrange: the user cancels while the item is being transcribed.
+        var queueItem = new RecordingQueue
+        {
+            QueueId = "cancel-me",
+            AudioFilePath = "/path.wav",
+            Status = QueueStatus.Pending,
+            ProcessingStage = QueueProcessingStage.ReadyForTranscription
+        };
+        var updates = new List<(string Status, string? Stage)>();
+        _repositoryMock.Setup(r => r.GetByStatusAsync(QueueStatus.Pending))
+            .ReturnsAsync(new List<RecordingQueue> { queueItem });
+        _repositoryMock.Setup(r => r.GetByIdAsync("cancel-me"))
+            .ReturnsAsync(queueItem);
+        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<RecordingQueue>()))
+            .Callback<RecordingQueue>(q => updates.Add((q.Status, q.ProcessingStage)))
+            .Returns(Task.CompletedTask);
+
+        using var cts = new CancellationTokenSource();
+        var forwarded = CancellationToken.None;
+        _extractionServiceMock
+            .Setup(e => e.ProcessRecordingAsync("cancel-me", It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()))
+            .Returns<string, IProgress<(int, string)>?, CancellationToken>(async (_, _, token) =>
+            {
+                forwarded = token;
+                cts.Cancel();
+                token.ThrowIfCancellationRequested();
+                await Task.Yield();
+                return 0;
+            });
+
+        // Act
+        var act = () => _queueService.ProcessNextItemAsync(cts.Token);
+
+        // Assert: the caller's token reached the extraction call, the
+        // cancellation propagated, and the item went back to Pending with no
+        // error and no failure toast - cancellation is not a failure.
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        forwarded.Should().Be(cts.Token);
+        updates[0].Status.Should().Be(QueueStatus.Processing);
+        updates[^1].Status.Should().Be(QueueStatus.Pending);
+        updates[^1].Stage.Should().Be(QueueProcessingStage.ReadyForTranscription);
+        queueItem.ErrorMessage.Should().BeNull();
+        _notificationServiceMock.Verify(n => n.ShowErrorAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAllPendingAsync_CancelledBetweenItems_LeavesTheRemainingItemsPending()
+    {
+        // Arrange: two pending items; the batch is cancelled right after the
+        // first completes.
+        var first = new RecordingQueue { QueueId = "first", AudioFilePath = "/a.wav", Status = QueueStatus.Pending };
+        var second = new RecordingQueue { QueueId = "second", AudioFilePath = "/b.wav", Status = QueueStatus.Pending };
+        _repositoryMock.Setup(r => r.GetByStatusAsync(QueueStatus.Pending))
+            .ReturnsAsync(new List<RecordingQueue> { first, second });
+        _repositoryMock.Setup(r => r.GetByIdAsync("first")).ReturnsAsync(first);
+        _repositoryMock.Setup(r => r.GetByIdAsync("second")).ReturnsAsync(second);
+        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<RecordingQueue>())).Returns(Task.CompletedTask);
+
+        using var cts = new CancellationTokenSource();
+        _extractionServiceMock
+            .Setup(e => e.ProcessRecordingAsync("first", It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                cts.Cancel();
+                return 1;
+            });
+
+        // Act
+        var act = () => _queueService.ProcessAllPendingAsync(cts.Token);
+
+        // Assert: the first item finished normally, the second was never started.
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        first.Status.Should().Be(QueueStatus.Completed);
+        second.Status.Should().Be(QueueStatus.Pending);
+        _extractionServiceMock.Verify(
+            e => e.ProcessRecordingAsync("second", It.IsAny<IProgress<(int, string)>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessNextItemAsync_PreCancelledToken_ThrowsBeforeTouchingTheQueue()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Act
+        var act = () => _queueService.ProcessNextItemAsync(cts.Token);
+
+        // Assert
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _repositoryMock.Verify(r => r.GetByStatusAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

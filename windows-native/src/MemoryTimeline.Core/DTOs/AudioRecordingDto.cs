@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MemoryTimeline.Core.Models;
 using MemoryTimeline.Data.Models;
 
 namespace MemoryTimeline.Core.DTOs;
@@ -86,8 +87,9 @@ public partial class AudioRecordingDto : ObservableObject
     public bool IsAudioSource => SourceType == QueueSourceType.Audio
         && !string.IsNullOrEmpty(AudioFilePath);
 
+    /// <summary>"mm:ss", or "h:mm:ss" once the recording reaches an hour; "Unknown" without a duration.</summary>
     public string DurationDisplay => DurationSeconds.HasValue
-        ? TimeSpan.FromSeconds(DurationSeconds.Value).ToString(@"mm\:ss")
+        ? DurationFormat.Clock(DurationSeconds.Value)
         : "Unknown";
 
     public string DurationText => DurationDisplay;

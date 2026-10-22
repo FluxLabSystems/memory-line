@@ -203,18 +203,20 @@ public partial class AskViewModel : ObservableObject, IDisposable
         {
             // The pipeline (LLM calls + cosine ranking over stored embeddings)
             // runs off the UI thread; all UI mutations go through RunOnUi.
-            var answer = await Task.Run(() => _memoryQueryService.AskAsync(question, null, ct), ct);
-
-            // Replay the answer in word-sized chunks so it visibly "types" in.
-            foreach (var chunk in MemoryQueryService.SplitIntoWordChunks(answer.Answer))
-            {
-                ct.ThrowIfCancellationRequested();
-                RunOnUi(() => exchange.Answer += chunk);
-                await Task.Delay(15, ct);
-            }
+            // The answer streams from the provider as it is generated: each
+            // reported chunk is display text (citation markers already
+            // rewritten to [n]), appended as it arrives. Progress<T> posts to
+            // the UI thread's SynchronizationContext, and RunOnUi guards the
+            // mutation either way.
+            var partialAnswer = new Progress<string>(chunk => RunOnUi(() => exchange.Answer += chunk));
+            var answer = await Task.Run(() => _memoryQueryService.AskAsync(question, null, partialAnswer, ct), ct);
 
             RunOnUi(() =>
             {
+                // The returned answer is authoritative (final whitespace tidy);
+                // replace the streamed text with it so both always agree.
+                exchange.Answer = answer.Answer;
+
                 foreach (var citation in answer.Citations)
                 {
                     var chip = new AskCitationDto

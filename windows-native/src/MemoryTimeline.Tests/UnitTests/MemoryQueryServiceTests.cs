@@ -341,6 +341,166 @@ public class MemoryQueryServiceTests : IDisposable
 
     #endregion
 
+    #region Streaming (progress overload + AskStreamingAsync)
+
+    private sealed class CollectingProgress : IProgress<string>
+    {
+        public List<string> Chunks { get; } = new();
+
+        public void Report(string value) => Chunks.Add(value);
+    }
+
+    private static async IAsyncEnumerable<string> Pieces(params string[] pieces)
+    {
+        foreach (var piece in pieces)
+        {
+            await Task.Yield();
+            yield return piece;
+        }
+    }
+
+    /// <summary>Plan via CompleteAsync; the grounded answer via the token stream, in the given pieces.</summary>
+    private void SetupStreamingLlm(string planJson, params string[] answerPieces)
+    {
+        _llmServiceMock
+            .Setup(l => l.CompleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(planJson);
+        _llmServiceMock
+            .Setup(l => l.StreamCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(Pieces(answerPieces));
+    }
+
+    private const string SarahPlanJson =
+        "{\"semanticQuery\":\"Sarah\",\"from\":null,\"to\":null,\"people\":[],\"tags\":[],\"locations\":[],\"answerMode\":\"Factual\"}";
+
+    [Fact]
+    public async Task AskAsync_WithProgress_StreamsTheDisplayAnswerAsItArrivesAndMatchesTheFinalAnswer()
+    {
+        // Arrange: the answer JSON arrives in pieces that split the key, a
+        // valid marker, a fabricated marker, and a stray space before the
+        // period - everything the display rewriting has to cope with.
+        await SeedEventAsync("evt-real", "Met Sarah at the fair", new DateTime(2019, 3, 14), "We met at the county fair.");
+        SetupStreamingLlm(
+            SarahPlanJson,
+            "{\"ans", "wer\":\"You met Sarah [ev", "ent:evt-real] at the fair [event:evt-ghost]",
+            " .\",\"answeredFromArchive\":true,\"confidence\":0.9}");
+        var progress = new CollectingProgress();
+
+        // Act
+        var result = await _service.AskAsync(
+            "When did I first meet Sarah?", new MemoryQueryOptions { TopK = 5 }, progress);
+
+        // Assert: the streamed text is the final display text, chunk by chunk;
+        // the answer stage never used the non-streaming call; citations intact.
+        result.Answer.Should().Be("You met Sarah [1] at the fair.");
+        string.Concat(progress.Chunks).Should().Be(result.Answer);
+        progress.Chunks.Count.Should().BeGreaterThan(1, "the answer was shown while it arrived, not whole at the end");
+        result.Citations.Should().ContainSingle().Which.EventId.Should().Be("evt-real");
+        result.AnsweredFromArchive.Should().BeTrue();
+        _llmServiceMock.Verify(
+            l => l.CompleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Once, "only the retrieval plan goes through the non-streaming call");
+        _llmServiceMock.Verify(
+            l => l.StreamCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task AskStreamingAsync_YieldsTheSameDisplayChunks()
+    {
+        // Arrange
+        await SeedEventAsync("evt-real", "Met Sarah at the fair", new DateTime(2019, 3, 14), "We met at the county fair.");
+        SetupStreamingLlm(
+            SarahPlanJson,
+            "{\"answer\":\"You met Sarah ", "[event:evt-real].\",\"answeredFromArchive\":true,\"confidence\":0.9}");
+
+        // Act
+        var chunks = new List<string>();
+        await foreach (var chunk in _service.AskStreamingAsync("When did I first meet Sarah?", new MemoryQueryOptions { TopK = 5 }))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert
+        string.Concat(chunks).Should().Be("You met Sarah [1].");
+        chunks.Count.Should().BeGreaterThan(1);
+    }
+
+    [Fact]
+    public async Task AskAsync_WithProgress_NoMatchingEvents_ReportsTheRefusalOnceWithoutStreaming()
+    {
+        // Arrange: an empty archive; the plan call still runs, the answer never does.
+        SetupStreamingLlm(SarahPlanJson, "never used");
+        var progress = new CollectingProgress();
+
+        // Act
+        var result = await _service.AskAsync("Did I ever go to Mars?", new MemoryQueryOptions { TopK = 5 }, progress);
+
+        // Assert
+        result.AnsweredFromArchive.Should().BeFalse();
+        progress.Chunks.Should().ContainSingle().Which.Should().Be(result.Answer);
+        _llmServiceMock.Verify(
+            l => l.StreamCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AskAsync_WithProgress_ModelReturnsPlainText_ReportsTheWholeTextOnceAndNeverClaimsGrounding()
+    {
+        // Arrange: no JSON shape at all, so nothing can be shown until the
+        // end; then the whole text is shown once, matching the batch fallback.
+        await SeedEventAsync("evt-real", "Met Sarah at the fair", new DateTime(2019, 3, 14), "We met at the county fair.");
+        SetupStreamingLlm(SarahPlanJson, "Your archive ", "doesn't mention that.");
+        var progress = new CollectingProgress();
+
+        // Act
+        var result = await _service.AskAsync("When did I first meet Sarah?", new MemoryQueryOptions { TopK = 5 }, progress);
+
+        // Assert
+        result.Answer.Should().Be("Your archive doesn't mention that.");
+        progress.Chunks.Should().ContainSingle().Which.Should().Be(result.Answer);
+        result.AnsweredFromArchive.Should().BeFalse();
+        result.Confidence.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AskAsync_WithProgress_StreamingFailure_PropagatesToTheCaller()
+    {
+        // Arrange: no provider configured surfaces from the stream exactly as
+        // it would from the non-streaming call.
+        await SeedEventAsync("evt-real", "Met Sarah at the fair", new DateTime(2019, 3, 14), "We met at the county fair.");
+        _llmServiceMock
+            .Setup(l => l.CompleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SarahPlanJson);
+        _llmServiceMock
+            .Setup(l => l.StreamCompletionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns(Failing());
+
+        // Act
+        var act = () => _service.AskAsync("When did I first meet Sarah?", new MemoryQueryOptions { TopK = 5 }, new CollectingProgress());
+        var streamingAct = async () =>
+        {
+            await foreach (var _ in _service.AskStreamingAsync("When did I first meet Sarah?", new MemoryQueryOptions { TopK = 5 }))
+            {
+            }
+        };
+
+        // Assert
+        await act.Should().ThrowAsync<ConfigurationException>();
+        await streamingAct.Should().ThrowAsync<ConfigurationException>();
+
+        static async IAsyncEnumerable<string> Failing()
+        {
+            await Task.Yield();
+            throw new ConfigurationException("LLM base URL not configured");
+#pragma warning disable CS0162 // unreachable: the iterator needs a yield to be an iterator
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
+    #endregion
+
     #region SplitIntoWordChunks
 
     [Fact]

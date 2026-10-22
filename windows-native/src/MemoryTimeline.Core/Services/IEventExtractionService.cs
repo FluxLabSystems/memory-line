@@ -13,16 +13,25 @@ public interface IEventExtractionService
     /// </summary>
     /// <param name="queueId">Queue item ID</param>
     /// <param name="progress">Progress reporter</param>
+    /// <param name="cancellationToken">
+    /// Aborts the in-flight speech-to-text or LLM call; propagates as
+    /// <see cref="OperationCanceledException"/> (never as a failed result).
+    /// </param>
     /// <returns>Number of events extracted</returns>
-    Task<int> ProcessRecordingAsync(string queueId, IProgress<(int percentage, string message)>? progress = null);
+    Task<int> ProcessRecordingAsync(
+        string queueId,
+        IProgress<(int percentage, string message)>? progress = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Extracts events from a transcript and creates pending events.
     /// </summary>
     /// <param name="queueId">Queue item ID</param>
     /// <param name="transcript">Transcript text</param>
+    /// <param name="cancellationToken">Aborts the in-flight LLM call</param>
     /// <returns>List of created pending events</returns>
-    Task<List<PendingEvent>> ExtractAndCreatePendingEventsAsync(string queueId, string transcript);
+    Task<List<PendingEvent>> ExtractAndCreatePendingEventsAsync(
+        string queueId, string transcript, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Approves a pending event and creates it as a real event, then republishes

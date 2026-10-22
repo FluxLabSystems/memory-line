@@ -23,13 +23,23 @@ public class ExportService : IExportService
 {
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly ILogger<ExportService> _logger;
+    private readonly IMediaService? _mediaService;
 
+    /// <summary>
+    /// Creates the service. <paramref name="mediaService"/> is optional and
+    /// trailing: with it, a narrative exported with
+    /// <see cref="Narrative.IncludeMedia"/> references each attachment by its
+    /// absolute location under the managed media root; without it the stored
+    /// media-root-relative path is written as-is.
+    /// </summary>
     public ExportService(
         IDbContextFactory<AppDbContext> contextFactory,
-        ILogger<ExportService> logger)
+        ILogger<ExportService> logger,
+        IMediaService? mediaService = null)
     {
         _contextFactory = contextFactory;
         _logger = logger;
+        _mediaService = mediaService;
     }
 
     /// <summary>
@@ -308,9 +318,18 @@ public class ExportService : IExportService
         var citedIds = CollectCitedEventIds(narrative);
         var citedEvents = await LoadCitedEventsAsync(citedIds);
 
+        // Attached media (only when the request asked for it). The events that
+        // own media but were never cited still need their titles for captions.
+        var media = await LoadNarrativeMediaAsync(narrative);
+        var uncitedMediaEventIds = media.Keys.Where(id => !citedEvents.ContainsKey(id)).ToList();
+        foreach (var pair in await LoadCitedEventsAsync(uncitedMediaEventIds))
+        {
+            citedEvents[pair.Key] = pair.Value;
+        }
+
         var content = format == NarrativeFormat.Html
-            ? BuildNarrativeHtml(narrative, citedIds, citedEvents)
-            : BuildNarrativeMarkdown(narrative, citedIds, citedEvents);
+            ? BuildNarrativeHtml(narrative, citedIds, citedEvents, media)
+            : BuildNarrativeMarkdown(narrative, citedIds, citedEvents, media);
 
         var tempPath = filePath + ".tmp";
         try
@@ -401,8 +420,166 @@ public class ExportService : IExportService
         return events.ToDictionary(e => e.EventId, StringComparer.Ordinal);
     }
 
-    private static string BuildNarrativeMarkdown(
-        Narrative narrative, List<string> citedIds, Dictionary<string, Event> citedEvents)
+    /// <summary>
+    /// Loads the media attached to the narrative's source events, grouped by
+    /// event id in display order. Empty when the narrative was generated
+    /// without media (<see cref="Narrative.IncludeMedia"/> false) or no source
+    /// event has attachments. Files are referenced where they live — never
+    /// copied or embedded — so an export stays a small document and a moved
+    /// media library breaks the links rather than the export.
+    /// </summary>
+    private async Task<Dictionary<string, List<EventMedia>>> LoadNarrativeMediaAsync(Narrative narrative)
+    {
+        var grouped = new Dictionary<string, List<EventMedia>>(StringComparer.Ordinal);
+        if (!narrative.IncludeMedia)
+        {
+            return grouped;
+        }
+
+        var ids = narrative.Sections
+            .SelectMany(s => s.SourceEventIds)
+            .Concat(narrative.SourceEventIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (ids.Count == 0)
+        {
+            return grouped;
+        }
+
+        await using var dbContext = await _contextFactory.CreateDbContextAsync();
+
+        var rows = await dbContext.EventMedia
+            .AsNoTracking()
+            .Where(m => ids.Contains(m.EventId))
+            .OrderBy(m => m.SortOrder)
+            .ThenBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        foreach (var row in rows)
+        {
+            if (!grouped.TryGetValue(row.EventId, out var list))
+            {
+                list = new List<EventMedia>();
+                grouped[row.EventId] = list;
+            }
+
+            list.Add(row);
+        }
+
+        return grouped;
+    }
+
+    /// <summary>
+    /// Where a document should point for an attachment: an absolute file URI
+    /// when the media root is known (<c>file:///C:/Users/.../Media/2019/03/x.jpg</c>),
+    /// otherwise the stored media-root-relative path with forward slashes.
+    /// </summary>
+    private string ResolveMediaReference(EventMedia media)
+    {
+        var path = _mediaService?.GetAbsolutePath(media) ?? media.FilePath;
+        if (Path.IsPathRooted(path))
+        {
+            try
+            {
+                return new Uri(path).AbsoluteUri;
+            }
+            catch (UriFormatException)
+            {
+                // Fall through to the plain path.
+            }
+        }
+
+        return path.Replace('\\', '/');
+    }
+
+    /// <summary>The attachments of one section's source events, in source order.</summary>
+    private static IEnumerable<(EventMedia Media, string EventTitle)> SectionMedia(
+        NarrativeSection section,
+        Dictionary<string, List<EventMedia>> media,
+        Dictionary<string, Event> events)
+    {
+        foreach (var eventId in section.SourceEventIds.Distinct(StringComparer.Ordinal))
+        {
+            if (!media.TryGetValue(eventId, out var items))
+            {
+                continue;
+            }
+
+            var title = events.TryGetValue(eventId, out var evt) ? evt.Title : eventId;
+            foreach (var item in items)
+            {
+                yield return (item, title);
+            }
+        }
+    }
+
+    private static string EscapeMarkdownLinkText(string text) =>
+        text.Replace("\\", "\\\\").Replace("[", "\\[").Replace("]", "\\]");
+
+    private void AppendMarkdownMedia(
+        StringBuilder md,
+        NarrativeSection section,
+        Dictionary<string, List<EventMedia>> media,
+        Dictionary<string, Event> events)
+    {
+        foreach (var (item, eventTitle) in SectionMedia(section, media, events))
+        {
+            var reference = ResolveMediaReference(item);
+            var caption = string.IsNullOrWhiteSpace(item.Caption) ? null : item.Caption.Trim();
+            var captionLine = caption == null
+                ? $"*{EscapeMarkdownLinkText(eventTitle)}*"
+                : $"*{EscapeMarkdownLinkText(caption)}* — {EscapeMarkdownLinkText(eventTitle)}";
+
+            if (item.MediaType == MediaType.Image)
+            {
+                md.AppendLine($"![{EscapeMarkdownLinkText(caption ?? eventTitle)}]({reference})");
+                md.AppendLine();
+                md.AppendLine(captionLine);
+            }
+            else
+            {
+                var fileName = Path.GetFileName(item.FilePath);
+                md.AppendLine($"- [{EscapeMarkdownLinkText(fileName)}]({reference}) — {captionLine}");
+            }
+
+            md.AppendLine();
+        }
+    }
+
+    private void AppendHtmlMedia(
+        StringBuilder html,
+        NarrativeSection section,
+        Dictionary<string, List<EventMedia>> media,
+        Dictionary<string, Event> events)
+    {
+        static string E(string? text) => WebUtility.HtmlEncode(text ?? string.Empty);
+
+        foreach (var (item, eventTitle) in SectionMedia(section, media, events))
+        {
+            var reference = E(ResolveMediaReference(item));
+            var caption = string.IsNullOrWhiteSpace(item.Caption) ? null : item.Caption.Trim();
+            var captionText = caption == null ? E(eventTitle) : $"{E(caption)} — {E(eventTitle)}";
+
+            if (item.MediaType == MediaType.Image)
+            {
+                html.AppendLine(
+                    $"<figure class=\"media\"><img src=\"{reference}\" alt=\"{E(caption ?? eventTitle)}\"/>" +
+                    $"<figcaption>{captionText}</figcaption></figure>");
+            }
+            else
+            {
+                var fileName = Path.GetFileName(item.FilePath);
+                html.AppendLine(
+                    $"<p class=\"media-link\"><a href=\"{reference}\">{E(fileName)}</a> — {captionText}</p>");
+            }
+        }
+    }
+
+    private string BuildNarrativeMarkdown(
+        Narrative narrative,
+        List<string> citedIds,
+        Dictionary<string, Event> citedEvents,
+        Dictionary<string, List<EventMedia>> media)
     {
         var md = new StringBuilder();
 
@@ -430,6 +607,7 @@ public class ExportService : IExportService
             md.AppendLine();
             md.AppendLine(section.Prose);
             md.AppendLine();
+            AppendMarkdownMedia(md, section, media, citedEvents);
         }
 
         if (citedIds.Count > 0)
@@ -447,8 +625,11 @@ public class ExportService : IExportService
         return md.ToString();
     }
 
-    private static string BuildNarrativeHtml(
-        Narrative narrative, List<string> citedIds, Dictionary<string, Event> citedEvents)
+    private string BuildNarrativeHtml(
+        Narrative narrative,
+        List<string> citedIds,
+        Dictionary<string, Event> citedEvents,
+        Dictionary<string, List<EventMedia>> media)
     {
         // All model-derived text is HTML-encoded — the narrative prose is LLM
         // output and must never be emitted as raw markup.
@@ -467,6 +648,9 @@ public class ExportService : IExportService
         html.AppendLine(".meta { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }");
         html.AppendLine(".sources { margin-top: 2.5rem; border-top: 1px solid #ccc; padding-top: 1rem; font-size: 0.85rem; color: #444; }");
         html.AppendLine(".sources code { background: #eee; padding: 0 0.25rem; border-radius: 3px; }");
+        html.AppendLine("figure.media { margin: 1rem 0; }");
+        html.AppendLine("figure.media img { max-width: 100%; height: auto; border-radius: 4px; }");
+        html.AppendLine("figure.media figcaption, .media-link { color: #666; font-size: 0.85rem; }");
         html.AppendLine("</style>");
         html.AppendLine("</head>");
         html.AppendLine("<body>");
@@ -495,6 +679,8 @@ public class ExportService : IExportService
             {
                 html.AppendLine($"<p>{E(paragraph.Trim()).Replace("\n", "<br/>")}</p>");
             }
+
+            AppendHtmlMedia(html, section, media, citedEvents);
         }
 
         if (citedIds.Count > 0)

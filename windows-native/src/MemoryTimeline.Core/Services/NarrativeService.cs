@@ -105,7 +105,8 @@ public class NarrativeService : INarrativeService
                 GeneratedAt = DateTime.UtcNow,
                 Voice = request.Voice,
                 Sections = new List<NarrativeSection>(),
-                SourceEventIds = new List<string>()
+                SourceEventIds = new List<string>(),
+                IncludeMedia = request.IncludeMedia
             };
         }
 
@@ -160,7 +161,8 @@ public class NarrativeService : INarrativeService
             GeneratedAt = DateTime.UtcNow,
             Voice = request.Voice,
             Sections = sections,
-            SourceEventIds = events.Select(e => e.EventId).ToList()
+            SourceEventIds = events.Select(e => e.EventId).ToList(),
+            IncludeMedia = request.IncludeMedia
         };
     }
 

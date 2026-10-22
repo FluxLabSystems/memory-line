@@ -1,8 +1,8 @@
 # Windows Native Development Status
 
-**Last Updated:** 2026-10-21
-**Current Phase:** Phase 7 - Testing & Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring pass, landed)
-**Overall Progress:** Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress
+**Last Updated:** 2026-10-22
+**Current Phase:** Phase 7 - Testing & Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring and follow-up passes, landed)
+**Overall Progress:** Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed, plus the Windows side of Phase 4 (assistant turns answered through Ask) and the read-only projections / pending-event decisions the macOS app uses; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress
 **Status:** 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing
 
 ---
@@ -193,9 +193,13 @@ whose raw exception text can contain file paths or provider detail.
 (v1.2, additive) and
 [`../shared-contracts/json-schema/capture-status-payload.v1.json`](../shared-contracts/json-schema/capture-status-payload.v1.json).
 
-**Next step:** Phase 4 — voice assistant (assistant sessions and streaming
-turns, STT/TTS, memory retrieval, current trip context, interruption and
-cancellation).
+**Phase 4 status:** the contracts (assistant sessions, turns, chunks) and the
+Windows responder are in — `AssistantTurnResponder` answers a pending
+`assistant_turn` pulled from the feed through the Ask pipeline and pushes the
+completed turn back through the outbox. Still ahead on the companion side:
+STT/TTS, current trip context, interruption and cancellation, and streamed
+`assistant_turn_chunk`s (the responder answers whole, because the change
+payload that reaches Windows does not carry the turn's `stream` flag).
 
 ---
 
@@ -376,23 +380,28 @@ F11/F12/F10) with a verification fix pass after each wave. Every wave pushed CI-
 
 **Infrastructure fixes in the same wave:** the SQLite pragma interceptor no longer
 rewrites `journal_mode` on read-only connections; CI triggers on the feature branch;
-`app_settings` seed parity is three-way (33 keys, `AppDbContext` seed = `SchemaUpgrader`
+`app_settings` seed parity is three-way (29 keys today, `AppDbContext` seed = `SchemaUpgrader`
 backfill = `SettingKeys`).
 
 **Explicitly deferred (not implemented, by design):** PhotoImportPage bulk-import
 wizard; map tile basemaps (the map is a plain offline canvas); a location chip on
-timeline events; real LLM token streaming (responses arrive whole); PDF narrative
-export (Markdown/HTML only); vertical scrolling within swimlanes; reorderable lanes;
-an EXIF test against a real binary image fixture; a Merge restore mode (restore is
-replace-only, with a pre-restore safety backup); DirectML execution provider for the
-ONNX embedder (CPU is used).
+timeline events; PDF narrative export (Markdown/HTML only); vertical scrolling within
+swimlanes; reorderable lanes; a Merge restore mode (restore is replace-only, with a
+pre-restore safety backup); DirectML execution provider for the ONNX embedder (CPU is
+used). *Closed since (2026-10-22): real LLM token streaming (Ask now streams from the
+provider — SSE for OpenAI-compatible endpoints, `StreamClaudeMessageAsync` for
+Anthropic) and the EXIF GPS test, which now attaches a JPEG built in memory with a
+real GPS IFD; narrative export references attached media when asked; contacts can
+have a photo; the People page shows the profile's connections.*
 
 **Honest caveats:** all of the above is code-complete and CI-green, but **runtime
 validation on a real Windows machine is still pending** — none of the new features have
-been exercised end-to-end outside tests. A **baseline EF migration now exists**
-(`Data/Migrations/20261022004346_InitialCreate`), but every schema addition still ships
-through `SchemaUpgrader`'s idempotent DDL at runtime; API keys and sync tokens are
-DPAPI-protected through `ISecretProtector`.
+been exercised end-to-end outside tests. The **EF migration baseline is in use**
+(`Data/Migrations/20261022004346_InitialCreate`): startup migrates
+(`SchemaUpgrader.EnsureSchemaAsync` → `Database.MigrateAsync`; `EnsureCreated` is gone),
+a database created before the baseline is repaired and baselined on first start, and
+new schema changes ship as migrations (`AddCaptureLocation` is the first); API keys and
+sync tokens are DPAPI-protected through `ISecretProtector`.
 
 ---
 
@@ -435,9 +444,9 @@ repository → SQLite → UI) with file:line evidence. The full findings are in
 - Data access converted to **per-operation contexts** via
   `IDbContextFactory<AppDbContext>`; the shared-context `Task.Run` for embeddings
   removed/rescoped; search input debounced/cancellable; `Tag.Name`→`TagName`.
-- Startup now uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent
-  drift repair); stale EF migrations were deleted (regenerating a real migration
-  baseline is a follow-up).
+- Startup now uses `SchemaUpgrader.EnsureSchemaAsync`; the stale EF migrations were
+  deleted and, since 2026-10-22, a fresh baseline is applied with `MigrateAsync`
+  (existing databases are baselined on first start).
 - STT replaced with **local Whisper** (Whisper.net, ggml base model, offline after
   first model download), transcribing the recorded file instead of the live mic.
 - Atomic approve (event + tags/people/locations in one transaction) with timeline
@@ -886,9 +895,9 @@ store submission.
 - CI workflow `.github/workflows/windows-native-build.yml` added: builds `Release|x64`
   on `windows-latest` and runs the test suite. **The solution builds green in CI.**
 
-**Still ahead:** end-to-end runtime validation on real hardware; regenerating the EF
-migration baseline; performance validation; MSIX packaging + code signing; Microsoft Store
-submission. (The tests now gate CI; see 7.1 for what exists.)
+**Still ahead:** end-to-end runtime validation on real hardware; performance validation;
+MSIX packaging + code signing; Microsoft Store submission. (The tests now gate CI; see 7.1
+for what exists. The EF migration baseline is in use since 2026-10-22.)
 
 ### Objectives
 
@@ -1083,9 +1092,9 @@ submission) has neither a start nor a target date.
 - **Total Projects:** 7 (Main App, Core, Data, Sync, Tests, Portability.Tests, plus the shared SyncContracts project referenced from `shared-contracts/dotnet`)
 - **Total Code Files:** 250+ (`.cs`/`.xaml`, excluding build output)
 - **Total Lines of Code:** ~70,000+ (including XAML and tests)
-- **Data Models:** 20
-- **Core Service Interfaces:** 30
-- **Repositories:** 15
+- **Data Models:** 23 entity files
+- **Core Service Interfaces:** 35
+- **Repositories:** 18 classes
 - **ViewModels:** 14
 - **Views (XAML Pages):** 12
 - **Test Files:** unit/integration/performance suites in `MemoryTimeline.Tests` (run in CI; coverage targets still Phase 7)
@@ -1110,8 +1119,10 @@ submission) has neither a start nor a target date.
    in progress)
 2. **Automated tests:** unit/integration/performance suites exist and gate CI; AudioService
    tests, UI tests (WinAppDriver) and coverage reporting are still absent (Phase 7)
-3. **EF migrations:** Stale migrations deleted; a real migration baseline still needs
-   regenerating — all 2026-08 schema additions ship via `SchemaUpgrader.EnsureSchemaAsync`
+3. **EF migrations:** the baseline (`20261022004346_InitialCreate`) is in use — startup
+   migrates, databases created before it are baselined on first start, and schema changes
+   now ship as migrations (`AddCaptureLocation` is the first); `SchemaUpgrader`'s drift
+   repair is frozen at the baseline shape
 4. **API keys:** DPAPI-protected at rest through `ISecretProtector` (CurrentUser scope); a backup restored under another Windows account must have its keys re-entered
 5. **Performance:** Not yet validated with 5000+ events (Phase 7)
 6. **MSIX Package / Store Submission:** Not created or submitted yet (Phase 7)
@@ -1119,7 +1130,7 @@ submission) has neither a start nor a target date.
    DirectML/NPU registration is deliberately deferred (can throw on non-DX12 machines)
 8. **PDF Export:** Not implemented — narrative export ships Markdown/HTML only
 9. **Deferred F1–F12 items:** See the deferred list in the 2026-08 section above
-   (photo-import wizard, tile basemaps, token streaming, Merge restore mode, etc.)
+   (photo-import wizard, tile basemaps, timeline location chip, Merge restore mode, etc.)
 
 ### Future Enhancements
 1. **DirectML/NPU execution** for the local ONNX embedder (currently CPU)
@@ -1169,8 +1180,9 @@ These reflect the real post-audit follow-ups (see `HARDENING-FOLLOWUPS.md`).
    - Confirm the three reported bugs are gone at runtime, not just in code.
 
 2. **Data-layer / migrations**
-   - Regenerate a real EF migration baseline (stale migrations were deleted; startup
-     currently uses `SchemaUpgrader.EnsureSchemaAsync`).
+   - ~~Regenerate a real EF migration baseline~~ — done (2026-10-22): startup applies the
+     migrations, existing databases are baselined on first start, and schema changes ship
+     as migrations from here on.
 
 3. **Security & config hardening**
    - ~~Encrypt API keys at rest via DPAPI / `ProtectedData`~~ — done (`ISecretProtector` / `DpapiSecretProtector`).

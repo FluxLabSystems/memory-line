@@ -197,5 +197,7 @@ public class RestoreClearsSyncIdentityTests : IDisposable
         public string? GetAbsoluteThumbnailPath(EventMedia media) => throw new NotSupportedException();
         public void DeleteFiles(IEnumerable<EventMedia> media) => throw new NotSupportedException();
         public Task<MediaCleanupResult> CleanupOrphansAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string> ImportPersonPhotoAsync(string sourceFilePath, CancellationToken ct = default) => throw new NotSupportedException();
+        public string? GetAbsolutePersonPhotoPath(string? photoPath) => throw new NotSupportedException();
     }
 }

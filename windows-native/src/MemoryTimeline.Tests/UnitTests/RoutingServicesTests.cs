@@ -70,10 +70,10 @@ public class RoutingServicesTests
             .ReturnsAsync("openai-compatible"); // second call
 
         var success = new EventExtractionResult { Success = true };
-        _anthropicMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+        _anthropicMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(success);
         _anthropicMock.Setup(s => s.ProviderName).Returns("Anthropic Claude");
-        _openAiCompatibleMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+        _openAiCompatibleMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(success);
         _openAiCompatibleMock.Setup(s => s.ProviderName).Returns("OpenAI-compatible endpoint");
 
@@ -84,8 +84,8 @@ public class RoutingServicesTests
         await router.ExtractEventsAsync("second transcript");
 
         // Assert - each inner saw exactly one call; no restart was needed
-        _anthropicMock.Verify(s => s.ExtractEventsAsync("first transcript", null), Times.Once);
-        _openAiCompatibleMock.Verify(s => s.ExtractEventsAsync("second transcript", null), Times.Once);
+        _anthropicMock.Verify(s => s.ExtractEventsAsync("first transcript", null, It.IsAny<CancellationToken>()), Times.Once);
+        _openAiCompatibleMock.Verify(s => s.ExtractEventsAsync("second transcript", null, It.IsAny<CancellationToken>()), Times.Once);
 
         // Display metadata reflects the provider of the most recent call
         router.ProviderName.Should().Be("OpenAI-compatible endpoint");
@@ -96,7 +96,7 @@ public class RoutingServicesTests
     {
         // Arrange - "ollama" is an accepted alias for openai-compatible
         _settingsServiceMock.Setup(s => s.GetLlmProviderAsync()).ReturnsAsync("ollama");
-        _openAiCompatibleMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+        _openAiCompatibleMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EventExtractionResult { Success = true });
         _openAiCompatibleMock.Setup(s => s.ProviderName).Returns("OpenAI-compatible endpoint");
 
@@ -106,9 +106,9 @@ public class RoutingServicesTests
         await router.ExtractEventsAsync("transcript");
 
         // Assert
-        _openAiCompatibleMock.Verify(s => s.ExtractEventsAsync("transcript", null), Times.Once);
+        _openAiCompatibleMock.Verify(s => s.ExtractEventsAsync("transcript", null, It.IsAny<CancellationToken>()), Times.Once);
         _anthropicMock.Verify(
-            s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()), Times.Never);
+            s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public class RoutingServicesTests
         // Arrange - extraction reports real token usage; completion is estimated
         _settingsServiceMock.Setup(s => s.GetLlmProviderAsync()).ReturnsAsync("anthropic");
         _anthropicMock.Setup(s => s.ProviderName).Returns("Anthropic Claude");
-        _anthropicMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+        _anthropicMock.Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EventExtractionResult
             {
                 Success = true,

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -22,6 +23,7 @@ public class OpenAiCompatibleLlmService : ILlmService
     private readonly HttpClient _httpClient;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<OpenAiCompatibleLlmService> _logger;
+    private readonly ResiliencePipeline<HttpResponseMessage> _retry;
     private string? _model;
 
     public string ProviderName => "OpenAI-compatible endpoint";
@@ -42,6 +44,9 @@ public class OpenAiCompatibleLlmService : ILlmService
         _httpClient = httpClient;
         _settingsService = settingsService;
         _logger = logger;
+        // A local Ollama that is still loading a model answers 5xx for a few
+        // seconds; a bounded retry turns that into a slow call, not a failed item.
+        _retry = HttpRetryPolicy.CreateForResponses(_logger, "OpenAI-compatible chat completion");
     }
 
     /// <summary>
@@ -241,7 +246,10 @@ public class OpenAiCompatibleLlmService : ILlmService
     private async Task<(string? Content, ChatUsage? Usage)> SendChatCompletionAsync(
         string endpoint, ChatCompletionRequest request, CancellationToken ct)
     {
-        var response = await _httpClient.PostAsJsonAsync(endpoint, request, ct);
+        // A fresh request per attempt: the retry pipeline re-invokes the
+        // delegate, and the serialized body is rebuilt each time.
+        var response = await _retry.ExecuteAsync(
+            async token => await _httpClient.PostAsJsonAsync(endpoint, request, token), ct);
         response.EnsureSuccessStatusCode();
 
         var completion = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>(cancellationToken: ct);

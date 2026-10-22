@@ -32,6 +32,7 @@ public class NominatimGeocodingService : IGeocodingService
     private readonly ISettingsService _settingsService;
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly ILogger<NominatimGeocodingService> _logger;
+    private readonly Polly.ResiliencePipeline<HttpResponseMessage> _retry;
 
     public NominatimGeocodingService(
         HttpClient httpClient,
@@ -43,6 +44,10 @@ public class NominatimGeocodingService : IGeocodingService
         _settingsService = settingsService;
         _contextFactory = contextFactory;
         _logger = logger;
+        // Transport failures and 5xx are retried; 429 is NOT - the Nominatim
+        // usage policy asks a rate-limited client to back off, and the batch
+        // loop already spaces requests at 1.1 s.
+        _retry = HttpRetryPolicy.CreateForResponses(_logger, "Nominatim geocode", retryTooManyRequests: false);
 
         // Required by the Nominatim usage policy; requests without an
         // identifying User-Agent are rejected.
@@ -66,7 +71,8 @@ public class NominatimGeocodingService : IGeocodingService
 
         var url = SearchUrl + Uri.EscapeDataString(placeName.Trim());
 
-        using var response = await _httpClient.GetAsync(url, ct).ConfigureAwait(false);
+        using var response = await _retry.ExecuteAsync(
+            async token => await _httpClient.GetAsync(url, token).ConfigureAwait(false), ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

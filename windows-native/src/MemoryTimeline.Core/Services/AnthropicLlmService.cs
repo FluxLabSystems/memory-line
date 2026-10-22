@@ -3,6 +3,7 @@ using Anthropic.SDK.Constants;
 using Anthropic.SDK.Messaging;
 using MemoryTimeline.Data.Models;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -17,6 +18,7 @@ public class AnthropicLlmService : ILlmService
     private readonly ISettingsService _settingsService;
     private readonly ILogger<AnthropicLlmService> _logger;
     private readonly SemaphoreSlim _clientLock = new(1, 1);
+    private readonly ResiliencePipeline _retry;
     private AnthropicClient? _client;
     private string? _clientApiKey;
     private string? _model;
@@ -31,6 +33,9 @@ public class AnthropicLlmService : ILlmService
     {
         _settingsService = settingsService;
         _logger = logger;
+        // The SDK owns its HttpClient and surfaces failures as exceptions, so
+        // only transport failures can be told apart from a refused request.
+        _retry = HttpRetryPolicy.CreateForExceptions(_logger, "Claude API request");
     }
 
     /// <summary>
@@ -89,8 +94,12 @@ public class AnthropicLlmService : ILlmService
                 Stream = false
             };
 
-            // CORRECT API: GetClaudeMessageAsync takes only parameters (not model name)
-            var response = await _client.Messages.GetClaudeMessageAsync(parameters);
+            // CORRECT API: GetClaudeMessageAsync takes only parameters (not model name).
+            // Captured once: InitializeClientAsync may swap _client on a later call.
+            var client = _client;
+            var response = await _retry.ExecuteAsync(
+                async token => await client.Messages.GetClaudeMessageAsync(parameters, token),
+                CancellationToken.None);
 
             _logger.LogInformation("Received response from Claude API");
 
@@ -219,7 +228,9 @@ public class AnthropicLlmService : ILlmService
         ct.ThrowIfCancellationRequested();
         // Forward the token so cancelling actually aborts the in-flight HTTP
         // request instead of only checking at the call boundaries.
-        var response = await _client.Messages.GetClaudeMessageAsync(parameters, ct);
+        var client = _client;
+        var response = await _retry.ExecuteAsync(
+            async token => await client.Messages.GetClaudeMessageAsync(parameters, token), ct);
         ct.ThrowIfCancellationRequested();
 
         var textContent = response?.Message?.Content?

@@ -91,9 +91,9 @@ The app is **unpackaged**, so it does not use MSIX app-data virtualization. All 
 | `%LOCALAPPDATA%\MemoryTimeline\Models\ggml-base.bin` | Local Whisper (Whisper.net) speech-to-text model, downloaded on first use |
 | `%LOCALAPPDATA%\MemoryTimeline\error.log` | Startup / unhandled-exception log |
 
-**Schema / migrations:** the EF Core migrations were removed in favour of a hand-rolled `SchemaUpgrader` that creates/updates the schema at startup. There is currently **no migrations baseline**, so `dotnet ef migrations add` / `dotnet ef database update` are **not applicable** to this project right now (regenerating a real migration baseline is a follow-up task).
+**Schema / migrations:** the schema is created and upgraded at startup by `SchemaUpgrader.EnsureSchemaAsync`, which applies the EF Core migrations under `MemoryTimeline.Data/Migrations` (`Database.MigrateAsync`; baseline `20261022004346_InitialCreate`, regenerated 2026-10-22). A database created by an older build (no `__EFMigrationsHistory`) is repaired, baselined and migrated forward on first start, so no manual `dotnet ef database update` is needed on a user machine. Developers add schema changes with `dotnet ef migrations add <Name> --project windows-native/src/MemoryTimeline.Data` (the design-time factory makes this work without the app).
 
-**External services:** speech-to-text is **local** (Whisper.net, offline after the one-time model download). LLM event extraction uses the Anthropic API and embeddings use the OpenAI API, so those features require API keys and network access.
+**External services:** speech-to-text is **local** (Whisper.net, offline after the one-time model download). LLM features (extraction, Ask, narratives, recall wording) use **Anthropic Claude or any OpenAI-compatible endpoint** such as Ollama / LM Studio (chosen in Settings; a key is only needed for Anthropic). Embeddings **default to the local ONNX model** (`all-MiniLM-L6-v2`, no key, no network after its one-time download); OpenAI embeddings are optional. So the app can run with no cloud account at all when a local LLM endpoint is used.
 
 ---
 

@@ -19,7 +19,7 @@ bring up the new event.
 > | Area | State |
 > |------|-------|
 > | Bugs 1 / 2 / 3 | ✅ fixed (category case + in-dialog errors; `IDbContextFactory` per-operation contexts + debounced search; Ctrl+R refreshes in place) |
-> | Part 1 foundation | ✅ `AddDbContextFactory` everywhere, Singleton services; `SchemaUpgrader` replaced raw `EnsureCreated` (a real migration baseline is still a follow-up) |
+> | Part 1 foundation | ✅ `AddDbContextFactory` everywhere, Singleton services; `SchemaUpgrader` replaced raw `EnsureCreated` and, since 2026-10-22, applies the EF migration baseline (`MigrateAsync`) |
 > | 2.3 Search | ✅ `Tag.Name` → `TagName`, suggestions bound, sort default aligned, honest error messages, Save Search dialog wired |
 > | 2.4 Audio pipeline | ✅ storage path fixed, local Whisper STT (the mic-only stub was deleted 2026-10), transcript persisted, atomic approve, Resume/Cancel, API-key pre-flight, LLM config re-read per call, per-item progress events; the dead `OnnxWhisperService` and `AnthropicClaudeService` were removed |
 > | 2.5 RAG / Connections | ✅ OpenAI key UI (plus local ONNX default), Connections navigation with the event id, mapped embedding columns, persisted cross-references; cross-references are **heuristic** (not LLM-powered) |
@@ -28,7 +28,8 @@ bring up the new event.
 > | 2.8 Export / Import | ✅ `Include` fix; import options honored |
 > | 2.9 Shell / Windows integration | ✅ unified `INotificationService`, `AddQuickActionsAsync` at launch, activation handling, `await _host.StopAsync()`; **2026-10:** `MainViewModel` + nav badges implemented, Jump List recent events + real quick actions wired, Windows Timeline service removed as dead code |
 >
-> Still open from the plan: regenerating the EF migration baseline (see `HARDENING-FOLLOWUPS.md`).
+> Nothing from the plan is still open: the EF migration baseline landed on 2026-10-22 and startup
+> migrates (see `HARDENING-FOLLOWUPS.md` §3).
 
 ---
 
@@ -85,7 +86,7 @@ Frame instead of refreshing, which no-ops when window dimensions are unchanged
 
 ## Part 1 — The foundation defect underneath everything (CONFIRMED by all 5 agents)
 
-> **Status:** ✅ resolved — `App.xaml.cs` registers `AddDbContextFactory<AppDbContext>()`, every repository/service opens a context per operation and is a Singleton, and the shared-context `Task.Run` is gone. `EnsureCreated` was replaced by `SchemaUpgrader.EnsureSchemaAsync`; the migration baseline itself is still to be regenerated.
+> **Status:** ✅ resolved — `App.xaml.cs` registers `AddDbContextFactory<AppDbContext>()`, every repository/service opens a context per operation and is a Singleton, and the shared-context `Task.Run` is gone. `EnsureCreated` was replaced by `SchemaUpgrader.EnsureSchemaAsync`, which now applies the regenerated EF migration baseline (`20261022004346_InitialCreate`) with `MigrateAsync`.
 
 ### One shared, never-disposed `AppDbContext` for the entire app
 - `App.xaml.cs:80` registers `AddDbContext<AppDbContext>()` (**Scoped**), but

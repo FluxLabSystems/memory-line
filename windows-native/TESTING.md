@@ -44,7 +44,7 @@ Data access in the app now goes through **`IDbContextFactory<AppDbContext>`**: s
 - **EF Core InMemory** — all contexts built from the same options instance share the same in-memory store, so a factory over a uniquely named InMemory DB works. Use `TestDbContextFactory.CreateInMemory()`.
 - **SQLite `:memory:`** — does **not** work with the factory, because every new connection gets a fresh, empty database. Tests that need SQLite must use a **file-based temp database** (`TestDbContextFactory.CreateSqliteFile(path)`), which is why the integration and performance tests create a temp `.db` file rather than an in-memory SQLite connection.
 
-Integration/performance tests build their schema with `Database.EnsureCreated()` (there are no EF migrations in the repo — the app uses a hand-rolled `SchemaUpgrader` at runtime instead).
+Integration/performance tests build their schema with `Database.EnsureCreated()` from the model. The EF migrations under `MemoryTimeline.Data/Migrations` are what the *app* applies at startup (`SchemaUpgrader.EnsureSchemaAsync` → `MigrateAsync`); the tests do not run them, so a schema change needs both a migration and (automatically) the model the tests build from.
 
 ## Running Tests
 
@@ -461,13 +461,24 @@ dir -Recurse -Filter "*.cobertura.xml"
 
 ## Test Statistics
 
-Approximate current suite (as of Phase 7):
-- **Service tests** (`Services/`): EventService, TimelineService, SettingsService
-- **Unit tests** (`UnitTests/`): Queue, Export, Import, Rag
-- **Model tests** (`Models/`): time ruler, viewport, scale, lanes, map, tokenizer, date precision
-- **Integration tests** (`Integration/`): ~9 database tests on a real SQLite file DB
-- **Performance tests** (`Performance/`): ~10 load/scalability tests
-- **Coverage**: target > 80% (aspirational, not measured)
+Counted from the test attributes (a `[Theory]` counts one test per `[InlineData]` row), as of
+2026-10-22:
+
+- **Windows suite** (`MemoryTimeline.Tests`, Windows runner only): **1,096 tests on `main`**
+  (832 `[Fact]` + 264 `[InlineData]`). The 2026-10-22 follow-up change set adds streaming,
+  cancellation, time-ruler, duration, contact-photo, narrative-media and EXIF tests and removes
+  the layout-engine tests (848 + 289 = 1,137 on that branch before merge; the merged total is
+  reconciled when the parallel branches land).
+  - `Services/` — EventService, TimelineService, SettingsService, PersonService, DraftService
+  - `UnitTests/` — queue, extraction, LLM providers and streaming, Ask, narrative, media, backup,
+    export/import, RAG, sync client, geocoding, retry policy, settings protection
+  - `Models/` — time ruler, viewport, scale, lanes, map, tokenizer, date precision, durations
+  - `Integration/` — schema and seed-parity tests on a real SQLite file DB
+  - `Performance/` — load/scalability tests
+- **Sync service** (`services/`, Linux CI): 91
+- **Portability** (`MemoryTimeline.Portability.Tests`, macOS/Linux CI): 5
+- **iOS companion:** 108 · **macOS app:** 39
+- **Coverage:** target > 80% (aspirational, not measured)
 
 ### Migration status of the test project
 All service-backed test classes have been **migrated to the `IDbContextFactory<AppDbContext>` pattern** and construct services with their **current** signatures — for example `new EventService(_repository, _contextFactory, logger)`, `new ExportService(_contextFactory, logger)`, `new ImportService(_contextFactory, logger)`, and `new RagService(embeddingService, eventService, _contextFactory, crossReferenceRepository, logger)` (RagService no longer takes an `ILlmService` or a raw `AppDbContext`). No test file uses the older `(_repository, _context, …)` / `(_context, …)` constructor signatures. As of this writing the **only** build blocker for the solution is the WinUI app's XAML/PRI resource-generation step failing under the `dotnet` build engine — the `MemoryTimeline.Tests` project fails to build **only as a downstream consequence** of the app project failing, not because of stale test code. Building with Visual Studio `msbuild.exe` (as CI does) is the supported path.

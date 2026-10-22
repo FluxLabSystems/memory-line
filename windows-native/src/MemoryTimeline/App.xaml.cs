@@ -576,7 +576,8 @@ public partial class App : Application
             WriteToLog("Host started");
 
             // Ensure the database exists and repair schema drift on databases created
-            // by older builds (SchemaUpgrader = EnsureCreated + idempotent DDL repairs).
+            // by older builds (SchemaUpgrader applies the EF migrations; a database from
+            // before the baseline is repaired and baselined first).
             WriteToLog("Ensuring database schema...");
             var contextFactory = Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
             await using (var dbContext = await contextFactory.CreateDbContextAsync())

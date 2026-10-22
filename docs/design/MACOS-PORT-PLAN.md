@@ -167,6 +167,27 @@ The rule is written up in [`claude.md`](../../claude.md) under "Keeping Core por
 
 ---
 
+### 3.4 The Mac registers as `other`, because the contract has no `macos`
+
+`DeviceRegisterRequest.platform` is constrained to `[ios, windows, other]` by
+`shared-contracts/openapi/memory-line-sync-v1.yaml`, and the server enforces it —
+`DeviceService.AllowedPlatforms` rejects anything else with a 400. So the Mac app sends
+`"other"` today.
+
+Two smaller traps in the same call, both already handled in `MacAppEnvironment.pair`:
+
+- The Swift DTO **defaults `platform` to `"ios"`**. Using the memberwise initializer
+  without passing it registers a Mac as an iPhone, silently and permanently — the value is
+  stored on the device row.
+- `displayName` on iOS is `UIDevice.current.name`; the Mac uses the host name with the
+  Bonjour `.local` suffix trimmed. This is what the user sees in Windows Settings → Sync,
+  so a blank or `studio.local`-shaped name is a real papercut.
+
+Making `macos` first-class means changing the OpenAPI enum, `AllowedPlatforms`, and any UI
+that renders a platform label — worth doing before the Mac ships, not worth doing now.
+
+---
+
 ## 4. Platform capabilities the Mac needs
 
 Ordered by how much they block everything else.
@@ -301,27 +322,6 @@ The `dotnet` job has since run green, so §3.3 is now evidence rather than reaso
 `Microsoft.ML.OnnxRuntime` and `Anthropic.SDK` do restore on macOS and those four projects
 do compile there. If it ever fails on a native-asset restore rather than a compile error,
 the fix belongs in the package reference, not in a retreat from the `net10.0` target.
-
----
-
-### 3.4 The Mac registers as `other`, because the contract has no `macos`
-
-`DeviceRegisterRequest.platform` is constrained to `[ios, windows, other]` by
-`shared-contracts/openapi/memory-line-sync-v1.yaml`, and the server enforces it —
-`DeviceService.AllowedPlatforms` rejects anything else with a 400. So the Mac app sends
-`"other"` today.
-
-Two smaller traps in the same call, both already handled in `MacAppEnvironment.pair`:
-
-- The Swift DTO **defaults `platform` to `"ios"`**. Using the memberwise initializer
-  without passing it registers a Mac as an iPhone, silently and permanently — the value is
-  stored on the device row.
-- `displayName` on iOS is `UIDevice.current.name`; the Mac uses the host name with the
-  Bonjour `.local` suffix trimmed. This is what the user sees in Windows Settings → Sync,
-  so a blank or `studio.local`-shaped name is a real papercut.
-
-Making `macos` first-class means changing the OpenAPI enum, `AllowedPlatforms`, and any UI
-that renders a platform label — worth doing before the Mac ships, not worth doing now.
 
 ---
 

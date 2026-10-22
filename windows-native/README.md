@@ -231,7 +231,7 @@ windows-native/
 │   │   ├── Models/                  # EF Core entities
 │   │   ├── Repositories/            # Repository pattern (stateless over the factory)
 │   │   ├── AppDbContext.cs          # EF Core database context
-│   │   └── SchemaUpgrader.cs        # EnsureCreated + idempotent schema-drift repair
+│   │   └── SchemaUpgrader.cs        # applies the EF migrations (+ baseline repair for older DBs)
 │   │
 │   ├── MemoryTimeline.Tests/        # Unit & integration tests
 │   │   ├── UnitTests/
@@ -252,9 +252,12 @@ windows-native/
 └── DEPLOYMENT.md                    # Deployment guide
 ```
 
-> **Note:** there is intentionally **no** `MemoryTimeline.Data/Migrations/` folder — the stale EF
-> Migrations baseline was deleted, and schema is currently created/repaired by `SchemaUpgrader`.
-> Regenerating a proper EF migration baseline is a tracked follow-up.
+> **Note:** `MemoryTimeline.Data/Migrations/` holds the EF Core migration history, regenerated
+> from scratch on 2026-10-22 (`20261022004346_InitialCreate` baseline; `AddCaptureLocation` is
+> the first change after it). Startup applies it through `SchemaUpgrader.EnsureSchemaAsync`
+> (`Database.MigrateAsync`); a database created before the baseline is repaired and baselined
+> on first start. A schema change ships as a migration (`dotnet ef migrations add <Name>
+> --project MemoryTimeline.Data`), never as new DDL in `SchemaUpgrader`.
 
 ---
 
@@ -294,10 +297,11 @@ windows-native/
   app-lifetime context shared across all features — the root cause of intermittent "second
   operation on this context" failures. Because the factory is stateless and thread-safe,
   repositories and most Core services are registered as **Singletons**.
-- **`SchemaUpgrader` instead of raw `EnsureCreated`.** On startup, `App.OnLaunched` calls
-  `MemoryTimeline.Data.SchemaUpgrader.EnsureSchemaAsync`, which runs `EnsureCreated` and then
-  idempotently repairs schema drift (missing tables/columns) on databases created by older builds
-  — a stopgap until a full EF migration baseline is regenerated.
+- **`SchemaUpgrader` applies the EF migrations.** On startup, `App.OnLaunched` calls
+  `MemoryTimeline.Data.SchemaUpgrader.EnsureSchemaAsync`, which runs `Database.MigrateAsync`
+  against `MemoryTimeline.Data/Migrations`; a database with no `__EFMigrationsHistory` (built
+  by `EnsureCreated` under an older build) is first run through the idempotent drift repair,
+  labelled with the `20261022004346_InitialCreate` baseline, then migrated forward.
 - **MVVM with a message bus.** Cross-feature updates (e.g. "event created" → refresh the timeline)
   flow through `WeakReferenceMessenger` rather than tight coupling between view models.
 - **Errors are surfaced, not swallowed.** Failures propagate to visible `InfoBar`/status
@@ -398,15 +402,18 @@ Connection configuration lives in `AppDbContext.OnConfiguring`.
 **Attachments & history:** `event_media` (managed media copies, EXIF, thumbnails, content hash), `event_revisions` (append-only edit history), `recall_prompts` (guided-recall questions)
 **RAG tables:** `event_embeddings` (vector embeddings + per-row `embedding_dimension`), `cross_references` (event relationships)
 **UX tables:** `drafts`, `saved_searches`
-**Settings:** `app_settings` (key/value; keys defined in `SettingKeys`; 33 seeded keys kept in three-way parity between the `AppDbContext` seed, the `SchemaUpgrader` backfill, and `SettingKeys`)
+**Settings:** `app_settings` (key/value; keys defined in `SettingKeys`; 29 seeded keys kept in three-way parity between the `AppDbContext` seed, the `SchemaUpgrader` backfill, and `SettingKeys`)
 
 Name uniqueness on `people`/`tags`/`locations` is **case-insensitive** (`COLLATE NOCASE` unique indexes); `SchemaUpgrader` defensively merges case-variant duplicates on older databases (backfilling contact columns) before rebuilding each index.
 
-### Schema creation & drift repair
+### Schema creation & migrations
 
-The schema is created and repaired at startup by `SchemaUpgrader.EnsureSchemaAsync`
-(`EnsureCreated` + idempotent DDL repairs). There is **no EF Migrations folder** — regenerating a
-proper EF migration history is a tracked follow-up (see [Roadmap](#roadmap--known-follow-ups)).
+The schema is created and upgraded at startup by `SchemaUpgrader.EnsureSchemaAsync`, which
+applies the EF Core migrations under `MemoryTimeline.Data/Migrations` (`Database.MigrateAsync`).
+A database created before the baseline (no `__EFMigrationsHistory`) is run through the
+idempotent drift repair, baselined with `20261022004346_InitialCreate`, then migrated forward.
+New schema changes ship as migrations (`dotnet ef migrations add <Name>` from
+`MemoryTimeline.Data`, through `AppDbContextDesignTimeFactory`), not as new DDL in the repair.
 
 ---
 
@@ -431,9 +438,11 @@ Settings and API keys are configured from the **Settings** page and persisted to
 (snake_case keys) so writers and readers never drift; the LLM client **re-reads configuration
 live**, so provider/model/key changes apply **without a restart**.
 
-> **Security note:** API keys are stored in the `app_settings` table **today**. Encrypting them at
-> rest with **Windows DPAPI** (`ProtectedData`) is a tracked hardening follow-up. (They are **not**
-> stored in Windows Credential Manager.)
+> **Security note:** API keys and sync tokens are stored in the `app_settings` table
+> **DPAPI-protected** (`ISecretProtector` → `DpapiSecretProtector`: `ProtectedData`, current-user
+> scope, `dpapi:v1:` prefix; legacy plaintext rows are re-written protected on first read). A
+> backup restored under another Windows account reads them as empty and they must be re-entered.
+> (They are **not** stored in Windows Credential Manager.)
 
 The embedding service reports availability via `IsAvailableAsync`; with the local ONNX default
 Connections/Ask work with no key at all (after a one-time ~90 MB model download), and if the
@@ -568,13 +577,11 @@ See [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md) for detailed status and
 ## Roadmap / known follow-ups
 
 - **End-to-end runtime validation** of the pipeline and the F1–F12 feature wave on Windows.
-- **Encrypt API keys at rest** (Windows DPAPI / `ProtectedData`).
-- **Regenerate EF Core migrations** to replace the `SchemaUpgrader` stopgap with a proper
-  migration history.
 - **Deferred F1–F12 items** — photo-import wizard, map tile basemaps, timeline location chip,
-  LLM token streaming, PDF narrative export, and more; see the deferred list in
-  [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md).
-- **Whisper model options** (larger models for accuracy; language selection UI).
+  PDF narrative export, vertical swimlane scrolling, reorderable lanes; see the deferred list in
+  [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md). (Done since: DPAPI-protected keys, the EF
+  migration baseline with migrating startup, Whisper model/language options, real LLM token
+  streaming.)
 - **MSIX packaging and Microsoft Store submission** (Phase 7).
 
 ---

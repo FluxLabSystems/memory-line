@@ -16,8 +16,8 @@ export const site = {
   tagline: 'Capture memories by voice or text, let AI structure them, and explore your life as an interactive timeline.',
   description:
     'Documentation for the Memory Timeline Windows Native app — a local-first .NET 10 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.',
-  repo: 'ethanbissbort/memory-line',
-  repoUrl: 'https://github.com/ethanbissbort/memory-line',
+  repo: 'FluxLabSystems/memory-line',
+  repoUrl: 'https://github.com/FluxLabSystems/memory-line',
   branch: 'main',
 };
 
@@ -157,7 +157,7 @@ export const sections = [
         source: 'windows-native/HARDENING-FOLLOWUPS.md',
         title: 'Hardening follow-ups',
         description:
-          'Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.',
+          'The hardening pass’s deferred items with their current status: the captive-DbContext, fire-and-forget-embedding, EF-baseline and plaintext-key items are resolved; unit-of-work beyond approve, analytics brush bindings, CancellationToken plumbing and DateTime.Kind remain open.',
         audience: 'Developers',
         tags: ['follow-ups', 'tech debt'],
       },
@@ -182,7 +182,7 @@ export const sections = [
         source: 'docs/design/MACOS-PORT-PLAN.md',
         title: 'macOS port plan',
         description:
-          'Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.',
+          'Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and how the archive reaches the Mac — Windows publishes read-only projections over the sync feed and Ask goes through the service’s assistant contract, so no C# runs on the Mac.',
         audience: 'Developers',
         tags: ['design', 'macos', 'planning'],
       },
@@ -284,7 +284,7 @@ export const landing = {
       items: [
         '**On This Day** anniversary cards that only surface memories with a real day anchor',
         '**Guided recall prompts** mined from gaps in the archive — never asked twice',
-        'An optional **daily toast**, JumpList entries and Windows Timeline deep links',
+        'An optional **daily toast** and taskbar JumpList shortcuts (the Windows Timeline integration was removed: no callers, and Windows 11 dropped the Timeline UI)',
       ],
     },
     {
@@ -380,7 +380,7 @@ export const landing = {
       },
       {
         title: '`SchemaUpgrader` instead of raw `EnsureCreated`',
-        body: 'Startup creates the database from the current model and idempotently repairs drift (missing tables and columns) on pre-existing databases — a stopgap until EF migrations are regenerated.',
+        body: 'Startup creates the database from the current model and idempotently repairs drift (missing tables and columns) on pre-existing databases. A baseline EF Core migration now exists beside it, but nothing calls Migrate() yet — SchemaUpgrader stays the runtime path until the switch-over.',
       },
       {
         title: 'MVVM with a message bus',
@@ -472,10 +472,9 @@ export const landing = {
 
   roadmap: [
     'End-to-end **runtime validation** of the pipeline and the F1–F12 wave on a real Windows machine',
-    '**Encrypt API keys at rest** with Windows DPAPI (`ProtectedData`)',
-    '**Regenerate EF Core migrations** to replace the `SchemaUpgrader` stopgap',
+    '**Switch runtime schema management** from `SchemaUpgrader` to the regenerated EF Core baseline migration (the migration exists; nothing calls `Migrate()` yet)',
     'Deferred F1–F12 items — photo-import wizard, map tile basemaps, LLM token streaming, PDF narrative export',
-    '**Whisper model options** — larger models for accuracy, and a language selection UI',
+    'A **Settings UI for the Whisper model and language** — both are already live settings (`whisper_model`, `whisper_language`, re-read on every transcription); there is no picker for them yet',
     '**MSIX packaging** and Microsoft Store submission',
   ],
 
@@ -485,6 +484,6 @@ export const landing = {
     ['Local embeddings by default', 'Connections and Ask retrieval can run entirely on-device with no API key.'],
     ['Selective cloud calls', 'Only the transcript text you process reaches your configured LLM provider — which can itself be local.'],
     ['Geocoding is opt-in', 'Off by default; coordinates otherwise come only from photo EXIF or manual pin drops.'],
-    ['Known gap', 'API keys are currently stored in the local settings database; encrypting them at rest is a tracked follow-up.'],
+    ['Secrets at rest', 'API keys and sync tokens live in the local settings database DPAPI-protected (CurrentUser scope, via the ISecretProtector port); a backup restored under another Windows account reads them as empty and they must be re-entered.'],
   ],
 };

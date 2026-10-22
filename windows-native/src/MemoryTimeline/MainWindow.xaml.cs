@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
@@ -25,7 +26,9 @@ public sealed partial class MainWindow : Window
     private bool _isSyncingSelection;
 
     /// <summary>
-    /// Shell state (navigation badge counts) bound by MainWindow.xaml via x:Bind.
+    /// Shell state (navigation badge counts). A Window is not a FrameworkElement, so
+    /// MainWindow.xaml cannot x:Bind to it; the badges are applied from code-behind
+    /// whenever the view model raises PropertyChanged (see ApplyShellBadges).
     /// </summary>
     public MainViewModel ViewModel { get; }
 
@@ -45,6 +48,12 @@ public sealed partial class MainWindow : Window
         RegisterPages();
 
         Closed += OnWindowClosed;
+
+        // Badge values reach the NavigationView through code-behind rather than
+        // x:Bind: the XAML compiler generates bindings against a FrameworkElement
+        // root, which a Window is not (CS1503 in MainWindow.g.cs).
+        ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        ApplyShellBadges();
 
         // Land on Home immediately (no blank frame while settings load), then
         // asynchronously honor home_is_default_page: when the user has turned
@@ -107,7 +116,43 @@ public sealed partial class MainWindow : Window
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
         _navigationService.Navigated -= OnNavigationServiceNavigated;
+        ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         ViewModel.Dispose();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (null
+            or nameof(MainViewModel.QueueBadgeCount)
+            or nameof(MainViewModel.ReviewBadgeCount)
+            or nameof(MainViewModel.IsQueueBadgeVisible)
+            or nameof(MainViewModel.IsReviewBadgeVisible)))
+        {
+            return;
+        }
+
+        // The view model marshals its refreshes to the UI thread already; the
+        // check keeps a future caller from touching the badges off-thread.
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            ApplyShellBadges();
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(ApplyShellBadges);
+        }
+    }
+
+    /// <summary>
+    /// Pushes the view model's badge counts onto the Queue and Review
+    /// NavigationView items; a zero count hides the badge instead of showing "0".
+    /// </summary>
+    private void ApplyShellBadges()
+    {
+        QueueBadge.Value = ViewModel.QueueBadgeCount;
+        QueueBadge.Visibility = ViewModel.IsQueueBadgeVisible ? Visibility.Visible : Visibility.Collapsed;
+        ReviewBadge.Value = ViewModel.ReviewBadgeCount;
+        ReviewBadge.Visibility = ViewModel.IsReviewBadgeVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>

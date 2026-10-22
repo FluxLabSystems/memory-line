@@ -57,14 +57,12 @@
                      items; events awaiting review) and hide at zero. -->
                 <NavigationViewItem Content="Queue" Tag="Queue" Icon="Microphone">
                     <NavigationViewItem.InfoBadge>
-                        <InfoBadge Value="{x:Bind ViewModel.QueueBadgeCount, Mode=OneWay}"
-                                   Visibility="{x:Bind ViewModel.IsQueueBadgeVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
+                        <InfoBadge x:Name="QueueBadge" Visibility="Collapsed"/>
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Review" Tag="Review" Icon="Accept">
                     <NavigationViewItem.InfoBadge>
-                        <InfoBadge Value="{x:Bind ViewModel.ReviewBadgeCount, Mode=OneWay}"
-                                   Visibility="{x:Bind ViewModel.IsReviewBadgeVisible, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
+                        <InfoBadge x:Name="ReviewBadge" Visibility="Collapsed"/>
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem Content="People" Tag="People">

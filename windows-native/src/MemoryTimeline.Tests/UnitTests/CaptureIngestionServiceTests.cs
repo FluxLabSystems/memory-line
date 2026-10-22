@@ -189,6 +189,62 @@ public class CaptureIngestionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task IngestRemoteCaptureAsync_WithLocation_StoresTheSnapshotOnTheCaptureAndNowhereElse()
+    {
+        // Arrange
+        var audioPath = CreateTempAudioFile(out var content);
+        var envelope = CreateValidEnvelope(audioPath, content);
+        envelope.Location = new RemoteCaptureLocation
+        {
+            Latitude = 36.0544,
+            Longitude = -112.1401,
+            HorizontalAccuracyM = 12.5,
+        };
+
+        // Act
+        var result = await _service.IngestRemoteCaptureAsync(envelope);
+
+        // Assert
+        result.Success.Should().BeTrue();
+
+        await using var context = _contextFactory.CreateDbContext();
+        var capture = await context.Captures.SingleAsync();
+        capture.LocationLatitude.Should().Be(36.0544);
+        capture.LocationLongitude.Should().Be(-112.1401);
+        capture.LocationAccuracyM.Should().Be(12.5);
+
+        (await context.Locations.CountAsync()).Should().Be(0,
+            "a coordinate is not a named place; a locations row is the user's or the opt-in geocoder's to make");
+        (await context.SyncOutboxEntries.SingleAsync()).PayloadJson
+            .Should().NotContain("36.0544", "precise location never enters the outbox (privacy rule §14.5)");
+    }
+
+    [Theory]
+    [InlineData(91.0, 0.0)]
+    [InlineData(0.0, -181.0)]
+    [InlineData(double.NaN, 0.0)]
+    public async Task IngestRemoteCaptureAsync_FixOffTheGlobe_IsDroppedWithoutFailingTheCapture(
+        double latitude, double longitude)
+    {
+        // Arrange
+        var audioPath = CreateTempAudioFile(out var content);
+        var envelope = CreateValidEnvelope(audioPath, content);
+        envelope.Location = new RemoteCaptureLocation { Latitude = latitude, Longitude = longitude, HorizontalAccuracyM = 5 };
+
+        // Act
+        var result = await _service.IngestRemoteCaptureAsync(envelope);
+
+        // Assert - the capture is ingested; the impossible fix is not kept
+        result.Success.Should().BeTrue("a bad fix never costs the recording");
+
+        await using var context = _contextFactory.CreateDbContext();
+        var capture = await context.Captures.SingleAsync();
+        capture.LocationLatitude.Should().BeNull();
+        capture.LocationLongitude.Should().BeNull();
+        capture.LocationAccuracyM.Should().BeNull();
+    }
+
+    [Fact]
     public async Task IngestRemoteCaptureAsync_WithStatusPublisher_AlsoPublishesReceivedStatus()
     {
         // Arrange - the capturing phone is waiting to hear Windows has it

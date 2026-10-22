@@ -339,6 +339,14 @@ public class RemoteChangeApplier : IRemoteChangeApplier
         TitleHint = payload.TitleHint,
         UserNote = payload.UserNote,
         TripId = payload.TripId,
+        Location = payload.Location == null ? null : new RemoteCaptureLocation
+        {
+            Latitude = payload.Location.Latitude,
+            Longitude = payload.Location.Longitude,
+            HorizontalAccuracyM = payload.Location.HorizontalAccuracyM,
+            HeadingDegrees = payload.Location.HeadingDegrees,
+            SpeedMps = payload.Location.SpeedMps,
+        },
         ClientSchemaVersion = payload.ClientSchemaVersion,
         ArtifactId = artifact.ArtifactId,
         OriginalFileName = artifact.OriginalFileName,

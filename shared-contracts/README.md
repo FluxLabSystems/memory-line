@@ -66,6 +66,22 @@ proves the three stayed together.
 
 ## Changelog
 
+### v1.5 (2026-10-22) — the capture location leaves the service
+
+Purely additive.
+
+- **`Capture.location` and `CaptureChangePayload.location`** (the existing
+  `LocationContext` schema, nullable): the snapshot a client attaches on
+  `POST /captures` as `locationContext` was stored by the service but never
+  returned. It is now echoed on the capture response and read, and carried on
+  the capture change Windows pulls, so Windows can keep it on the capture it
+  ingests — as columns on that capture, never as a `locations` row (a
+  coordinate is not a named place; geocoding stays opt-in), and never in the
+  Windows sync outbox. The service validates the snapshot on create: a
+  latitude outside [-90, 90] or a longitude outside [-180, 180] is 400
+  `validation_error`, the rule `POST /trips/{tripId}/route-context` already
+  applies.
+
 ### v1.4 (2026-10-21) — the YAML catches up with the shipped service
 
 Purely additive. Nothing that existed was renamed, removed or made required

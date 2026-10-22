@@ -178,6 +178,13 @@ public class CaptureChangePayload
 
     public string? UserNote { get; set; }
 
+    /// <summary>
+    /// The location snapshot the capture was created with (contract v1.5),
+    /// so Windows can keep it on the capture it ingests; null when the client
+    /// attached none.
+    /// </summary>
+    public LocationContext? Location { get; set; }
+
     public int ClientSchemaVersion { get; set; } = 1;
 
     /// <summary>Capture status at the time of the change (see <see cref="SyncCaptureStatus"/>).</summary>

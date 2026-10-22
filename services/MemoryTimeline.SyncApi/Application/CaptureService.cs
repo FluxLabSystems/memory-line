@@ -53,6 +53,27 @@ public sealed class CaptureService : ICaptureService
                 "captureType must be one of: memory, idea, trip_log, reminder, question, unclassified.");
         }
 
+        // The snapshot is stored verbatim and handed to every reader (v1.5),
+        // so it is range-checked here with the route-context rule; the
+        // optional accuracy/heading/speed fields are passed through as the
+        // device reported them. Coordinates are never logged (§14.5).
+        if (request.LocationContext is { } location)
+        {
+            if (location.Latitude is < -90 or > 90 || double.IsNaN(location.Latitude))
+            {
+                return ServiceResult<CaptureWriteResult>.Fail(
+                    StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError,
+                    "locationContext.latitude must be between -90 and 90.");
+            }
+
+            if (location.Longitude is < -180 or > 180 || double.IsNaN(location.Longitude))
+            {
+                return ServiceResult<CaptureWriteResult>.Fail(
+                    StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError,
+                    "locationContext.longitude must be between -180 and 180.");
+            }
+        }
+
         var captureId = captureGuid.ToString("D");
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
 

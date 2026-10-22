@@ -282,6 +282,11 @@ public class CaptureIngestionService : ICaptureIngestionService
                 sameContent.SourceCaptureId ?? capture.CaptureId, sameContent.AudioArtifactId, sameContent.QueueId);
         }
 
+        // The device's location fix stays on the capture (design §6.1): it is
+        // not a named place, and it never enters the outbox payload written
+        // below. A fix that is not on Earth is dropped, not fatal.
+        var location = capture.Location is { IsInRange: true } ? capture.Location : null;
+
         var now = DateTime.UtcNow;
         var captureEntity = new Capture
         {
@@ -301,6 +306,9 @@ public class CaptureIngestionService : ICaptureIngestionService
             TitleHint = capture.TitleHint,
             UserNote = capture.UserNote,
             TripId = capture.TripId,
+            LocationLatitude = location?.Latitude,
+            LocationLongitude = location?.Longitude,
+            LocationAccuracyM = location?.HorizontalAccuracyM,
             ClientSchemaVersion = capture.ClientSchemaVersion,
         };
 

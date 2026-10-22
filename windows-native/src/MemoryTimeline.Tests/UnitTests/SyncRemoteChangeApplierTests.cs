@@ -78,6 +78,39 @@ public class SyncRemoteChangeApplierTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_CaptureWithLocation_KeepsTheSnapshotOnTheCaptureOnly()
+    {
+        // Arrange - the phone attached a fix at capture time (contract v1.5)
+        var change = CreateCaptureChange(out var payload, out var content);
+        payload.Location = new LocationContext
+        {
+            Latitude = 36.0544,
+            Longitude = -112.1401,
+            HorizontalAccuracyM = 12.5,
+            HeadingDegrees = 90.0,
+            SpeedMps = 0.0,
+        };
+        change.PayloadJson = JsonSerializer.Serialize(payload, WireJson);
+        _transferClient.Content = content;
+
+        // Act
+        var result = await _applier.ApplyAsync(change);
+
+        // Assert - the fix lives on the capture row...
+        result.Should().Be(ChangeApplicationResult.Applied);
+        await using var context = _contextFactory.CreateDbContext();
+        var capture = await context.Captures.SingleAsync();
+        capture.LocationLatitude.Should().Be(36.0544);
+        capture.LocationLongitude.Should().Be(-112.1401);
+        capture.LocationAccuracyM.Should().Be(12.5);
+
+        // ...is not a named place, and never leaves through the outbox (§14.5).
+        (await context.Locations.CountAsync()).Should().Be(0);
+        var outbox = await context.SyncOutboxEntries.SingleAsync();
+        outbox.PayloadJson.Should().NotContain("36.0544").And.NotContain("latitude");
+    }
+
+    [Fact]
     public async Task ApplyAsync_AutoProcessDisabled_AppliesWithoutStartingProcessing()
     {
         // Arrange

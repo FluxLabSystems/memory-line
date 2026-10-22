@@ -246,6 +246,18 @@ namespace MemoryTimeline.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("local_offset_minutes");
 
+                    b.Property<double?>("LocationAccuracyM")
+                        .HasColumnType("REAL")
+                        .HasColumnName("location_accuracy_m");
+
+                    b.Property<double?>("LocationLatitude")
+                        .HasColumnType("REAL")
+                        .HasColumnName("location_latitude");
+
+                    b.Property<double?>("LocationLongitude")
+                        .HasColumnType("REAL")
+                        .HasColumnName("location_longitude");
+
                     b.Property<long>("ServerRevision")
                         .HasColumnType("INTEGER")
                         .HasColumnName("server_revision");

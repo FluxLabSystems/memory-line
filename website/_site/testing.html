@@ -139,7 +139,7 @@
   <p class="doc-lede">Test structure, the DbContext factory pattern for test authors, running and filtering tests, coverage goals, performance benchmarks, templates, and CI behaviour.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>1,913</b> words</span>
+    <span class="doc-meta-item"><b>1,978</b> words</span>
     <span class="doc-meta-item"><b>9</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/TESTING.md" target="_blank" rel="noopener noreferrer">
       windows-native/TESTING.md ↗
@@ -200,7 +200,9 @@
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 
 <span class="tok-comment"># 2. Run the already-built test assembly (no rebuild).</span>
-<span class="tok-variable">$dll</span> = <span class="tok-string">&quot;MemoryTimeline.Tests/bin/x64/Release/net8.0-windows10.0.26100.0/MemoryTimeline.Tests.dll&quot;</span>
+<span class="tok-comment"># The solution maps the Tests project's Release|x64 to Release|AnyCPU, so the DLL may land</span>
+<span class="tok-comment"># under bin/Release/... instead of bin/x64/Release/...; CI searches both layouts.</span>
+<span class="tok-variable">$dll</span> = <span class="tok-string">&quot;MemoryTimeline.Tests/bin/x64/Release/net10.0-windows10.0.26100.0/MemoryTimeline.Tests.dll&quot;</span>
 <span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> <span class="tok-variable">$dll</span> --logger:<span class="tok-string">&quot;trx;LogFileName=test.trx&quot;</span> --ResultsDirectory:TestResults</code></pre></div>
 <h3 id="by-category--class--method" class="anchored">By Category / Class / Method<a class="heading-anchor" href="#by-category--class--method" aria-label="Link to this section">#</a></h3>
 <p><code>dotnet vstest</code> filters with <code>--TestCaseFilter</code>:</p>
@@ -209,7 +211,7 @@
 <span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> <span class="tok-variable">$dll</span> --TestCaseFilter:<span class="tok-string">&quot;FullyQualifiedName~Performance&quot;</span>
 <span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> <span class="tok-variable">$dll</span> --TestCaseFilter:<span class="tok-string">&quot;FullyQualifiedName~QueueServiceTests&quot;</span>
 <span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> <span class="tok-variable">$dll</span> --TestCaseFilter:<span class="tok-string">&quot;FullyQualifiedName=MemoryTimeline.Tests.UnitTests.QueueServiceTests.AddToQueueAsync_ValidRecording_AddsToQueue&quot;</span></code></pre></div>
-<blockquote><p><strong>Environment note.</strong> Running a self-contained WinUI 3 test assembly under headless VSTest is finicky; in CI this step is treated as best-effort (it does not gate the build). If the app assembly fails to build for any reason, the test project — which references it — will also fail to build, so a green <strong>compile</strong> is the primary signal.</p>
+<blockquote><p><strong>Environment note.</strong> The test project references the WinUI app, so it only builds on a Windows machine with VS msbuild, and the tests must never activate WinRT types (there is no Windows App SDK bootstrap in the test host) — keep tests to Core/Data/Sync and pure head helpers. In CI the <code>dotnet vstest</code> run <strong>gates</strong> the workflow: a failing test or a missing test assembly fails the run, so green CI means both compile and tests passed.</p>
 </blockquote>
 <h2 id="code-coverage" class="anchored">Code Coverage<a class="heading-anchor" href="#code-coverage" aria-label="Link to this section">#</a></h2>
 <p>Coverage can be collected while running the built assembly, e.g.:</p>
@@ -400,14 +402,14 @@ reportgenerator <span class="tok-flag">-reports</span>:**/*.cobertura.xml <span 
 <h3 id="github-actions--githubworkflowswindows-native-buildyml" class="anchored">GitHub Actions — <code>.github/workflows/windows-native-build.yml</code><a class="heading-anchor" href="#github-actions--githubworkflowswindows-native-buildyml" aria-label="Link to this section">#</a></h3>
 <p>The real workflow runs on <strong><code>windows-latest</code></strong> and:</p>
 <ul>
-<li>Installs the <strong>.NET 8 SDK</strong> plus <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>).</li>
+<li>Installs the <strong>.NET 10 SDK</strong> (<code>dotnet-version: 10.0.x</code>, matching <code>global.json</code>&#39;s <code>10.0.300</code> / <code>latestFeature</code> pin) plus <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>).</li>
 <li>Builds the whole solution <strong><code>Release | x64</code></strong> with <strong><code>msbuild MemoryTimeline.sln /t:Restore,Build</code></strong> (not <code>dotnet build</code>).</li>
 <li>Runs tests with <strong><code>dotnet vstest</code></strong> against the built <code>MemoryTimeline.Tests.dll</code> (not <code>dotnet test</code>).</li>
 </ul>
 <h3 id="behavior" class="anchored">Behavior<a class="heading-anchor" href="#behavior" aria-label="Link to this section">#</a></h3>
 <ul>
-<li><strong>Compilation is the gate.</strong> A build failure fails the workflow.</li>
-<li>The headless VSTest run of the self-contained WinUI test assembly is <strong>best-effort</strong> (<code>continue-on-error: true</code>); its <code>.trx</code>/logs are uploaded as artifacts for visibility but do not by themselves fail the run.</li>
+<li><strong>Compilation and tests both gate.</strong> A build failure fails the workflow, and so does a vstest failure or a missing <code>MemoryTimeline.Tests.dll</code> (the step searches <code>bin/x64/Release</code> and <code>bin/Release</code> recursively). The <code>.trx</code>/logs are uploaded as artifacts and the TRX counters are surfaced as annotations.</li>
+<li>The plain-<code>net10.0</code> <code>MemoryTimeline.Portability.Tests</code> project is run separately with <code>dotnet test</code> by <code>.github/workflows/macos-native-build.yml</code>.</li>
 <li>There is currently <strong>no</strong> Codecov upload or long-term benchmark tracking configured.</li>
 </ul>
 <h2 id="writing-new-tests" class="anchored">Writing New Tests<a class="heading-anchor" href="#writing-new-tests" aria-label="Link to this section">#</a></h2>

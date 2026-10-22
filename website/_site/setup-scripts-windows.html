@@ -135,7 +135,7 @@
   <p class="doc-lede">Setup-Dependencies.ps1 and Verify-Installation.ps1 — automated toolchain install and environment verification, plus the build reality (msbuild, not dotnet build).</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>925</b> words</span>
+    <span class="doc-meta-item"><b>955</b> words</span>
     <span class="doc-meta-item"><b>4</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/scripts/README.md" target="_blank" rel="noopener noreferrer">
       windows-native/scripts/README.md ↗
@@ -145,13 +145,13 @@
 </header>
 <div class="doc-grid">
   <article class="prose">
-<p>This directory contains PowerShell scripts for setting up, verifying, and managing the Memory Timeline Windows native application (.NET 8 / WinUI 3). This is the <strong>primary, actively developed</strong> version of Memory Timeline.</p>
+<p>This directory contains PowerShell scripts for setting up, verifying, and managing the Memory Timeline Windows native application (.NET 10 / WinUI 3 / Windows App SDK 2.3.1). This is the <strong>primary, actively developed</strong> version of Memory Timeline.</p>
 <h2 id="build-reality-important" class="anchored">Build Reality (Important)<a class="heading-anchor" href="#build-reality-important" aria-label="Link to this section">#</a></h2>
 <p>Before using the commands in this document, note the following about the current build:</p>
 <ul>
 <li><strong>Build with Visual Studio 2026 or <code>msbuild</code>, not <code>dotnet build</code>.</strong> The WinUI 3 app uses the Windows App SDK PRI generation task, which fails under <code>dotnet build</code>. Use <code>msbuild</code> (from a Developer Command Prompt / Developer PowerShell) or build/run from Visual Studio.</li>
 <li><strong>The solution is x64-only.</strong> <code>MemoryTimeline.sln</code> defines only <code>Debug|x64</code> and <code>Release|x64</code>. Always pass the platform explicitly, e.g. <code>-p:Platform=x64</code> (msbuild) or select <code>x64</code> in Visual Studio. There is no <code>Any CPU</code> or <code>Win32/ARM64</code> solution configuration.</li>
-<li><strong>.NET SDK is pinned by <code>../src/global.json</code></strong> to version <code>8.0.100</code> with <code>rollForward: &quot;major&quot;</code>. This means a .NET 8 SDK (8.0.100+) or a newer major SDK such as .NET 9 will both satisfy the pin. <code>dotnet restore</code> still works normally for package restore.</li>
+<li><strong>.NET SDK is pinned by <code>../src/global.json</code></strong> to <code>10.0.300</code> with <code>rollForward: &quot;latestFeature&quot;</code>, i.e. any 10.0.3xx-or-newer SDK. Those bands require MSBuild 18, so <strong>Visual Studio 2026 (18.x)</strong> is the supported IDE and VS 2022 cannot build the repo. <code>dotnet restore</code> still works normally for package restore.</li>
 </ul>
 <p>Example command-line build/restore/test (from a Developer PowerShell in <code>windows-native/src</code>):</p>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-comment"># Restore packages (dotnet is fine for restore)</span>
@@ -160,10 +160,10 @@
 <span class="tok-comment"># Build the WinUI 3 app with msbuild (NOT dotnet build)</span>
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln <span class="tok-flag">-p</span>:Configuration=Debug <span class="tok-flag">-p</span>:Platform=x64 <span class="tok-flag">-restore</span>
 
-<span class="tok-comment"># Run unit tests</span>
-<span class="tok-builtin">dotnet</span> test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj</code></pre></div>
-<div class="callout callout-note"><div class="callout-body"><p>Note: <code>Setup-Dependencies.ps1</code> prints a &quot;Next steps&quot; hint suggesting <code>dotnet build</code> and <code>dotnet run --project MemoryTimeline</code>. That hint is <strong>stale/inaccurate</strong> for the WinUI 3 app — prefer Visual Studio or <code>msbuild</code> with <code>-p:Platform=x64</code> as shown above.</p>
-</div></div>
+<span class="tok-comment"># Run the already-built test assembly (NOT dotnet test, which would rebuild with the dotnet engine)</span>
+<span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> MemoryTimeline.Tests\bin\x64\Debug\net10.<span class="tok-number">0</span>-windows10.<span class="tok-number">0.26100.0</span>\MemoryTimeline.Tests.dll</code></pre></div>
+<blockquote><p>The test DLL may land under <code>bin\Debug\...</code> instead of <code>bin\x64\Debug\...</code> depending on the solution&#39;s platform mapping for the test project; CI searches both. See <a href="testing.html"><code>../TESTING.md</code></a>.</p>
+</blockquote>
 <p>See <a href="testing.html"><code>../TESTING.md</code></a> for the full, primary test suite instructions.</p>
 <h2 id="scripts" class="anchored">Scripts<a class="heading-anchor" href="#scripts" aria-label="Link to this section">#</a></h2>
 <h3 id="setup-dependenciesps1" class="anchored">Setup-Dependencies.ps1<a class="heading-anchor" href="#setup-dependenciesps1" aria-label="Link to this section">#</a></h3>
@@ -180,8 +180,8 @@
 <p><strong>What it installs:</strong></p>
 <p><strong>Core (Both Development and Production):</strong></p>
 <ul>
-<li>.NET 10 SDK</li>
-<li>Windows App SDK 1.5+</li>
+<li>.NET 10 SDK (10.0.3xx or newer)</li>
+<li>Windows App SDK 2.3.1 — restored from NuGet with the solution; the app is self-contained, so no runtime install is performed</li>
 <li>Windows Package Manager (winget)</li>
 </ul>
 <p><strong>Development Only:</strong></p>
@@ -235,7 +235,7 @@
 <li>.NET SDK (10.0.3xx+)</li>
 <li>Visual Studio 2026 (18.0+)</li>
 <li>Windows SDK (10.0.26100.0+)</li>
-<li>Windows App SDK (1.5+)</li>
+<li>Windows App SDK (2.3.1, NuGet cache)</li>
 <li>Git</li>
 <li>PowerShell (5.0+)</li>
 </ul>
@@ -311,11 +311,10 @@ notepad verification-report.txt</code></pre></div>
     exit <span class="tok-number">1</span>
 }
 
-<span class="tok-comment"># Build and test (x64-only; use msbuild for the WinUI 3 app, not dotnet build)</span>
+<span class="tok-comment"># Build and test (x64-only; use msbuild for the WinUI 3 app, not dotnet build / dotnet test)</span>
 cd src
-<span class="tok-builtin">dotnet</span> restore MemoryTimeline.sln
-<span class="tok-builtin">msbuild</span> MemoryTimeline.sln <span class="tok-flag">-p</span>:Configuration=Release <span class="tok-flag">-p</span>:Platform=x64 <span class="tok-flag">-restore</span>
-<span class="tok-builtin">dotnet</span> test MemoryTimeline.Tests\MemoryTimeline.Tests.csproj --configuration Release</code></pre></div>
+<span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64
+<span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> MemoryTimeline.Tests\bin\x64\Release\net10.<span class="tok-number">0</span>-windows10.<span class="tok-number">0.26100.0</span>\MemoryTimeline.Tests.dll</code></pre></div>
 <h2 id="manual-installation" class="anchored">Manual Installation<a class="heading-anchor" href="#manual-installation" aria-label="Link to this section">#</a></h2>
 <p>If automatic installation fails, you can install components manually:</p>
 <h3 id="net-10-sdk" class="anchored">.NET 10 SDK<a class="heading-anchor" href="#net-10-sdk" aria-label="Link to this section">#</a></h3>

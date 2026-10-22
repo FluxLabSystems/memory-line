@@ -145,7 +145,7 @@
   <p class="doc-lede">The main reference for the WinUI 3 app: pipeline, features, quick start, project structure, clean-architecture layers, DI composition, database schema, configuration, and troubleshooting.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,201</b> words</span>
+    <span class="doc-meta-item"><b>3,366</b> words</span>
     <span class="doc-meta-item"><b>15</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/README.md" target="_blank" rel="noopener noreferrer">
       windows-native/README.md ↗
@@ -163,7 +163,7 @@
 <hr>
 <h2 id="overview" class="anchored">Overview<a class="heading-anchor" href="#overview" aria-label="Link to this section">#</a></h2>
 <p>This is the native Windows implementation of Memory Timeline: a <strong>local-first</strong> desktop app for recording, organizing, and rediscovering personal history. You speak a memory, the app transcribes it <strong>locally with Whisper</strong>, a <strong>Claude</strong> model extracts a structured event, you review and approve it, and it lands on an interactive timeline. Optional embeddings surface connections between related memories.</p>
-<p>It is designed to provide strong performance and to leverage Windows-specific features such as native touch/pen support (Windows Ink), toast notifications, JumpList, and Windows Timeline integration.</p>
+<p>It is designed to provide strong performance and to leverage Windows-specific features such as touch gestures on the timeline, toast notifications, and Jump List quick actions. (Windows Timeline / User Activities integration was removed in 2026-10: it had no callers, needs package identity, and Windows 11 dropped the Timeline UI. There is no Windows Ink code.)</p>
 <h3 id="performance-targets" class="anchored">Performance targets<a class="heading-anchor" href="#performance-targets" aria-label="Link to this section">#</a></h3>
 <p>Building on the OS&#39;s own UI stack rather than a bundled web runtime is what buys low
 memory use, fast cold start, smooth timeline rendering, a small package, and first-class
@@ -194,12 +194,12 @@ Windows integration.</p>
 <td>~30 MB</td>
 </tr>
 <tr>
-<td>Touch/Pen</td>
-<td>Full Windows Ink</td>
+<td>Touch</td>
+<td>Timeline gestures (pinch-zoom, drag-pan); no Ink/annotation feature</td>
 </tr>
 <tr>
 <td>Windows Integration</td>
-<td>Full (JumpList, Timeline, Notifications)</td>
+<td>Jump List + toast notifications (see <a href="#windows-11-integration">Windows 11 Integration</a> for the unpackaged-app caveat)</td>
 </tr>
 </tbody></table></div>
 <hr>
@@ -246,10 +246,10 @@ Windows integration.</p>
 <h3 id="windows-11-integration" class="anchored">Windows 11 Integration<a class="heading-anchor" href="#windows-11-integration" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Toast Notifications</strong> - Processing-complete alerts.</li>
-<li><strong>JumpList</strong> - Quick access to recent events and common actions.</li>
-<li><strong>Windows Timeline</strong> - Events published to Windows Timeline with Adaptive Cards.</li>
+<li><strong>Jump List</strong> - Quick actions (New Event opens the add-event dialog, Start Recording starts capturing, View Timeline, Search) plus a &quot;Recent Events&quot; group that is updated whenever an event is created or opened. <strong>Caveat:</strong> the app is unpackaged (<code>WindowsPackageType=None</code>) and <code>Windows.UI.StartScreen.JumpList</code> requires package identity, so on an unpackaged install the Jump List calls can fail; <code>JumpListService</code> detects the first failure, logs it once, and stops trying for the rest of the session instead of crashing. Expect the feature only once an MSIX/identity build exists.</li>
 <li><strong>Theme Support</strong> - Light/Dark/System theme switching.</li>
-<li><strong>Touch &amp; Pen</strong> - Gesture support with Windows Ink ready.</li>
+<li><strong>Touch</strong> - Pinch-zoom and drag-pan gestures on the timeline. No Windows Ink / pen annotation exists.</li>
+<li><em>(Removed 2026-10)</em> Windows Timeline (User Activities / Adaptive Cards) publishing — never called, needs package identity, and the Timeline UI is gone from Windows 11.</li>
 </ul>
 <hr>
 <h2 id="quick-start" class="anchored">Quick Start<a class="heading-anchor" href="#quick-start" aria-label="Link to this section">#</a></h2>
@@ -422,7 +422,7 @@ Regenerating a proper EF migration baseline is a tracked follow-up.</p>
 │              ↕                            │
 │  ┌──────────────────────────────────┐    │
 │  │ Data Access Layer                │    │
-│  │ - EF Core 8 + SQLite (WAL)       │    │
+│  │ - EF Core 10 + SQLite (WAL)      │    │
 │  │ - IDbContextFactory per-operation│    │
 │  │ - Repositories + SchemaUpgrader  │    │
 │  └──────────────────────────────────┘    │
@@ -473,8 +473,9 @@ services.<span class="tok-type">AddSingleton&lt;ITimelineService, TimelineServic
 services.<span class="tok-type">AddSingleton&lt;IAudioRecordingService, AudioRecordingService&gt;</span>();
 services.<span class="tok-type">AddSingleton&lt;IQueueService, QueueService&gt;</span>();
 
-<span class="tok-comment">// Local Whisper is the registered STT engine. The Windows SpeechRecognizer</span>
-<span class="tok-comment">// stub cannot transcribe files (mic-only) and now fails fast instead.</span>
+<span class="tok-comment">// Local Whisper is the registered (and only) STT engine. The old Windows</span>
+<span class="tok-comment">// SpeechRecognizer stub was deleted: that API is mic-only and cannot</span>
+<span class="tok-comment">// transcribe a file.</span>
 services.<span class="tok-type">AddSingleton&lt;ISpeechToTextService, WhisperSpeechToTextService&gt;</span>();
 
 <span class="tok-comment">// LLM: a routing facade re-reads llm_provider on every call and delegates</span>
@@ -579,8 +580,8 @@ through a structured, <strong>multi-agent feature audit and fix pass</strong>. H
 <ul>
 <li><strong>Made the voice pipeline real</strong> — replaced a &quot;speech recognition&quot; path that transcribed the
 <strong>live microphone</strong> (not the recorded file) with local file-based <strong>Whisper</strong>
-(<code>WhisperSpeechToTextService</code>); the old <code>WindowsSpeechRecognitionService</code> now fails fast without
-opening the mic. Fixed the unpackaged storage-path crash, persisted transcripts, and made
+(<code>WhisperSpeechToTextService</code>); the old <code>WindowsSpeechRecognitionService</code> was first turned into a
+fail-fast stub and has since been deleted. Fixed the unpackaged storage-path crash, persisted transcripts, and made
 <strong>approve</strong> atomic (event + tags/people/locations in one transaction).</li>
 <li><strong>Fixed DbContext concurrency</strong> — moved from a single app-wide <code>AddDbContext</code> to per-operation
 contexts via <code>IDbContextFactory</code>, resolving intermittent &quot;second operation on this context&quot;
@@ -610,8 +611,9 @@ stale EF Migrations baseline was deleted.</li>
 <h3 id="continuous-integration" class="anchored">Continuous Integration<a class="heading-anchor" href="#continuous-integration" aria-label="Link to this section">#</a></h3>
 <p><code>.github/workflows/windows-native-build.yml</code> builds the full solution <strong>Release | x64</strong> on
 <code>windows-latest</code>, driving the build with <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>)
-because the WinUI PRI task cannot run under <code>dotnet build</code>. Tests run best-effort via
-<code>dotnet vstest</code>. Builds are currently <strong>green</strong> in CI.</p>
+because the WinUI PRI task cannot run under <code>dotnet build</code>. The built test assembly then
+runs with <code>dotnet vstest</code>; <strong>the build and the tests both gate the run</strong>. Builds are
+currently <strong>green</strong> in CI.</p>
 <hr>
 <h2 id="deployment" class="anchored">Deployment<a class="heading-anchor" href="#deployment" aria-label="Link to this section">#</a></h2>
 <h3 id="msix-package" class="anchored">MSIX Package<a class="heading-anchor" href="#msix-package" aria-label="Link to this section">#</a></h3>
@@ -793,7 +795,7 @@ than swallowing them.</li>
 </ul>
 <hr>
 <h2 id="license" class="anchored">License<a class="heading-anchor" href="#license" aria-label="Link to this section">#</a></h2>
-<p>MIT License — see the main repository <code>LICENSE</code> file.</p>
+<p>No license file has been published for this repository yet; see the root <code>README.md</code>.</p>
 <hr>
 <p><strong>Last Updated:</strong> 2026-08-06<br><strong>Status:</strong> Active development (Windows Native is the primary product)  </p>
 

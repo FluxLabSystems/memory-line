@@ -11,8 +11,7 @@ non-trivial refactor, a public-API/DI change spanning layers, or a team decision
 > task) and run the built test assembly with `dotnet vstest`**, as CI does, to validate
 > all applied fixes.
 
-> **Status key (updated 2026-10-21):** ✅ resolved · 🔄 in progress in the concurrent Core
-> change (not visible from the head branch; reconcile on merge) · ⬜ still open.
+> **Status key (updated 2026-10-22):** ✅ resolved · ⬜ still open.
 
 ## High priority
 
@@ -47,7 +46,7 @@ background work (ctor change → flagged rather than applied).
 **Resolution:** the shared-context `Task.Run` went away with the factory rework; the
 embedding path opens its own context per operation.
 
-### 3. Migration + snapshot drift  *(Data agent — Critical for migration-based release)* — ⬜ open
+### 3. Migration + snapshot drift  *(Data agent — Critical for migration-based release)* — ✅ baseline regenerated (runtime path unchanged)
 `AppDbContextModelSnapshot` is an empty stub and `InitialCreate` is far behind the
 model (missing tables `era_categories`, `era_tags`, `milestones`, `saved_searches`;
 missing columns on `eras`/`events`/`tags`; missing `cross_references` FKs; missing
@@ -56,9 +55,12 @@ seed `InsertData`). Runtime is fine today because startup uses `EnsureCreatedAsy
 **Fix:** on a machine with the SDK, regenerate the baseline
 (`dotnet ef migrations add InitialCreate --force`) before shipping migrations.
 
-**Current state:** the stale migrations were deleted and startup uses
-`SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL repairs). A real
-migration baseline still has not been regenerated.
+**Current state (2026-10-22):** a baseline migration
+(`Data/Migrations/20261022004346_InitialCreate` + snapshot; 25 tables, both seeds) was
+generated with `dotnet ef` through the new `AppDbContextDesignTimeFactory`. Startup still
+uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL repairs) and
+nothing calls `Migrate()`; moving existing EnsureCreated-built databases onto migrations
+still needs a history-table baseline step, which remains open.
 
 ## Medium priority
 
@@ -68,14 +70,15 @@ migration baseline still has not been regenerated.
   transaction / unit-of-work at the service layer. *Approve is now one atomic
   transaction (event + tags/people/locations + pending-event delete); other multi-step
   workflows still save independently.*
-- ⬜ **Polly referenced but unused** — add a bounded, transient-only retry with jitter
-  (and a timeout) around the Anthropic and OpenAI network calls (`AddHttpClient` +
-  SDK call sites). *`Polly` 8.2.0 is still a Core package reference with no policy
-  wired.*
-- 🔄 **`CrossReference` delete behavior = `Restrict`** — deleting an `Event` referenced
-  by a RAG-generated cross-reference will throw once FK enforcement is on. `Cascade`
-  is likely intended but has data-loss implications — needs sign-off. *Being fixed in
-  the concurrent Core change; leave until that merges.*
+- ✅ **Polly referenced but unused** — `Core/Services/HttpRetryPolicy.cs` (Polly 8
+  `ResiliencePipeline`: 3 retries, 500 ms exponential back-off with jitter, 4 s cap;
+  retries transport errors, timeouts, 408/429/5xx, never caller cancellation or other
+  4xx) wraps the OpenAI-compatible LLM, OpenAI embeddings, Nominatim (no 429 retry)
+  and the Anthropic SDK call.
+- ✅ **`CrossReference` delete behavior = `Restrict`** — the FK stays `Restrict`;
+  `EventRepository.DeleteAsync`/`DeleteRangeAsync` remove the cross-references naming
+  the event at either end in the same `SaveChanges`, proven by a file-backed SQLite test
+  with `PRAGMA foreign_keys` on.
 - ⬜ **Analytics color bindings** — `CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color`
   are `string` bound directly to `Brush` properties via `x:Bind` in `AnalyticsPage.xaml`.
   Expose a `Brush`/`SolidColorBrush` on the model (as the timeline DTOs do with
@@ -84,11 +87,13 @@ migration baseline still has not been regenerated.
 
 ## Low priority
 
-- 🔄 **API keys stored plaintext** in `AppSettings` — encrypt at rest via DPAPI /
-  `ProtectedData` at the settings/Data layer (keys are not logged or hardcoded today).
-  *The concurrent Core change introduces an `ISecretProtector` port with a DPAPI
-  implementation in the head; until it merges, keys remain plaintext. Keys can at least
-  be removed from Settings now ("Clear key" / Reset to Defaults).*
+- ✅ **API keys stored plaintext** in `AppSettings` — `SettingsService` stores the
+  Anthropic key, `embedding_api_key` and the sync tokens through the `ISecretProtector`
+  port (`DpapiSecretProtector` in the head: `ProtectedData`, CurrentUser scope,
+  `dpapi:v1:` prefix); legacy plaintext rows are re-written in protected form on first
+  read. A backup restored under another Windows account reads those secrets as empty and
+  they must be re-entered. Keys can also be removed from Settings ("Clear key" / Reset
+  to Defaults).
 - ⬜ **`CancellationToken` not plumbable** through `IRepository<T>` and specialized repo
   interfaces — add `CancellationToken ct = default` in a coordinated interface change.
 - ⬜ **`DateTime.Kind` round-trip** — SQLite returns `Unspecified`; add a UTC

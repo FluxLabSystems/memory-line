@@ -132,8 +132,8 @@
   <p class="doc-lede">Root causes of three reported bugs, the shared-DbContext foundation defect underneath them, a per-feature audit, and the dependency-ordered master fix plan.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>2,301</b> words</span>
-    <span class="doc-meta-item"><b>10</b> min read</span>
+    <span class="doc-meta-item"><b>2,943</b> words</span>
+    <span class="doc-meta-item"><b>13</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/FEATURE-AUDIT.md" target="_blank" rel="noopener noreferrer">
       windows-native/FEATURE-AUDIT.md ↗
     </a>
@@ -149,6 +149,53 @@ from code) or <strong>PROBABLE</strong> (depends on runtime state we can&#39;t o
 (1) pressing <strong>Save</strong> on Add Event does nothing, (2) searching for the added
 event shows <strong>&quot;search error&quot;</strong>, (3) the timeline <strong>Refresh</strong> button doesn&#39;t
 bring up the new event.</p>
+<div class="callout callout-feature"><div class="callout-body"><h3 id="status-2026-10-21" class="anchored">Status (2026-10-21)<a class="heading-anchor" href="#status-2026-10-21" aria-label="Link to this section">#</a></h3>
+<p>This document is the <strong>original audit</strong>, kept as written for its root-cause analysis.
+Almost everything it asked for has since landed; the per-section <code>Status</code> notes below
+say what. In short:</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Area</th>
+<th>State</th>
+</tr>
+</thead><tbody><tr>
+<td>Bugs 1 / 2 / 3</td>
+<td>✅ fixed (category case + in-dialog errors; <code>IDbContextFactory</code> per-operation contexts + debounced search; Ctrl+R refreshes in place)</td>
+</tr>
+<tr>
+<td>Part 1 foundation</td>
+<td>✅ <code>AddDbContextFactory</code> everywhere, Singleton services; <code>SchemaUpgrader</code> replaced raw <code>EnsureCreated</code> (a real migration baseline is still a follow-up)</td>
+</tr>
+<tr>
+<td>2.3 Search</td>
+<td>✅ <code>Tag.Name</code> → <code>TagName</code>, suggestions bound, sort default aligned, honest error messages, Save Search dialog wired</td>
+</tr>
+<tr>
+<td>2.4 Audio pipeline</td>
+<td>✅ storage path fixed, local Whisper STT (the mic-only stub was deleted 2026-10), transcript persisted, atomic approve, Resume/Cancel, API-key pre-flight, LLM config re-read per call, per-item progress events; the dead <code>OnnxWhisperService</code> and <code>AnthropicClaudeService</code> were removed</td>
+</tr>
+<tr>
+<td>2.5 RAG / Connections</td>
+<td>✅ OpenAI key UI (plus local ONNX default), Connections navigation with the event id, mapped embedding columns, persisted cross-references; cross-references are <strong>heuristic</strong> (not LLM-powered)</td>
+</tr>
+<tr>
+<td>2.6 Analytics</td>
+<td><span class="chip chip-ok">✅ export implemented</span></td>
+</tr>
+<tr>
+<td>2.7 Settings</td>
+<td>✅ <code>SettingKeys</code> constants (writer and reader), display-case normalization, live config re-read; Reset to Defaults and key removal fixed 2026-10</td>
+</tr>
+<tr>
+<td>2.8 Export / Import</td>
+<td>✅ <code>Include</code> fix; import options honored</td>
+</tr>
+<tr>
+<td>2.9 Shell / Windows integration</td>
+<td>✅ unified <code>INotificationService</code>, <code>AddQuickActionsAsync</code> at launch, activation handling, <code>await _host.StopAsync()</code>; <strong>2026-10:</strong> <code>MainViewModel</code> + nav badges implemented, Jump List recent events + real quick actions wired, Windows Timeline service removed as dead code</td>
+</tr>
+</tbody></table></div>
+<p>Still open from the plan: regenerating the EF migration baseline (see <code>HARDENING-FOLLOWUPS.md</code>).</p>
+</div></div>
 <hr>
 <h2 id="part-0--root-causes-of-the-three-reported-bugs" class="anchored">Part 0 — Root causes of the three reported bugs<a class="heading-anchor" href="#part-0--root-causes-of-the-three-reported-bugs" aria-label="Link to this section">#</a></h2>
 <h3 id="bug-1--save-does-nothing--root-cause-confirmed" class="anchored">Bug 1 — &quot;Save does nothing&quot; · ROOT CAUSE CONFIRMED<a class="heading-anchor" href="#bug-1--save-does-nothing--root-cause-confirmed" aria-label="Link to this section">#</a></h3>
@@ -197,6 +244,8 @@ Frame instead of refreshing, which no-ops when window dimensions are unchanged
 (<code>MainWindow.xaml.cs:132-140</code> → <code>TimelineViewModel.cs:704-723</code>).</p>
 <hr>
 <h2 id="part-1--the-foundation-defect-underneath-everything-confirmed-by-all-5-agents" class="anchored">Part 1 — The foundation defect underneath everything (CONFIRMED by all 5 agents)<a class="heading-anchor" href="#part-1--the-foundation-defect-underneath-everything-confirmed-by-all-5-agents" aria-label="Link to this section">#</a></h2>
+<blockquote><p><strong>Status:</strong> ✅ resolved — <code>App.xaml.cs</code> registers <code>AddDbContextFactory&lt;AppDbContext&gt;()</code>, every repository/service opens a context per operation and is a Singleton, and the shared-context <code>Task.Run</code> is gone. <code>EnsureCreated</code> was replaced by <code>SchemaUpgrader.EnsureSchemaAsync</code>; the migration baseline itself is still to be regenerated.</p>
+</blockquote>
 <h3 id="one-shared-never-disposed-appdbcontext-for-the-entire-app" class="anchored">One shared, never-disposed <code>AppDbContext</code> for the entire app<a class="heading-anchor" href="#one-shared-never-disposed-appdbcontext-for-the-entire-app" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><code>App.xaml.cs:80</code> registers <code>AddDbContext&lt;AppDbContext&gt;()</code> (<strong>Scoped</strong>), but
@@ -254,11 +303,13 @@ bridge EnsureCreated-born DBs (insert baseline history row, then migrate).</p>
 <hr>
 <h2 id="part-2--per-feature-audit" class="anchored">Part 2 — Per-feature audit<a class="heading-anchor" href="#part-2--per-feature-audit" aria-label="Link to this section">#</a></h2>
 <h3 id="21-event-creation--editing---broken-bug-1" class="anchored">2.1 Event creation / editing  — BROKEN (Bug 1)<a class="heading-anchor" href="#21-event-creation--editing---broken-bug-1" aria-label="Link to this section">#</a></h3>
-<p><strong>Should be:</strong> dialog Save takes <code>args.GetDeferral()</code>, awaits the VM call, and
+<blockquote><p><strong>Status:</strong> ✅ fixed — lowercase/case-insensitive category validation, dialog deferral with an in-dialog InfoBar, embedding generation rescoped, timeline navigates to the new event&#39;s date (<code>EventCreatedMessage</code>).
+<strong>Should be:</strong> dialog Save takes <code>args.GetDeferral()</code>, awaits the VM call, and
 on failure cancels the close and shows the error in-dialog; validation shares
 one source of truth with the UI (bind the ComboBox to
 <code>EventCategory.AllCategories</code> instead of duplicating string literals);
 category comparison case-insensitive; embeddings generated in their own scope.</p>
+</blockquote>
 <p><strong>Wrong now:</strong> capital-<code>&quot;Other&quot;</code> fallback vs lowercase validation
 (CRITICAL, CONFIRMED — Bug 1); silent error channel (CRITICAL, CONFIRMED);
 fire-and-forget embedding race (HIGH, CONFIRMED defect); empty-title/no-date
@@ -269,16 +320,20 @@ the same way if a stored category isn&#39;t in the combo list.</p>
 (InfoBar); (3) fix or remove the embedding <code>Task.Run</code>; (4) after a successful
 create, navigate the viewport to the event&#39;s date if it isn&#39;t visible.</p>
 <h3 id="22-timeline-render--refresh--sound-with-traps" class="anchored">2.2 Timeline render / refresh — SOUND, with traps<a class="heading-anchor" href="#22-timeline-render--refresh--sound-with-traps" aria-label="Link to this section">#</a></h3>
-<p>Render pipeline and refresh are correct. <strong>Must do:</strong> surface refresh errors
+<blockquote><p><strong>Status:</strong> ✅ fixed — refresh errors surface in the timeline InfoBar, Ctrl+R invokes <code>RefreshCommand</code> in place, and <code>EventCreated/Updated/Deleted</code> messages keep the singleton ViewModel current.
+Render pipeline and refresh are correct. <strong>Must do:</strong> surface refresh errors
 visibly; make Ctrl+R invoke <code>RefreshCommand</code> instead of re-navigating; add an
 event-created message (<code>WeakReferenceMessenger</code>) so approve/create flows
 refresh the singleton <code>TimelineViewModel</code> without renavigation (today an
 approved event only appears after a pan/zoom/resize —
 <code>TimelineControl.xaml.cs:86-90</code>, <code>TimelineViewModel.cs:699-724</code>).</p>
+</blockquote>
 <h3 id="23-search--broken-error-path--degraded-features-bug-2" class="anchored">2.3 Search — BROKEN error path + degraded features (Bug 2)<a class="heading-anchor" href="#23-search--broken-error-path--degraded-features-bug-2" aria-label="Link to this section">#</a></h3>
-<p><strong>Should be:</strong> context-per-operation; debounced (~300 ms) input with a
+<blockquote><p><strong>Status:</strong> ✅ fixed — context factory + debounced/cancellable autocomplete, <code>Tag.Name</code> → <code>TagName</code>, suggestions bound to the AutoSuggestBox, sort default aligned, <code>Search error: {message}</code>.
+<strong>Should be:</strong> context-per-operation; debounced (~300 ms) input with a
 <code>CancellationToken</code> per search that cancels the previous one; only mapped
 columns in predicates; errors surfaced with the message.</p>
+</blockquote>
 <p><strong>Wrong now (beyond the Bug 2 concurrency root cause):</strong></p>
 <ul>
 <li><code>[NotMapped] Tag.Name</code> used in EF queries (<code>IAdvancedSearchService.cs:236, 328</code>) — untranslatable → tag facets <strong>always throw</strong>, which aborts
@@ -295,7 +350,9 @@ save-search errors (PROBABLE, depends on user&#39;s DB).</li>
 per-keystroke autocomplete; (2) <code>Tag.Name</code> → <code>TagName</code>; (3) wire or remove the
 suggestions UI; (4) <code>StatusMessage = $&quot;Search error: {ex.Message}&quot;</code>.</p>
 <h3 id="24-audio-pipeline-record--stt--llm--review--not-functional-end-to-end" class="anchored">2.4 Audio pipeline (record → STT → LLM → review) — NOT FUNCTIONAL END-TO-END<a class="heading-anchor" href="#24-audio-pipeline-record--stt--llm--review--not-functional-end-to-end" aria-label="Link to this section">#</a></h3>
-<p>Four breaks in series (all CONFIRMED):</p>
+<blockquote><p><strong>Status:</strong> ✅ fixed — storage path under <code>%LOCALAPPDATA%</code>, local file-based Whisper STT (the live-mic stub was reduced to fail-fast and then deleted in 2026-10), transcripts persisted on the queue row, API-key pre-flight as a non-retryable <code>ConfigurationException</code>, atomic metadata-complete approve, <code>EventCreatedMessage</code> refresh, state re-attached from <code>GetRecordingState()</code>, Resume/Cancel buttons, <code>ProcessingProgressChanged</code> consumed, <code>AnthropicClaudeService</code> removed, LLM config re-read per call (<code>RoutingLlmService</code>). 2026-10 added a live input-level meter, a microphone picker, and audio file import.
+Four breaks in series (all CONFIRMED):</p>
+</blockquote>
 <ol>
 <li><strong>Recording cannot start in the checked-in configuration.</strong>
 <code>WindowsPackageType=None</code> (unpackaged) + <code>ApplicationData.Current</code>
@@ -335,6 +392,8 @@ recording room noise); persist the transcript; API-key pre-flight
 event-created message → timeline refresh; seed VM state from
 <code>GetRecordingState()</code> on page load; add Resume/Cancel buttons.</p>
 <h3 id="25-rag--connections--cannot-work-four-independent-blockers-all-confirmed" class="anchored">2.5 RAG / Connections — CANNOT WORK (four independent blockers, all CONFIRMED)<a class="heading-anchor" href="#25-rag--connections--cannot-work-four-independent-blockers-all-confirmed" aria-label="Link to this section">#</a></h3>
+<blockquote><p><strong>Status:</strong> ✅ fixed — OpenAI key field in Settings (and a local ONNX provider as the keyless default), &quot;View connections&quot; navigation carries the event id, queries use the mapped embedding column, cross-references are persisted via the repository and labelled as <strong>heuristic</strong> (no LLM call), provider/dimension set on save, zero-embedding CTA state. 2026-10: tag suggestions can be applied with one click.</p>
+</blockquote>
 <ol>
 <li><strong>No settings writer exists for <code>OpenAIApiKey</code></strong> — the embedding service
 reads <code>&quot;OpenAIApiKey&quot;</code>/<code>&quot;OpenAIEmbeddingModel&quot;</code> (<code>OpenAIEmbeddingService.cs:57-58</code>)
@@ -358,13 +417,16 @@ cross-references via the repository; implement real LLM relationship analysis
 or label results &quot;heuristic&quot; and drop the wasted call; set
 <code>EmbeddingProvider</code>/<code>Dimension</code> when saving; add a zero-embedding CTA state.</p>
 <h3 id="26-analytics--works" class="anchored">2.6 Analytics — WORKS<a class="heading-anchor" href="#26-analytics--works" aria-label="Link to this section">#</a></h3>
-<p>All queries are EF Core 8 / SQLite-translatable and every empty-DB edge
+<blockquote><p><strong>Status:</strong> ✅ the export button is implemented (no longer a &quot;coming soon&quot; stub); per-section errors surface.
+All queries are EF Core 8 / SQLite-translatable and every empty-DB edge
 (Max/Min/First/divide) is guarded. Residual: shared-context concurrency can
 blank sections silently (per-section catches swallow errors); the Export button
 is a &quot;coming soon&quot; stub; <code>StartDate</code> fetched 5× per load. Fix opportunistically
 after the DbContext factory.</p>
+</blockquote>
 <h3 id="27-settings--saves-dont-take-effect-confirmed" class="anchored">2.7 Settings — SAVES DON&#39;T TAKE EFFECT (CONFIRMED)<a class="heading-anchor" href="#27-settings--saves-dont-take-effect-confirmed" aria-label="Link to this section">#</a></h3>
-<p>Writer/reader key mismatch: <code>SettingsViewModel</code> saves PascalCase
+<blockquote><p><strong>Status:</strong> ✅ fixed — <code>SettingKeys</code> constants used by writers and readers, display casing normalized at the ViewModel boundary, the LLM client re-reads its configuration per call. 2026-10: Reset to Defaults uses the seeded values and keys can be removed (&quot;Clear key&quot;); the decorative audio boxes became a fixed-format note plus a microphone picker.
+Writer/reader key mismatch: <code>SettingsViewModel</code> saves PascalCase
 (<code>&quot;DefaultZoomLevel&quot;</code>, <code>&quot;LlmProvider&quot;</code>, <code>&quot;LlmModel&quot;</code> — lines 158-171) while
 <code>SettingsService</code> and all consumers read snake_case (<code>&quot;default_zoom_level&quot;</code>
 etc., <code>ISettingsService.cs:200-213</code>) matching the DB seeds. Result: settings
@@ -374,14 +436,19 @@ only until first use (singleton client caches it forever). <strong>Must do:</str
 <code>SettingKeys</code> constants class (snake_case), used by both sides; normalize
 display casing at the VM boundary; make <code>AnthropicLlmService</code> re-read config on
 settings change. Theme is the only setting that fully works.</p>
+</blockquote>
 <h3 id="28-export--import--export-broken-at-runtime-confirmed" class="anchored">2.8 Export / Import — EXPORT BROKEN AT RUNTIME (CONFIRMED)<a class="heading-anchor" href="#28-export--import--export-broken-at-runtime-confirmed" aria-label="Link to this section">#</a></h3>
-<p><code>ExportService.cs:206, 283</code> do <code>.Include(e =&gt; e.Tags)</code> — but <code>Event.Tags</code> is
+<blockquote><p><strong>Status:</strong> ✅ fixed — <code>.Include(e =&gt; e.EventTags).ThenInclude(et =&gt; et.Tag)</code>; import&#39;s <code>CreateBackup</code>/<code>SkipDuplicates</code>/<code>UpdateExisting</code> options are honored.
+<code>ExportService.cs:206, 283</code> do <code>.Include(e =&gt; e.Tags)</code> — but <code>Event.Tags</code> is
 <code>[NotMapped]</code> → <code>InvalidOperationException</code> on the first query → <strong>every
 JSON/CSV/Markdown/full export fails</strong>. Correct form:
 <code>.Include(e =&gt; e.EventTags).ThenInclude(et =&gt; et.Tag)</code>. Import&#39;s
 <code>CreateBackup</code>/<code>SkipDuplicates</code>/<code>UpdateExisting</code> options are decorative (never
 read). File-picker window-handle initialization is done correctly.</p>
+</blockquote>
 <h3 id="29-app-shell--windows-integration--dead-wiring-confirmed" class="anchored">2.9 App shell / Windows integration — DEAD WIRING (CONFIRMED)<a class="heading-anchor" href="#29-app-shell--windows-integration--dead-wiring-confirmed" aria-label="Link to this section">#</a></h3>
+<blockquote><p><strong>Status:</strong> ✅ fixed — one <code>INotificationService</code>, called from queue completion; <code>AddQuickActionsAsync()</code> in <code>OnLaunched</code>; activation arguments handled (cold start and redirected); <code>await _host.StopAsync()</code> before <code>Dispose()</code>. <strong>2026-10:</strong> <code>MainViewModel</code> implemented with Queue/Review <code>InfoBadge</code> counts; Jump List &quot;Recent Events&quot; fed from the messenger and the quick actions perform their actions; the Windows Timeline service was removed rather than wired (no callers, needs package identity, Timeline UI gone from Windows 11). The <code>AddTransient&lt;Page&gt;</code> registrations were removed as dead code.</p>
+</blockquote>
 <ul>
 <li><code>MainViewModel</code> is an empty TODO stub; the nav <code>InfoBadge</code>s have no value
 source (dead UI).</li>
@@ -481,6 +548,7 @@ design defect in its own right (adopt a visible <code>InfoBar</code> pattern app
 <aside class="toc" aria-label="On this page">
   <p class="toc-title">On this page</p>
   <ul class="toc-list">
+<li class="toc-item toc-h3"><a href="#status-2026-10-21" data-toc-link>Status (2026-10-21)</a></li>
 <li class="toc-item toc-h2"><a href="#part-0--root-causes-of-the-three-reported-bugs" data-toc-link>Part 0 — Root causes of the three reported bugs</a></li>
 <li class="toc-item toc-h3"><a href="#bug-1--save-does-nothing--root-cause-confirmed" data-toc-link>Bug 1 — &quot;Save does nothing&quot; · ROOT CAUSE CONFIRMED</a></li>
 <li class="toc-item toc-h3"><a href="#bug-2--search-error--root-cause-confirmed" data-toc-link>Bug 2 — &quot;search error&quot; · ROOT CAUSE CONFIRMED</a></li>

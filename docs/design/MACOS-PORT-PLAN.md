@@ -2,7 +2,8 @@
 
 **Status:** phases 0–4 shipped (skeleton, Keychain + sync pull, upload, capture, timeline
 projection, review decisions); phase 5's Ask pane is a thin client over the service's assistant
-endpoints with no Windows responder behind it yet; phase 6 (packaging) not started
+endpoints, answered by the Windows client's `AssistantTurnResponder` (narrative not started);
+phase 6 (packaging) not started
 **Target:** a native **SwiftUI** macOS app under [`macos-native/`](../../macos-native), sharing code with the iOS companion
 **Last updated:** 2026-10-21
 
@@ -235,7 +236,7 @@ Each phase is shippable and leaves the app in a usable state.
 | **2 — Capture** ✅ | macOS recorder, input device selection, menu-bar quick capture, File ▸ New Recording (⌘N), `memoryline://record` | §4.1 |
 | **3 — Timeline** ✅ | Read-only timeline, eras, people, review queue, fed by the projection feed | see "how phase 3 was actually solved" below |
 | **4 — Review decisions** ✅ | Approve/reject a pending event *from* the Mac | queued to disk, pushed as `pending_event_decision`, pruned when Windows confirms |
-| **5 — Ask & narrative** ◐ | Retrieval + LLM answers with citations | Ask: a thin client (`MacAskCoordinator`, `AskView`) submits turns to the service's assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; no Windows responder exists yet (tracked separately), so nothing answers today. Narrative: not started |
+| **5 — Ask & narrative** ◐ | Retrieval + LLM answers with citations | Ask: a thin client (`MacAskCoordinator`, `AskView`) submits turns to the service's assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; the Windows client answers through `MemoryTimeline.Sync`'s `AssistantTurnResponder` (Ask over the archive, citations included). Narrative: not started |
 | **6 — Packaging** | Notarisation, Sparkle or App Store, hardened runtime | entitlements already set |
 
 ### The decision that gated phases 3–5 — resolved, by a fourth option
@@ -273,8 +274,8 @@ Phase 4 assistant contract (`AssistantContracts.cs`) frames the answer as "Windo
 brain, with an option to link an LLM provider or pre-process on device" — option 2 in a
 different suit — and that is the route taken: the Mac's Ask pane is a client of the
 service's assistant endpoints and nothing else. The service stores, routes and reaps idle
-sessions; what is still missing is the Windows responder that claims an `assistant_turn`
-off the feed and answers it, which is tracked separately.
+sessions; the Windows client's `AssistantTurnResponder` claims an `assistant_turn` off the
+feed, answers it from the archive through `IMemoryQueryService` and pushes the answer back.
 
 **Consequence for the Mac's UI: it is a reader.** Timeline, Review and People render a copy
 and offer no editing. That is the design, not a shortfall, and the screens say so rather

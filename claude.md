@@ -69,8 +69,10 @@ await using var ctx = await _contextFactory.CreateDbContextAsync();
 - Because repositories/services are **stateless over the factory**, they are registered
   **Singleton**. Follow that when adding a new repository or service.
 - Startup uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL
-  repairs for schema drift on older DBs) — a deliberate stopgap until real EF migrations
-  are regenerated. Don't swap it for raw `EnsureCreated`.
+  repairs for schema drift on older DBs). A baseline EF migration now exists under
+  `MemoryTimeline.Data/Migrations` (generated with `dotnet ef` through
+  `AppDbContextDesignTimeFactory`), but nothing calls `Migrate()` yet; keep
+  `SchemaUpgrader` as the runtime path and don't swap it for raw `EnsureCreated`.
 
 ### MVVM & UI conventions
 
@@ -103,8 +105,8 @@ await using var ctx = await _contextFactory.CreateDbContextAsync();
 
 | Capability | Implementation | Notes |
 |------------|----------------|-------|
-| **Speech-to-text** | **Local Whisper** via `WhisperSpeechToTextService` (Whisper.net, ggml `base` model) | File-based, fully offline after a one-time ~140 MB model download to `%LOCALAPPDATA%\MemoryTimeline\Models\`. The recorded WAV is transcribed on-device — **not** the old Windows `SpeechRecognizer`, which is mic-only and can't transcribe a file. |
-| **LLM** (extraction, Ask, narratives, recall wording) | **Anthropic Claude** (`AnthropicLlmService`) **or** any **OpenAI-compatible endpoint** (`OpenAiCompatibleLlmService` — Ollama, LM Studio, vLLM) | `RoutingLlmService` is the registered `ILlmService`; it re-reads `llm_provider` on **every call**, so switching providers applies live. `ILlmUsageTracker` counts per-session calls/tokens for the Settings UI. |
+| **Speech-to-text** | **Local Whisper** via `WhisperSpeechToTextService` (Whisper.net; the ggml model and language come from `whisper_model` / `whisper_language`, default `base` / `auto`) | File-based, fully offline after a one-time model download to `%LOCALAPPDATA%\MemoryTimeline\Models\` (~140 MB for `base`). Non-WAV captures (an iPhone `.m4a`) are normalized to 16 kHz mono WAV at ingestion through the `IAudioNormalizer` port (`WindowsAudioNormalizer`, MediaTranscoder) before transcription. Transcription happens on-device — **not** the old Windows `SpeechRecognizer`, which is mic-only and can't transcribe a file. |
+| **LLM** (extraction, Ask, narratives, recall wording) | **Anthropic Claude** (`AnthropicLlmService`) **or** any **OpenAI-compatible endpoint** (`OpenAiCompatibleLlmService` — Ollama, LM Studio, vLLM) | `RoutingLlmService` is the registered `ILlmService`; it re-reads `llm_provider` on **every call**, so switching providers applies live. `ILlmUsageTracker` counts per-session calls/tokens for the Settings UI. Transient network, timeout, 429 and 5xx failures are retried with bounded jittered back-off (`HttpRetryPolicy`, Polly). |
 | **Embeddings (RAG / Ask)** | **Local ONNX** `all-MiniLM-L6-v2` (`OnnxEmbeddingService`, 384-dim, CPU execution provider) **or** **OpenAI** (`OpenAIEmbeddingService`, `AddHttpClient`) | `RoutingEmbeddingService` routes on `embedding_provider` (seeded default: `local`), so Connections/Ask semantic retrieval works with **no API key**. A dimension guard (`EmbeddingDimensionMismatchException`) blocks mixing 384/1536-dim vectors; Settings offers a re-embed flow. Local model (~90 MB + vocab) downloads once to `%LOCALAPPDATA%\MemoryTimeline\Models\all-MiniLM-L6-v2\`. |
 | **Geocoding** | Optional **Nominatim** via `NominatimGeocodingService` (`AddHttpClient`) | **Opt-in and OFF by default** (`geocoding_enabled`). When off, location coordinates come only from photo EXIF or manual pin drops — no place name leaves the machine. |
 
@@ -285,9 +287,11 @@ DB file: `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
   provider (which can itself be a local OpenAI-compatible endpoint).
 - **Geocoding is opt-in and off by default**; when enabled, only the location's name is
   sent to Nominatim. Media/EXIF processing is entirely local.
-- **API keys today live in the `app_settings` table** (not Windows Credential Manager —
-  that's stale). **Encrypting keys at rest with DPAPI (`ProtectedData`) is a tracked
-  follow-up**, not yet implemented. Don't describe key storage as encrypted; don't log keys.
+- **API keys and sync tokens live in the `app_settings` table** (not Windows Credential
+  Manager — that's stale), **stored DPAPI-protected** through the `ISecretProtector` port
+  (`DpapiSecretProtector`: `ProtectedData`, CurrentUser scope, `dpapi:v1:` prefix; legacy
+  plaintext rows are re-written protected on first read). A backup restored under another
+  Windows account reads those secrets as empty and they must be re-entered. Don't log keys.
 - Use parameterized EF Core queries (default with LINQ) — no string-built SQL.
 
 ---
@@ -298,7 +302,7 @@ DB file: `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
 |-----|--------------|
 | [`windows-native/README.md`](./windows-native/README.md) | Windows Native overview, setup, tech stack. |
 | [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT.md) | Feature-by-feature audit + root-cause analysis of the bugs the rework fixed. |
-| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Deferred hardening items (DPAPI, EF migrations, etc.). |
+| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Hardening items and their status (DPAPI and the EF baseline are done; the migration switch-over and others remain). |
 | [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md) | Phase-level status and next steps. |
 | Root [`README.md`](./README.md) | Product overview + "Recent engineering work" summary. |
 

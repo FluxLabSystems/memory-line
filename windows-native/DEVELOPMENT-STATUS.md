@@ -12,9 +12,10 @@
 **Date:** 2026-10-21
 
 A read-only audit of the WinUI head found a set of registered-but-dead or decorative
-surfaces; this pass wired or removed them (companion Core changes — DPAPI secret
-protection, non-WAV audio normalization, cross-reference heuristics, seed parity —
-landed alongside in a separate change):
+surfaces; this pass wired or removed them, and the companion Core changes — DPAPI
+secret protection, non-WAV audio normalization, cross-reference heuristics, seed
+parity, the projection backfill and the assistant responder — landed in the same
+change:
 
 - **Shell:** `MainViewModel` implemented (Queue / Review `InfoBadge` counts, refreshed from
   queue status events and messenger signals); NavigationView selection and back button now
@@ -261,8 +262,9 @@ client.
   migrations); the startup DDL now also creates the capture_status, assistant
   and trip tables, so upgrades across those phases no longer require deleting
   `sync.db` (see services/README.md).
-- Sync tokens are stored in the Windows app's settings table like the other
-  keys; DPAPI-at-rest remains the tracked hardening follow-up.
+- ✅ Sync tokens are stored in the Windows app's settings table like the other
+  keys, through the `ISecretProtector` port (DPAPI on Windows; legacy plaintext
+  rows are re-written in protected form on first read).
 - ✅ Artifact retention per the resolved design §22 decisions: artifact bytes are
   purged 14 days after Windows acknowledges a `completed` capture_status
   (`ArtifactRetentionDays`), or oldest-acknowledged-first under
@@ -387,9 +389,10 @@ ONNX embedder (CPU is used).
 
 **Honest caveats:** all of the above is code-complete and CI-green, but **runtime
 validation on a real Windows machine is still pending** — none of the new features have
-been exercised end-to-end outside tests. The **EF migration baseline has still not been
-regenerated**; every schema addition above ships through `SchemaUpgrader`'s idempotent
-DDL, and API keys remain plaintext in `app_settings` (DPAPI still a follow-up).
+been exercised end-to-end outside tests. A **baseline EF migration now exists**
+(`Data/Migrations/20261022004346_InitialCreate`), but every schema addition still ships
+through `SchemaUpgrader`'s idempotent DDL at runtime; API keys and sync tokens are
+DPAPI-protected through `ISecretProtector`.
 
 ---
 
@@ -464,10 +467,10 @@ remaining Phase 7 work is runtime verification plus the follow-ups listed below.
   the built test assembly with `dotnet vstest`; both gate the run.
 
 **Immediate follow-ups (see `HARDENING-FOLLOWUPS.md`):** end-to-end runtime
-validation; DPAPI encryption of API keys at rest (in progress in Core); regenerate the
-EF migration baseline; Whisper model/language options; MSIX packaging + Microsoft Store
-submission. (Analytics export landed; the tests were moved to the context factory and
-gate CI.)
+validation; switching existing databases from `SchemaUpgrader` to the generated
+migration baseline; MSIX packaging + Microsoft Store submission. (DPAPI protection of
+keys and tokens, the EF baseline migration, the Whisper model/language options and
+analytics export have landed; the tests were moved to the context factory and gate CI.)
 
 ---
 
@@ -569,7 +572,7 @@ Implemented complete database layer, settings system, navigation framework, and 
 - [x] **Settings System**
   - [x] SettingsService with Windows.Storage integration
   - [x] Strongly-typed settings models
-  - [x] API key storage in the `app_settings` table (Windows Credential Manager was never used; DPAPI protection at rest is being added in Core — until then keys are plaintext)
+  - [x] API key storage in the `app_settings` table, DPAPI-protected through `ISecretProtector` (Windows Credential Manager was never used)
   - [x] Theme settings (Light/Dark)
   - [x] LLM configuration settings
   - [x] Audio quality settings
@@ -753,7 +756,7 @@ Implemented RAG (Retrieval-Augmented Generation) capabilities with vector embedd
   - [x] IRagService interface
   - [x] RagService implementation
   - [x] Similarity search (find similar events)
-  - [x] Cross-reference detection — **heuristic** (date/category relations; Participatory and Locational heuristics are being added in Core), persisted through `ICrossReferenceRepository`
+  - [x] Cross-reference detection — **heuristic**, four relationship types (Temporal, Participatory via shared people, Locational via shared locations, Thematic via category/tags), persisted through `ICrossReferenceRepository`
   - [x] Pattern detection (categories, clusters, transitions)
   - [x] Tag suggestions based on similarity (with a one-click Add on the Connections page; 2026-10)
   - [ ] ~~LLM-powered relationship analysis~~ — not implemented; cross-references are heuristic and involve no LLM call
@@ -1109,7 +1112,7 @@ submission) has neither a start nor a target date.
    tests, UI tests (WinAppDriver) and coverage reporting are still absent (Phase 7)
 3. **EF migrations:** Stale migrations deleted; a real migration baseline still needs
    regenerating — all 2026-08 schema additions ship via `SchemaUpgrader.EnsureSchemaAsync`
-4. **API keys:** Stored in plaintext; DPAPI encryption is a follow-up
+4. **API keys:** DPAPI-protected at rest through `ISecretProtector` (CurrentUser scope); a backup restored under another Windows account must have its keys re-entered
 5. **Performance:** Not yet validated with 5000+ events (Phase 7)
 6. **MSIX Package / Store Submission:** Not created or submitted yet (Phase 7)
 7. **ONNX acceleration:** The local embedder runs on the CPU execution provider;
@@ -1170,9 +1173,9 @@ These reflect the real post-audit follow-ups (see `HARDENING-FOLLOWUPS.md`).
      currently uses `SchemaUpgrader.EnsureSchemaAsync`).
 
 3. **Security & config hardening**
-   - Encrypt API keys at rest via DPAPI / `ProtectedData` (in progress in Core).
-   - Add Whisper model/language options (`SettingKeys` reserves `whisper_model` /
-     `whisper_language`; no UI yet). Analytics export is done.
+   - ~~Encrypt API keys at rest via DPAPI / `ProtectedData`~~ — done (`ISecretProtector` / `DpapiSecretProtector`).
+   - ~~Add Whisper model/language options~~ — done (`whisper_model` / `whisper_language`, chosen in
+     Settings and read per transcription). Analytics export is done.
 
 4. **Testing & performance baseline**
    - The xUnit structure, SQLite test factory and EventService tests exist and gate CI;

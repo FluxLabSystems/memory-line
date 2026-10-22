@@ -130,8 +130,8 @@
   <p class="doc-lede">Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>561</b> words</span>
-    <span class="doc-meta-item"><b>3</b> min read</span>
+    <span class="doc-meta-item"><b>862</b> words</span>
+    <span class="doc-meta-item"><b>4</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/HARDENING-FOLLOWUPS.md" target="_blank" rel="noopener noreferrer">
       windows-native/HARDENING-FOLLOWUPS.md ↗
     </a>
@@ -145,11 +145,15 @@ pass. The applied fixes are in the commit that adds this file; the items below
 were intentionally <strong>not</strong> auto-fixed because they require a compiler to verify a
 non-trivial refactor, a public-API/DI change spanning layers, or a team decision.</p>
 <blockquote><p>Context: the pass was performed statically (no .NET SDK in the environment).
-<strong>Before release, run <code>dotnet build</code> on <code>src/MemoryTimeline.sln</code> and execute the
-test suite</strong> to validate all applied fixes.</p>
+<strong>Before release, build <code>src/MemoryTimeline.sln</code> with Visual Studio 2026 / <code>msbuild</code>
+(<code>/t:Restore,Build /p:Platform=x64</code> — not <code>dotnet build</code>, which fails on the WinUI PRI
+task) and run the built test assembly with <code>dotnet vstest</code></strong>, as CI does, to validate
+all applied fixes.</p>
+</blockquote>
+<blockquote><p><strong>Status key (updated 2026-10-22):</strong> ✅ resolved · ⬜ still open.</p>
 </blockquote>
 <h2 id="high-priority" class="anchored">High priority<a class="heading-anchor" href="#high-priority" aria-label="Link to this section">#</a></h2>
-<h3 id="1-captive--scope-captured-dbcontext--converged-flag-from-3-agents" class="anchored">1. Captive / scope-captured <code>DbContext</code>  <em>(converged flag from 3 agents)</em><a class="heading-anchor" href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents" aria-label="Link to this section">#</a></h3>
+<h3 id="1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" class="anchored">1. Captive / scope-captured <code>DbContext</code>  <em>(converged flag from 3 agents)</em> — ✅ resolved<a class="heading-anchor" href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" aria-label="Link to this section">#</a></h3>
 <p><code>TimelineViewModel</code> is registered <code>AddSingleton</code> (App.xaml.cs) but depends on
 <code>ITimelineService</code>/<code>IEventService</code> (Scoped) → <code>AppDbContext</code> (Scoped). Pages also
 resolve their VMs from the <strong>root</strong> provider (<code>App.Current.Services.GetRequiredService&lt;…&gt;</code>),
@@ -164,14 +168,20 @@ from singleton.&quot;</em></li>
 <code>AddDbContextFactory&lt;AppDbContext&gt;()</code> and create a per-operation context in
 services, <strong>or</strong> resolve VMs/pages inside an explicit <code>IServiceScope</code>. Touches
 App DI + every repository/service ctor, so it was not done blind.</p>
-<h3 id="2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents" class="anchored">2. <code>EventService.CreateEventAsync</code> fire-and-forget embedding  <em>(Core + Tests agents)</em><a class="heading-anchor" href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents" aria-label="Link to this section">#</a></h3>
+<p><strong>Resolution:</strong> <code>App.xaml.cs</code> registers <code>AddDbContextFactory&lt;AppDbContext&gt;()</code>; every
+repository and service opens a short-lived context per operation
+(<code>await using var ctx = await _contextFactory.CreateDbContextAsync()</code>) and is registered
+Singleton. This is now the data-access rule in <code>claude.md</code>.</p>
+<h3 id="2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents---resolved" class="anchored">2. <code>EventService.CreateEventAsync</code> fire-and-forget embedding  <em>(Core + Tests agents)</em> — ✅ resolved<a class="heading-anchor" href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents---resolved" aria-label="Link to this section">#</a></h3>
 <p><code>_ = Task.Run(() =&gt; GenerateEmbeddingForEventAsync(createdEvent))</code> reuses the
 request-scoped <code>AppDbContext</code> on a background thread → <code>ObjectDisposedException</code> /
 &quot;second operation on this context&quot; once a real <code>IEmbeddingService</code> is registered.
 Currently masked by an internal catch (embeddings silently fail).
 <strong>Fix:</strong> inject <code>IServiceScopeFactory</code>, create a fresh scope+context for the
 background work (ctor change → flagged rather than applied).</p>
-<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em><a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release" aria-label="Link to this section">#</a></h3>
+<p><strong>Resolution:</strong> the shared-context <code>Task.Run</code> went away with the factory rework; the
+embedding path opens its own context per operation.</p>
+<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em> — ✅ baseline regenerated (runtime path unchanged)<a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" aria-label="Link to this section">#</a></h3>
 <p><code>AppDbContextModelSnapshot</code> is an empty stub and <code>InitialCreate</code> is far behind the
 model (missing tables <code>era_categories</code>, <code>era_tags</code>, <code>milestones</code>, <code>saved_searches</code>;
 missing columns on <code>eras</code>/<code>events</code>/<code>tags</code>; missing <code>cross_references</code> FKs; missing
@@ -179,35 +189,57 @@ seed <code>InsertData</code>). Runtime is fine today because startup uses <code>
 (schema built from the model), but <strong>any migration-based deploy will fail</strong>.
 <strong>Fix:</strong> on a machine with the SDK, regenerate the baseline
 (<code>dotnet ef migrations add InitialCreate --force</code>) before shipping migrations.</p>
+<p><strong>Current state (2026-10-22):</strong> a baseline migration
+(<code>Data/Migrations/20261022004346_InitialCreate</code> + snapshot; 25 tables, both seeds) was
+generated with <code>dotnet ef</code> through the new <code>AppDbContextDesignTimeFactory</code>. Startup still
+uses <code>SchemaUpgrader.EnsureSchemaAsync</code> (EnsureCreated + idempotent DDL repairs) and
+nothing calls <code>Migrate()</code>; moving existing EnsureCreated-built databases onto migrations
+still needs a history-table baseline step, which remains open.</p>
 <h2 id="medium-priority" class="anchored">Medium priority<a class="heading-anchor" href="#medium-priority" aria-label="Link to this section">#</a></h2>
 <ul>
-<li><strong>Unit-of-work / atomicity</strong> — multi-repository workflows (e.g. approve pending →
-create Event + delete PendingEvent) each call <code>SaveChangesAsync</code> independently and
-are not atomic. Introduce an explicit transaction / unit-of-work at the service layer.</li>
-<li><strong>Polly referenced but unused</strong> — add a bounded, transient-only retry with jitter
-(and a timeout) around the Anthropic and OpenAI network calls (<code>AddHttpClient</code> +
-SDK call sites).</li>
-<li><strong><code>CrossReference</code> delete behavior = <code>Restrict</code></strong> — deleting an <code>Event</code> referenced
-by a RAG-generated cross-reference will throw once FK enforcement is on. <code>Cascade</code>
-is likely intended but has data-loss implications — needs sign-off.</li>
-<li><strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
+<li>✅ (approve path) / ⬜ (elsewhere) <strong>Unit-of-work / atomicity</strong> — multi-repository
+workflows (e.g. approve pending → create Event + delete PendingEvent) each call
+<code>SaveChangesAsync</code> independently and are not atomic. Introduce an explicit
+transaction / unit-of-work at the service layer. <em>Approve is now one atomic
+transaction (event + tags/people/locations + pending-event delete); other multi-step
+workflows still save independently.</em></li>
+<li>✅ <strong>Polly referenced but unused</strong> — <code>Core/Services/HttpRetryPolicy.cs</code> (Polly 8
+<code>ResiliencePipeline</code>: 3 retries, 500 ms exponential back-off with jitter, 4 s cap;
+retries transport errors, timeouts, 408/429/5xx, never caller cancellation or other
+4xx) wraps the OpenAI-compatible LLM, OpenAI embeddings, Nominatim (no 429 retry)
+and the Anthropic SDK call.</li>
+<li>✅ <strong><code>CrossReference</code> delete behavior = <code>Restrict</code></strong> — the FK stays <code>Restrict</code>;
+<code>EventRepository.DeleteAsync</code>/<code>DeleteRangeAsync</code> remove the cross-references naming
+the event at either end in the same <code>SaveChanges</code>, proven by a file-backed SQLite test
+with <code>PRAGMA foreign_keys</code> on.</li>
+<li>⬜ <strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
 are <code>string</code> bound directly to <code>Brush</code> properties via <code>x:Bind</code> in <code>AnalyticsPage.xaml</code>.
 Expose a <code>Brush</code>/<code>SolidColorBrush</code> on the model (as the timeline DTOs do with
-<code>ColorBrush</code>) or add a string→Brush converter.</li>
+<code>ColorBrush</code>) or add a string→Brush converter. <em>Not re-verified in the 2026-10 pass;
+the project&#39;s convention is now hex strings in Core + <code>HexToBrushConverter</code> in the view.</em></li>
 </ul>
 <h2 id="low-priority" class="anchored">Low priority<a class="heading-anchor" href="#low-priority" aria-label="Link to this section">#</a></h2>
 <ul>
-<li><strong>API keys stored plaintext</strong> in <code>AppSettings</code> — encrypt at rest via DPAPI /
-<code>ProtectedData</code> at the settings/Data layer (keys are not logged or hardcoded today).</li>
-<li><strong><code>CancellationToken</code> not plumbable</strong> through <code>IRepository&lt;T&gt;</code> and specialized repo
+<li>✅ <strong>API keys stored plaintext</strong> in <code>AppSettings</code> — <code>SettingsService</code> stores the
+Anthropic key, <code>embedding_api_key</code> and the sync tokens through the <code>ISecretProtector</code>
+port (<code>DpapiSecretProtector</code> in the head: <code>ProtectedData</code>, CurrentUser scope,
+<code>dpapi:v1:</code> prefix); legacy plaintext rows are re-written in protected form on first
+read. A backup restored under another Windows account reads those secrets as empty and
+they must be re-entered. Keys can also be removed from Settings (&quot;Clear key&quot; / Reset
+to Defaults).</li>
+<li>⬜ <strong><code>CancellationToken</code> not plumbable</strong> through <code>IRepository&lt;T&gt;</code> and specialized repo
 interfaces — add <code>CancellationToken ct = default</code> in a coordinated interface change.</li>
-<li><strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; add a UTC
-<code>ValueConverter</code> on <code>DateTime</code> properties to avoid local/UTC comparison bugs.</li>
-<li><strong>Inclusive viewport boundaries</strong> — <code>EventLayoutEngine.GetVisibleLayouts</code> /
+<li>⬜ <strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; add a UTC
+<code>ValueConverter</code> on <code>DateTime</code> properties to avoid local/UTC comparison bugs.
+<em>Related: <code>Microsoft.Data.Sqlite.Pre10TimeZoneHandling</code> is pinned at both entry
+points; auditing the stored values is still open (see DEVELOPMENT-STATUS).</em></li>
+<li>⬜ <strong>Inclusive viewport boundaries</strong> — <code>EventLayoutEngine.GetVisibleLayouts</code> /
 <code>TimelineViewport.IsEventVisible</code> treat edge-touching (zero-area) events as visible
 on both ends. Internally consistent (tests aligned to it); confirm it&#39;s intended.</li>
-<li><strong>Singleton <code>AnthropicLlmService</code> caches <code>_model</code></strong> at first init — a later model
-change in settings needs an app restart.</li>
+<li>✅ <strong>Singleton <code>AnthropicLlmService</code> caches <code>_model</code></strong> at first init — a later model
+change in settings needs an app restart. <em>Resolved: <code>RoutingLlmService</code> is the
+registered <code>ILlmService</code> and re-reads provider/model/key on every call, so Settings
+changes apply live.</em></li>
 </ul>
 
 <nav class="pager" aria-label="Document navigation">
@@ -225,9 +257,9 @@ change in settings needs an app restart.</li>
   <p class="toc-title">On this page</p>
   <ul class="toc-list">
 <li class="toc-item toc-h2"><a href="#high-priority" data-toc-link>High priority</a></li>
-<li class="toc-item toc-h3"><a href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents" data-toc-link>1. Captive / scope-captured DbContext  (converged flag from 3 agents)</a></li>
-<li class="toc-item toc-h3"><a href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents" data-toc-link>2. EventService.CreateEventAsync fire-and-forget embedding  (Core + Tests agents)</a></li>
-<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release)</a></li>
+<li class="toc-item toc-h3"><a href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" data-toc-link>1. Captive / scope-captured DbContext  (converged flag from 3 agents) — ✅ resolved</a></li>
+<li class="toc-item toc-h3"><a href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents---resolved" data-toc-link>2. EventService.CreateEventAsync fire-and-forget embedding  (Core + Tests agents) — ✅ resolved</a></li>
+<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release) — ✅ baseline regenerated (runtime path unchanged)</a></li>
 <li class="toc-item toc-h2"><a href="#medium-priority" data-toc-link>Medium priority</a></li>
 <li class="toc-item toc-h2"><a href="#low-priority" data-toc-link>Low priority</a></li>
   </ul>

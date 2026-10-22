@@ -134,7 +134,7 @@
   <p class="doc-lede">Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,101</b> words</span>
+    <span class="doc-meta-item"><b>3,105</b> words</span>
     <span class="doc-meta-item"><b>14</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/MACOS-PORT-PLAN.md" target="_blank" rel="noopener noreferrer">
       docs/design/MACOS-PORT-PLAN.md ↗
@@ -146,7 +146,8 @@
   <article class="prose">
 <p><strong>Status:</strong> phases 0–4 shipped (skeleton, Keychain + sync pull, upload, capture, timeline
 projection, review decisions); phase 5&#39;s Ask pane is a thin client over the service&#39;s assistant
-endpoints with no Windows responder behind it yet; phase 6 (packaging) not started
+endpoints, answered by the Windows client&#39;s <code>AssistantTurnResponder</code> (narrative not started);
+phase 6 (packaging) not started
 <strong>Target:</strong> a native <strong>SwiftUI</strong> macOS app under <a href="https://github.com/ethanbissbort/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>, sharing code with the iOS companion<br><strong>Last updated:</strong> 2026-10-21  </p>
 <hr>
 <blockquote><p><strong>Scope changed 2026-08-08.</strong> This plan was written for macOS as a <em>companion</em> to a
@@ -457,7 +458,7 @@ menu-bar item for quick capture.</p>
 <tr>
 <td><strong>5 — Ask &amp; narrative</strong> ◐</td>
 <td>Retrieval + LLM answers with citations</td>
-<td>Ask: a thin client (<code>MacAskCoordinator</code>, <code>AskView</code>) submits turns to the service&#39;s assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; no Windows responder exists yet (tracked separately), so nothing answers today. Narrative: not started</td>
+<td>Ask: a thin client (<code>MacAskCoordinator</code>, <code>AskView</code>) submits turns to the service&#39;s assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; the Windows client answers through <code>MemoryTimeline.Sync</code>&#39;s <code>AssistantTurnResponder</code> (Ask over the archive, citations included). Narrative: not started</td>
 </tr>
 <tr>
 <td><strong>6 — Packaging</strong></td>
@@ -497,8 +498,8 @@ Phase 4 assistant contract (<code>AssistantContracts.cs</code>) frames the answe
 brain, with an option to link an LLM provider or pre-process on device&quot; — option 2 in a
 different suit — and that is the route taken: the Mac&#39;s Ask pane is a client of the
 service&#39;s assistant endpoints and nothing else. The service stores, routes and reaps idle
-sessions; what is still missing is the Windows responder that claims an <code>assistant_turn</code>
-off the feed and answers it, which is tracked separately.</p>
+sessions; the Windows client&#39;s <code>AssistantTurnResponder</code> claims an <code>assistant_turn</code> off the
+feed, answers it from the archive through <code>IMemoryQueryService</code> and pushes the answer back.</p>
 <p><strong>Consequence for the Mac&#39;s UI: it is a reader.</strong> Timeline, Review and People render a copy
 and offer no editing. That is the design, not a shortfall, and the screens say so rather
 than hiding it.</p>

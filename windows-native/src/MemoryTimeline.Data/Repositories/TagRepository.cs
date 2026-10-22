@@ -128,10 +128,12 @@ public class TagRepository : ITagRepository
 
     public async Task<IEnumerable<Tag>> SearchByNameAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
+        // User text: % and _ in the term are escaped and read literally.
+        var pattern = SqlLikePattern.Contains(searchTerm);
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Tags
             .AsNoTracking()
-            .Where(t => EF.Functions.Like(t.TagName, $"%{searchTerm}%"))
+            .Where(t => EF.Functions.Like(t.TagName, pattern, SqlLikePattern.Escape))
             .OrderBy(t => t.TagName)
             .ToListAsync(cancellationToken);
     }

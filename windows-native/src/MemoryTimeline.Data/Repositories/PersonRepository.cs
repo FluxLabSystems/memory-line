@@ -121,12 +121,14 @@ public class PersonRepository : IPersonRepository
 
     public async Task<IEnumerable<Person>> SearchByNameAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
+        // User text: % and _ in the term are escaped and read literally.
+        var pattern = SqlLikePattern.Contains(searchTerm);
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Tombstones (merged-away people) never surface in name search: they
         // keep their names but hold zero event links after the merge.
         return await context.People
             .AsNoTracking()
-            .Where(p => p.MergedIntoId == null && EF.Functions.Like(p.Name, $"%{searchTerm}%"))
+            .Where(p => p.MergedIntoId == null && EF.Functions.Like(p.Name, pattern, SqlLikePattern.Escape))
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
     }

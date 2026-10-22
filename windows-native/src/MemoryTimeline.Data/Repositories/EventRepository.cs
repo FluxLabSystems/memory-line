@@ -262,15 +262,16 @@ public class EventRepository : IEventRepository
     public async Task<IEnumerable<Event>> SearchAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
         // Note: Full-text search using FTS5 would require raw SQL
-        // For now, using basic LIKE search
-        var term = $"%{searchTerm}%";
+        // For now, using basic LIKE search. The term is user text, so its
+        // % and _ are escaped and read literally (see SqlLikePattern).
+        var term = SqlLikePattern.Contains(searchTerm);
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.Events
             .Include(e => e.Era)
             .AsNoTracking() // Read-only optimization
-            .Where(e => EF.Functions.Like(e.Title, term) ||
-                       EF.Functions.Like(e.Description ?? "", term) ||
-                       EF.Functions.Like(e.RawTranscript ?? "", term))
+            .Where(e => EF.Functions.Like(e.Title, term, SqlLikePattern.Escape) ||
+                       EF.Functions.Like(e.Description ?? "", term, SqlLikePattern.Escape) ||
+                       EF.Functions.Like(e.RawTranscript ?? "", term, SqlLikePattern.Escape))
             .OrderByDescending(e => e.StartDate)
             .ToListAsync(cancellationToken);
     }

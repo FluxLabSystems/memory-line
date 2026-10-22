@@ -102,8 +102,10 @@ public class LocationRepository : ILocationRepository
 
     public async Task<IEnumerable<Location>> SearchByNameAsync(string searchTerm, CancellationToken cancellationToken = default)
     {
+        // User text: % and _ in the term are escaped and read literally.
+        var pattern = SqlLikePattern.Contains(searchTerm);
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        return await context.Locations.AsNoTracking().Where(l => EF.Functions.Like(l.Name, $"%{searchTerm}%")).OrderBy(l => l.Name).ToListAsync(cancellationToken);
+        return await context.Locations.AsNoTracking().Where(l => EF.Functions.Like(l.Name, pattern, SqlLikePattern.Escape)).OrderBy(l => l.Name).ToListAsync(cancellationToken);
     }
 
     public async Task<IEnumerable<Location>> GetLocationsForEventAsync(string eventId, CancellationToken cancellationToken = default)

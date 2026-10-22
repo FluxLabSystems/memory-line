@@ -100,9 +100,12 @@ still needs a history-table baseline step, which remains open.
   `ValueConverter` on `DateTime` properties to avoid local/UTC comparison bugs.
   *Related: `Microsoft.Data.Sqlite.Pre10TimeZoneHandling` is pinned at both entry
   points; auditing the stored values is still open (see DEVELOPMENT-STATUS).*
-- ⬜ **Inclusive viewport boundaries** — `EventLayoutEngine.GetVisibleLayouts` /
-  `TimelineViewport.IsEventVisible` treat edge-touching (zero-area) events as visible
-  on both ends. Internally consistent (tests aligned to it); confirm it's intended.
+- ✅ **Inclusive viewport boundaries** — closed: inclusive is intended. The predicate the
+  timeline actually renders with is `TimelineCoordinateConverter.IsRangeVisible` (closed on
+  both ends, matching the data layer's overlap query, so an edge-touching event is loaded
+  and drawn consistently); the decision is recorded on it and on
+  `TimelineViewport.IsEventVisible`. `EventLayoutEngine` / `EventLayout.cs` had no
+  production caller and were deleted together with `EventLayoutEngineTests.cs` (2026-10).
 - ✅ **Singleton `AnthropicLlmService` caches `_model`** at first init — a later model
   change in settings needs an app restart. *Resolved: `RoutingLlmService` is the
   registered `ILlmService` and re-reads provider/model/key on every call, so Settings

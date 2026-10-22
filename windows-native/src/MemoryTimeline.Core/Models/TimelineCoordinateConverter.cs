@@ -96,7 +96,15 @@ public class TimelineCoordinateConverter
     }
 
     /// <summary>
-    /// Checks if a date range overlaps with the visible viewport.
+    /// Checks if a date range overlaps with the visible viewport. This is the
+    /// visibility predicate the timeline actually renders with
+    /// (TimelineService's event/era positioning).
+    /// Boundaries are INCLUSIVE by design: an event whose end is exactly the
+    /// visible start, or whose start is exactly the visible end, counts as
+    /// visible. A pin sitting on the viewport edge is drawn rather than
+    /// popping in a pixel later, and the same closed interval is what the
+    /// data layer's overlap query uses, so what is loaded and what is drawn
+    /// agree. A point event (null end) is a zero-length range at its start.
     /// </summary>
     public bool IsRangeVisible(DateTime start, DateTime? end)
     {

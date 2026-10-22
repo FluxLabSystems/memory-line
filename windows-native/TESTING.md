@@ -19,7 +19,7 @@ MemoryTimeline.Tests/
 │   ├── ImportServiceTests.cs
 │   └── RagServiceTests.cs
 ├── Models/                     # Pure model/logic tests (no DB)
-│   ├── EventLayoutEngineTests.cs
+│   ├── TimeRulerConfigTests.cs
 │   ├── TimelineViewportTests.cs
 │   └── TimelineScaleTests.cs
 ├── Integration/                # Integration tests against a real SQLite file DB
@@ -464,7 +464,7 @@ dir -Recurse -Filter "*.cobertura.xml"
 Approximate current suite (as of Phase 7):
 - **Service tests** (`Services/`): EventService, TimelineService, SettingsService
 - **Unit tests** (`UnitTests/`): Queue, Export, Import, Rag
-- **Model tests** (`Models/`): layout engine, viewport, scale
+- **Model tests** (`Models/`): time ruler, viewport, scale, lanes, map, tokenizer, date precision
 - **Integration tests** (`Integration/`): ~9 database tests on a real SQLite file DB
 - **Performance tests** (`Performance/`): ~10 load/scalability tests
 - **Coverage**: target > 80% (aspirational, not measured)

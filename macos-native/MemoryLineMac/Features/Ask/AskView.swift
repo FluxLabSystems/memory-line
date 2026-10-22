@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Ask pane: type a question, read the answer your Windows PC sends back.
 ///
-/// A thin client over `MacAskCoordinator`, and deliberately so. The archive,
+/// A thin client over the shared `AskCoordinator`, and deliberately so. The archive,
 /// the retrieval index and the prompts live on Windows (`MemoryTimeline.Core`);
 /// this pane submits a turn to the sync service and renders whatever state the
 /// service holds for it. While a turn is `pending` that state is "your PC has

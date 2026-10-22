@@ -4,6 +4,7 @@ using Anthropic.SDK.Messaging;
 using MemoryTimeline.Data.Models;
 using Microsoft.Extensions.Logging;
 using Polly;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -19,6 +20,7 @@ public class AnthropicLlmService : ILlmService
     private readonly ILogger<AnthropicLlmService> _logger;
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     private readonly ResiliencePipeline _retry;
+    private readonly HttpClient? _httpClient;
     private AnthropicClient? _client;
     private string? _clientApiKey;
     private string? _model;
@@ -30,9 +32,25 @@ public class AnthropicLlmService : ILlmService
     public AnthropicLlmService(
         ISettingsService settingsService,
         ILogger<AnthropicLlmService> logger)
+        : this(settingsService, logger, httpClient: null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: an <see cref="HttpClient"/> handed to the SDK client so a
+    /// stub handler can answer the Messages API. Deliberately internal and
+    /// NOT a DI-visible optional parameter: the app registers a shared
+    /// HttpClient for the sync service, and letting the container inject it
+    /// here would put the Anthropic API key in that client's default headers.
+    /// </summary>
+    internal AnthropicLlmService(
+        ISettingsService settingsService,
+        ILogger<AnthropicLlmService> logger,
+        HttpClient? httpClient)
     {
         _settingsService = settingsService;
         _logger = logger;
+        _httpClient = httpClient;
         // The SDK owns its HttpClient and surfaces failures as exceptions, so
         // only transport failures can be told apart from a refused request.
         _retry = HttpRetryPolicy.CreateForExceptions(_logger, "Claude API request");
@@ -49,12 +67,14 @@ public class AnthropicLlmService : ILlmService
     /// <summary>
     /// Extracts events from transcript with context.
     /// </summary>
-    public async Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context)
+    public async Task<EventExtractionResult> ExtractEventsAsync(
+        string transcript, ExtractionContext? context, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogInformation("Starting event extraction from transcript ({Length} chars)", transcript.Length);
 
             // Initialize client if needed
@@ -99,7 +119,7 @@ public class AnthropicLlmService : ILlmService
             var client = _client;
             var response = await _retry.ExecuteAsync(
                 async token => await client.Messages.GetClaudeMessageAsync(parameters, token),
-                CancellationToken.None);
+                cancellationToken);
 
             _logger.LogInformation("Received response from Claude API");
 
@@ -163,6 +183,12 @@ public class AnthropicLlmService : ILlmService
                 result.Events.Count, result.OverallConfidence);
 
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller cancelled: not a failed extraction, so it must not
+            // become an unsuccessful result the queue would retry.
+            throw;
         }
         catch (Exception ex)
         {
@@ -244,6 +270,73 @@ public class AnthropicLlmService : ILlmService
         return textContent.Text.Trim();
     }
 
+    /// <summary>
+    /// Streams a completion through the SDK's
+    /// <c>Messages.StreamClaudeMessageAsync</c> (Anthropic.SDK 5.8.0): with
+    /// <c>Stream = true</c> it yields one <see cref="MessageResponse"/> per
+    /// server-sent event, and the <c>content_block_delta</c> events carry the
+    /// next piece of text in <c>Delta.Text</c>; every other event (message
+    /// start/stop, block boundaries, usage) has no text and is skipped. The
+    /// system prompt is combined into the user turn exactly as in
+    /// <see cref="CompleteAsync"/>, so both paths see the same instructions.
+    /// The call is not wrapped in the retry pipeline: a retry after the first
+    /// delta would replay text the caller has already shown.
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamCompletionAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens = 2000,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        await InitializeClientAsync();
+
+        if (_client == null)
+        {
+            throw new ConfigurationException("Anthropic API key not configured — add it in Settings");
+        }
+
+        var combinedPrompt = string.IsNullOrWhiteSpace(systemPrompt)
+            ? userPrompt
+            : $"<system_instructions>\n{systemPrompt}\n</system_instructions>\n\n{userPrompt}";
+
+        var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
+        var parameters = new MessageParameters
+        {
+            Messages = new List<Message>
+            {
+                new Message(RoleType.User, combinedPrompt)
+            },
+            Model = ModelName,
+            MaxTokens = maxTokens,
+            Temperature = (decimal)generation.Temperature,
+            Stream = true
+        };
+
+        _logger.LogInformation("Sending streaming completion request to Claude API ({Length} chars)", combinedPrompt.Length);
+
+        var client = _client;
+        var yieldedAny = false;
+        await foreach (var response in client.Messages.StreamClaudeMessageAsync(parameters, ct).WithCancellation(ct))
+        {
+            var text = response?.Delta?.Text;
+            if (string.IsNullOrEmpty(text))
+            {
+                continue;
+            }
+
+            yieldedAny = true;
+            yield return text;
+        }
+
+        if (!yieldedAny)
+        {
+            throw new InvalidOperationException("Claude returned an empty response.");
+        }
+    }
+
     #region Private Methods
 
     /// <summary>
@@ -279,7 +372,9 @@ public class AnthropicLlmService : ILlmService
                 if (_client == null || _clientApiKey != apiKey || _model != model)
                 {
                     var authentication = new APIAuthentication(apiKey);
-                    _client = new AnthropicClient(authentication);
+                    _client = _httpClient == null
+                        ? new AnthropicClient(authentication)
+                        : new AnthropicClient(authentication, _httpClient);
                     _clientApiKey = apiKey;
                     _model = model;
 

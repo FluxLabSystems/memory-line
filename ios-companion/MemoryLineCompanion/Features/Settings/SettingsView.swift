@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State private var spokenConfirmation = true
     @State private var autoUpload = true
     @State private var syncEnabled = false
+    @State private var attachLocation = false
+    @State private var preciseLocation = false
 
     @State private var recordingsBytes: Int64 = 0
 
@@ -33,6 +35,7 @@ struct SettingsView: View {
             Form {
                 pairingSection
                 captureSection
+                locationSection
                 syncSection
                 processingUpdatesSection
                 transcriptionSection
@@ -65,6 +68,18 @@ struct SettingsView: View {
         .onChange(of: autoUpload) { _, newValue in
             env.settings.set(newValue, for: AppSettingsKey.autoUpload)
             env.uploads.autoUploadPreferenceChanged(enabled: newValue)
+        }
+        .onChange(of: attachLocation) { _, newValue in
+            env.settings.set(newValue, for: AppSettingsKey.captureLocation)
+            if newValue {
+                // Ask here, in context, rather than mid-capture.
+                env.location.requestAuthorizationIfNeeded()
+            } else {
+                preciseLocation = false
+            }
+        }
+        .onChange(of: preciseLocation) { _, newValue in
+            env.settings.set(newValue, for: AppSettingsKey.captureLocationPrecise)
         }
         .onChange(of: syncEnabled) { _, newValue in
             env.settings.set(newValue, for: AppSettingsKey.syncEnabled)
@@ -193,6 +208,28 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Location (design §14.4: opt-in, off by default)
+
+    /// Scoped separately from the microphone: both switches are off until the
+    /// user turns them on, and the precise one only means anything once the
+    /// first does. The fix is taken after recording has started, so neither
+    /// can slow a capture down.
+    private var locationSection: some View {
+        Section {
+            Toggle("Attach location to captures", isOn: $attachLocation)
+            Toggle("Precise location", isOn: $preciseLocation)
+                .disabled(!attachLocation)
+        } header: {
+            Text("Location")
+        } footer: {
+            Text(attachLocation
+                 ? (preciseLocation
+                    ? "Each capture notes exactly where you were, with heading and speed when known. The fix is taken once, after recording starts, and never slows a capture."
+                    : "Each capture notes roughly where you were \u{2014} to about a kilometre, with no heading or speed. The fix is taken once, after recording starts, and never slows a capture.")
+                 : "Off: nothing about where you were is saved or sent. Turn it on to note a single location with each capture; iOS will ask for permission the first time.")
+        }
+    }
+
     // MARK: - Sync
 
     private var syncSection: some View {
@@ -273,8 +310,9 @@ struct SettingsView: View {
     /// Deliberately not built: the toggle would switch on an on-device Whisper
     /// model that does not exist in this app yet, and shipping speech-to-text
     /// without being able to run it is worse than an honest disabled switch.
-    /// The footer names what it actually waits on — the model, not the server,
-    /// whose assistant endpoints already exist.
+    /// The footer names what it actually waits on — the model, and the owner's
+    /// choice between Apple Speech and a bundled Whisper — not the server or
+    /// the Ask tab, both of which already work without it.
     private var transcriptionSection: some View {
         Section {
             Toggle("On-device transcription", isOn: .constant(false))
@@ -282,7 +320,7 @@ struct SettingsView: View {
         } header: {
             Text("Transcription")
         } footer: {
-            Text("Not available yet \u{2014} recordings are transcribed on your Windows PC. This waits on an on-device speech-to-text model being built into the app (design \u{00A7}22, decision 4), not on the sync service, whose assistant endpoints already exist.")
+            Text("Not available yet \u{2014} recordings are transcribed on your Windows PC, and the Ask tab already works without this: your PC answers from the archive. This waits on an on-device speech-to-text model being built into the app (design \u{00A7}22, decision 4).")
         }
     }
 
@@ -316,6 +354,8 @@ struct SettingsView: View {
         spokenConfirmation = env.settings.bool(AppSettingsKey.spokenConfirmation, default: true)
         autoUpload = env.settings.bool(AppSettingsKey.autoUpload, default: true)
         syncEnabled = env.settings.bool(AppSettingsKey.syncEnabled, default: false)
+        attachLocation = env.settings.bool(AppSettingsKey.captureLocation, default: false)
+        preciseLocation = attachLocation && env.settings.bool(AppSettingsKey.captureLocationPrecise, default: false)
         recordingsBytes = Self.recordingsStorageBytes()
     }
 

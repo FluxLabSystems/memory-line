@@ -18,59 +18,59 @@ public class EventMediaRepository : IEventMediaRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<List<EventMedia>> GetForEventAsync(string eventId)
+    public async Task<List<EventMedia>> GetForEventAsync(string eventId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventMedia
             .AsNoTracking() // Read-only optimization
             .Where(m => m.EventId == eventId)
             .OrderBy(m => m.SortOrder)
             .ThenBy(m => m.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<EventMedia?> GetByIdAsync(string mediaId)
+    public async Task<EventMedia?> GetByIdAsync(string mediaId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventMedia
             .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.MediaId == mediaId);
+            .FirstOrDefaultAsync(m => m.MediaId == mediaId, cancellationToken);
     }
 
-    public async Task<EventMedia?> GetByHashForEventAsync(string eventId, string contentHash)
+    public async Task<EventMedia?> GetByHashForEventAsync(string eventId, string contentHash, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventMedia
             .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.EventId == eventId && m.ContentHash == contentHash);
+            .FirstOrDefaultAsync(m => m.EventId == eventId && m.ContentHash == contentHash, cancellationToken);
     }
 
-    public async Task<EventMedia> AddAsync(EventMedia media)
+    public async Task<EventMedia> AddAsync(EventMedia media, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        await context.EventMedia.AddAsync(media);
-        await context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.EventMedia.AddAsync(media, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
         return media;
     }
 
-    public async Task UpdateAsync(EventMedia media)
+    public async Task UpdateAsync(EventMedia media, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Entity is detached (loaded by a different, already-disposed context):
         // Update attaches it and marks it Modified.
         context.EventMedia.Update(media);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(EventMedia media)
+    public async Task DeleteAsync(EventMedia media, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Remove attaches the detached entity and marks it Deleted.
         context.EventMedia.Remove(media);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Dictionary<string, int>> GetCountsForEventsAsync(IEnumerable<string> eventIds)
+    public async Task<Dictionary<string, int>> GetCountsForEventsAsync(IEnumerable<string> eventIds, CancellationToken cancellationToken = default)
     {
         var ids = eventIds
             .Where(id => !string.IsNullOrEmpty(id))
@@ -81,23 +81,23 @@ public class EventMediaRepository : IEventMediaRepository
             return new Dictionary<string, int>();
         }
 
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var groups = await context.EventMedia
             .AsNoTracking()
             .Where(m => ids.Contains(m.EventId))
             .GroupBy(m => m.EventId)
             .Select(g => new { EventId = g.Key, Count = g.Count() })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return groups.ToDictionary(g => g.EventId, g => g.Count);
     }
 
-    public async Task<int> MaxSortOrderAsync(string eventId)
+    public async Task<int> MaxSortOrderAsync(string eventId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.EventMedia
             .AsNoTracking()
             .Where(m => m.EventId == eventId)
-            .MaxAsync(m => (int?)m.SortOrder) ?? -1;
+            .MaxAsync(m => (int?)m.SortOrder, cancellationToken) ?? -1;
     }
 }

@@ -57,10 +57,11 @@ public static class LaneAssignment
     public const string UnassignedLaneKey = "(unassigned)";
     public const string UnassignedLaneLabel = "(unassigned)";
 
-    // DEFERRED (F8 wave): user-reorderable lanes. Lane order this wave is
-    // alphabetical by label (case-insensitive, stable) with "(unassigned)"
-    // pinned last. Drag-to-reorder needs persisted per-mode ordering plus
-    // gutter drag interactions and is intentionally out of scope here.
+    // DEFERRED (F8 wave; still open 2026-10): user-reorderable lanes. Lane
+    // order is alphabetical by label (case-insensitive, stable) with
+    // "(unassigned)" pinned last. Drag-to-reorder needs persisted per-mode
+    // ordering (a setting per LaneMode) plus gutter drag interactions in
+    // TimelineControl, and is intentionally out of scope here.
 
     /// <summary>
     /// Groups events into ordered lanes for <paramref name="mode"/>:

@@ -40,7 +40,7 @@ The solution is `windows-native/src/MemoryTimeline.sln`, six projects, plus one 
 | **MemoryTimeline.Core** | Business logic — services (events, timeline, queue, extraction, RAG, ask/query, narrative, resurfacing, recall prompts, media, backup/revisions, export/import, settings, search, analytics), DTOs, timeline math, `SettingKeys`. No UI, no EF Core internals leaking out. |
 | **MemoryTimeline.Data** | Data access — `AppDbContext` (EF Core 10 + SQLite), entity models, repositories, and `SchemaUpgrader`. |
 | **MemoryTimeline.Tests** | xUnit unit, integration, and performance tests. |
-| **MemoryTimeline.Sync** | Sync client library (no UI) — `SyncApiClient` (pairing, push/pull/ack), artifact download, `SyncBackgroundWorker` loop, `LocalOutboxPublisher`, `RemoteChangeApplier`, settings/cursor stores. |
+| **MemoryTimeline.Sync** | Sync client library (no UI) — `SyncApiClient` (pairing, push/pull/ack), `ArtifactTransferClient` (artifact download), `SyncBackgroundWorker` loop, `LocalOutboxPublisher`, `RemoteChangeApplier` (routes pulled changes), `AssistantTurnResponder` (answers a companion's `assistant_turn` through Ask), `PendingEventDecisionApplier` (applies a companion's approve/reject), `TimelineProjectionPublisher` and `CaptureStatusPublisher` (the read-only projections and capture status Windows publishes toward companions), settings/cursor stores. |
 | **MemoryTimeline.SyncContracts** | Shared wire DTOs; lives at `shared-contracts/dotnet/` and is referenced into both this solution and `services/MemoryTimeline.Services.sln`. CamelCase JSON per the OpenAPI contract. |
 | **MemoryTimeline.Portability.Tests** | Plain `net10.0` xUnit tests, **not in the .sln**: they prove the archive stack (Core → Data, Sync) *runs* off Windows rather than merely compiling there. Executed with `dotnet test` by the macOS workflow; `MemoryTimeline.Tests` is `net10.0-windows` and can only run on a Windows runner. |
 
@@ -68,10 +68,10 @@ await using var ctx = await _contextFactory.CreateDbContextAsync();
   after adding an event). Don't recreate it.
 - Because repositories/services are **stateless over the factory**, they are registered
   **Singleton**. Follow that when adding a new repository or service.
-- Startup uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL
-  repairs for schema drift on older DBs). A baseline EF migration now exists under
-  `MemoryTimeline.Data/Migrations` (generated with `dotnet ef` through
-  `AppDbContextDesignTimeFactory`), but nothing calls `Migrate()` yet; keep
+- Startup uses `SchemaUpgrader.EnsureSchemaAsync`, which applies the EF Core migrations
+  under `MemoryTimeline.Data/Migrations` (`Database.MigrateAsync`); a database with no
+  `__EFMigrationsHistory` is first run through the idempotent drift repair, labelled with
+  the baseline `20261022004346_InitialCreate`, then migrated forward. Keep
   `SchemaUpgrader` as the runtime path and don't swap it for raw `EnsureCreated`.
 
 ### MVVM & UI conventions
@@ -120,11 +120,18 @@ The iOS roadtrip companion sync layer (design:
   (`POST /api/v1/devices/register`) and get a device-bound short-lived JWT plus a
   rotating refresh token; revocation (from Windows Settings → Sync) is immediate.
 - **Loop** — the Windows client (`MemoryTimeline.Sync`, wired in `App.xaml.cs`) runs
-  **pull → ingest → ack**: `SyncBackgroundWorker` pulls changes after its stored
-  cursor, `RemoteChangeApplier` downloads each capture's audio artifact and feeds it
-  to the idempotent `ICaptureIngestionService` (a remote capture enters review
-  **exactly once**), the cursor advances only past applied/skipped/permanently-failed
-  changes, then `LocalOutboxPublisher` drains `sync_outbox` to `POST /api/v1/sync/push`.
+  **pull → apply → ack → push**: `SyncBackgroundWorker` pulls changes after its stored
+  cursor and `RemoteChangeApplier` routes each one — a capture's audio artifact is
+  downloaded and fed to the idempotent `ICaptureIngestionService` (a remote capture
+  enters review **exactly once**), a `pending_event_decision` goes to
+  `PendingEventDecisionApplier` (a companion's approve/reject, applied once), and an
+  `assistant_turn` goes to `AssistantTurnResponder` (answered through the Ask pipeline
+  and written back to the outbox as a completed turn). The cursor advances only past
+  applied/skipped/permanently-failed changes, then `LocalOutboxPublisher` drains
+  `sync_outbox` to `POST /api/v1/sync/push` — the outbox carries capture status
+  (`CaptureStatusPublisher`), the read-only timeline projections every service and
+  the restore path publish (`TimelineProjectionPublisher`: events, eras, people,
+  locations, ...) and the answered assistant turns.
 - Wire DTOs: `shared-contracts/dotnet/MemoryTimeline.SyncContracts` (camelCase JSON —
   clients must use `JsonSerializerDefaults.Web`); contract source of truth:
   `shared-contracts/openapi/memory-line-sync-v1.yaml`. Operator guide (run, Docker,
@@ -229,8 +236,14 @@ timing a path that never ships).
 
 ## Adding a feature in Windows Native
 
-1. Entity in `MemoryTimeline.Data/Models/` (+ `AppDbContext` / `SchemaUpgrader` if the
-   schema changes).
+1. Entity in `MemoryTimeline.Data/Models/` (+ `AppDbContext` configuration). A schema
+   change ships as a migration and nothing else: edit the model, run
+   `dotnet ef migrations add <Name> --project windows-native/src/MemoryTimeline.Data`
+   (the `AppDbContextDesignTimeFactory` makes this work without the app), commit the
+   migration and the regenerated snapshot together, and do NOT add DDL for it to
+   `SchemaUpgrader` — the repair is frozen at the baseline shape, and `MigrateAsync`
+   throws at startup if the model has changes no migration captures
+   (`dotnet ef migrations has-pending-model-changes` must report none).
 2. Repository in `MemoryTimeline.Data/Repositories/` using the `IDbContextFactory`
    per-operation pattern.
 3. Service interface in `MemoryTimeline.Core/Services/` + implementation.
@@ -302,7 +315,7 @@ DB file: `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
 |-----|--------------|
 | [`windows-native/README.md`](./windows-native/README.md) | Windows Native overview, setup, tech stack. |
 | [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT.md) | Feature-by-feature audit + root-cause analysis of the bugs the rework fixed. |
-| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Hardening items and their status (DPAPI and the EF baseline are done; the migration switch-over and others remain). |
+| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Hardening items and their status (DPAPI, the EF baseline and the migration switch-over are done; the `DateTime.Kind` decision remains). |
 | [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md) | Phase-level status and next steps. |
 | Root [`README.md`](./README.md) | Product overview + "Recent engineering work" summary. |
 
@@ -389,6 +402,6 @@ whether it should is an open question, not an oversight.
 
 ---
 
-**Last Updated:** 2026-10-21
+**Last Updated:** 2026-10-22
 **Primary target:** Windows Native (.NET 10 / WinUI 3) — `windows-native/`
 **In progress:** macOS (SwiftUI) — `macos-native/`

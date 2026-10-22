@@ -98,10 +98,22 @@ public class WhisperSpeechToTextService : ISpeechToTextService, IDisposable
 
     /// <summary>
     /// Transcribes an audio file to text with progress reporting.
-    /// Never throws — all failures are returned as an unsuccessful
-    /// <see cref="TranscriptionResult"/> with a user-readable message.
     /// </summary>
-    public async Task<TranscriptionResult> TranscribeAsync(string audioFilePath, IProgress<double>? progress)
+    public Task<TranscriptionResult> TranscribeAsync(string audioFilePath, IProgress<double>? progress)
+    {
+        return TranscribeAsync(audioFilePath, progress, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Transcribes an audio file to text with progress reporting and
+    /// cancellation. Never throws for a FAILED transcription — those are
+    /// returned as an unsuccessful <see cref="TranscriptionResult"/> with a
+    /// user-readable message — but a cancelled token propagates as
+    /// <see cref="OperationCanceledException"/>, so the queue puts the item
+    /// back to Pending instead of marking it failed.
+    /// </summary>
+    public async Task<TranscriptionResult> TranscribeAsync(
+        string audioFilePath, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var result = new TranscriptionResult();
@@ -160,7 +172,7 @@ public class WhisperSpeechToTextService : ISpeechToTextService, IDisposable
             var estimatedAudioSeconds = Math.Max((fileStream.Length - 44) / 32000.0, 0.1);
 
             var textBuilder = new StringBuilder();
-            await foreach (var segment in processor.ProcessAsync(fileStream, CancellationToken.None))
+            await foreach (var segment in processor.ProcessAsync(fileStream, cancellationToken))
             {
                 textBuilder.Append(segment.Text);
 
@@ -183,6 +195,11 @@ public class WhisperSpeechToTextService : ISpeechToTextService, IDisposable
                 result.ProcessingDurationSeconds, result.Text.Length);
 
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller-requested cancellation is not a transcription failure.
+            throw;
         }
         catch (ModelDownloadFailedException ex)
         {

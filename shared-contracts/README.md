@@ -27,6 +27,22 @@ companion, and the sync service. Source of truth:
   ignore properties they do not recognize, so an older client keeps working
   against a newer additive server.
 
+### Reserved entity types
+
+Two values of the `entityType` enums (`SyncChange`, `SyncPushEntry`, and the
+`SyncChangeEntityType` constants) are **reserved**: `recording_queue` and
+`capture_artifact`. The Phase 0 contract set them aside for the Windows queue
+row and the artifact metadata as change-feed entities, and the capture and
+artifact REST endpoints then came to carry that information instead. Nothing
+shipped publishes either value and nothing consumes one: the service accepts
+them on push (a client built against the v1 enum must not be refused) and
+relays them on pull, but the Windows `RemoteChangeApplier` applies only the
+types it knows and skips the rest, and the phone and the Mac apply
+`capture_status` and the timeline projections only. They stay in the enums
+because v1 never removes a value (above). Treat them as reserved, not as a
+channel: publishing one needs a documented payload schema, a consumer and a
+changelog entry first — an ordinary additive v1.x change.
+
 ## Client generation
 
 The C# wire types live in
@@ -65,6 +81,38 @@ commit**, add the changelog entry when `info.version` moves, and the gate
 proves the three stayed together.
 
 ## Changelog
+
+### v1.5 (2026-10-22) — capture location and the `macos` platform
+
+Purely additive. Lands together with the `info.version` bump to 1.5.0 in
+`openapi/memory-line-sync-v1.yaml` and the matching DTO changes in
+[`CaptureContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/CaptureContracts.cs)
+and [`DeviceContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/DeviceContracts.cs);
+the shipped DTOs are the implemented truth, as before.
+
+- **`Capture.location` and `CaptureChangePayload.location`** (the existing
+  `LocationContext` schema — `latitude`, `longitude`, optional
+  `horizontalAccuracyM`, `headingDegrees`, `speedMps` — nullable): the
+  snapshot a client attaches on `POST /captures` as `locationContext` was
+  stored by the service but never returned. It is now echoed on the capture
+  response and read, and carried on the capture change Windows pulls, so
+  Windows can keep it on the capture it ingests — as columns on that capture,
+  never as a `locations` row (a coordinate is not a named place; geocoding
+  stays opt-in), and never in the Windows sync outbox. Null when the phone
+  sent none: the iOS companion attaches one only when its location opt-in is
+  on (design §14.4, off by default), coarse unless the precise option is also
+  on, and never logs it (§14.5). The service validates the snapshot on create:
+  a latitude outside [-90, 90] or a longitude outside [-180, 180] is 400
+  `validation_error`, the rule `POST /trips/{tripId}/route-context` already
+  applies.
+- **`macos` joins the platform enums** (`DeviceRegisterRequest.platform`,
+  `DeviceInfo.platform`, `Capture.sourcePlatform`,
+  `CaptureChangePayload.sourcePlatform`); the service's `DeviceService`
+  accepts it, and the capture-envelope JSON schema's `sourcePlatform` lists
+  it, so the Mac app registers as itself instead of `other`
+  (`docs/design/MACOS-PORT-PLAN.md` §3.4). The exact string is `macos`;
+  `other` remains valid, and a Mac paired before this change keeps the
+  `other` its device row was stored with.
 
 ### v1.4 (2026-10-21) — the YAML catches up with the shipped service
 

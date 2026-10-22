@@ -156,6 +156,13 @@ public partial class PersonDto : ObservableObject
     /// <summary>True when a relationship is set.</summary>
     public bool HasRelationship => !string.IsNullOrWhiteSpace(Relationship);
 
+    /// <summary>
+    /// True when a photo is stored for the person (<see cref="PhotoPath"/>,
+    /// media-root-relative; resolved for display through
+    /// <c>IMediaService.GetAbsolutePersonPhotoPath</c>).
+    /// </summary>
+    public bool HasPhoto => !string.IsNullOrWhiteSpace(PhotoPath);
+
     // Property change notifications for computed properties.
 
     partial void OnNameChanged(string value)
@@ -209,6 +216,11 @@ public partial class PersonDto : ObservableObject
     partial void OnRelationshipChanged(string? value)
     {
         OnPropertyChanged(nameof(HasRelationship));
+    }
+
+    partial void OnPhotoPathChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasPhoto));
     }
 
     /// <summary>

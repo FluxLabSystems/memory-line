@@ -64,17 +64,42 @@ public class Capture
     [Column("deleted_at_utc")]
     public DateTime? DeletedAtUtc { get; set; }
 
+    // --- Location snapshot (design §6.1 location context, contract v1.5) ---
+    // The single fix the capturing device attached at capture time, kept on
+    // the capture it belongs to. Deliberately NOT a `locations` row: a
+    // coordinate is not a named place until the user or an opt-in geocoder
+    // makes it one (geocoding is off by default), and the snapshot never
+    // leaves this machine through the sync outbox (privacy rule §14.5).
+    // Null on captures made here and on remote captures sent without one.
+
+    /// <summary>Latitude in decimal degrees, [-90, 90].</summary>
+    [Column("location_latitude")]
+    public double? LocationLatitude { get; set; }
+
+    /// <summary>Longitude in decimal degrees, [-180, 180].</summary>
+    [Column("location_longitude")]
+    public double? LocationLongitude { get; set; }
+
+    /// <summary>Horizontal accuracy of the fix in metres, when the device reported one.</summary>
+    [Column("location_accuracy_m")]
+    public double? LocationAccuracyM { get; set; }
+
     // Navigation properties
     public virtual ICollection<CaptureArtifact> Artifacts { get; set; } = new List<CaptureArtifact>();
 }
 
 /// <summary>
-/// Platform a capture originated on.
+/// Platform a capture originated on. Mirrors the sourcePlatform / platform
+/// enums in shared-contracts/openapi/memory-line-sync-v1.yaml, the
+/// capture-envelope JSON schema and the service's DeviceService
+/// .AllowedPlatforms; a new value goes into all of them together.
 /// </summary>
 public static class CapturePlatform
 {
     public const string Windows = "windows";
     public const string Ios = "ios";
+    /// <summary>The macOS app (contract v1.5); before that it registered as <see cref="Other"/>.</summary>
+    public const string Macos = "macos";
     public const string Other = "other";
 }
 

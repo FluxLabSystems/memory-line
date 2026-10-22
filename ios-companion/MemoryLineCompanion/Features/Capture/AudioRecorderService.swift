@@ -50,6 +50,9 @@ final class AudioRecorderService {
 
     private let store: any CaptureStore
     private let settings: any SettingsStore
+    /// One-shot location for the opt-in snapshot (design §14.4); nil where
+    /// the platform offers none. Only consulted once audio is already rolling.
+    private let locationProvider: (any CaptureLocationProviding)?
     private let onFinalized: (CaptureRecord) -> Void
     private let log = Logger(subsystem: "com.memoryline.companion", category: "recorder")
 
@@ -58,6 +61,7 @@ final class AudioRecorderService {
     @ObservationIgnored private var recorder: AVAudioRecorder?
     @ObservationIgnored private var activeRecord: CaptureRecord?
     @ObservationIgnored private var meterTask: Task<Void, Never>?
+    @ObservationIgnored private var locationTask: Task<Void, Never>?
     // nonisolated(unsafe) because deinit is nonisolated on a @MainActor class and
     // may only touch Sendable storage; [NSObjectProtocol] is not Sendable. Safe
     // here: the array is written once from the initializer's observer install and
@@ -85,16 +89,21 @@ final class AudioRecorderService {
 
     /// - Parameters:
     ///   - store: durable capture storage; rows are written before/after audio I/O.
-    ///   - settings: read for `defaultCaptureType` and `spokenConfirmation`.
+    ///   - settings: read for `defaultCaptureType`, `spokenConfirmation` and the
+    ///     location opt-in keys.
+    ///   - locationProvider: the one-shot location snapshot, consulted only when
+    ///     `AppSettingsKey.captureLocation` is on; nil disables the feature.
     ///   - onFinalized: invoked on the main actor after a capture becomes durable
     ///     (`.savedLocal`); the shell forwards this to `UploadCoordinator.captureFinalized(_:)`.
     init(
         store: any CaptureStore,
         settings: any SettingsStore,
+        locationProvider: (any CaptureLocationProviding)? = nil,
         onFinalized: @escaping (CaptureRecord) -> Void
     ) {
         self.store = store
         self.settings = settings
+        self.locationProvider = locationProvider
         self.onFinalized = onFinalized
         self.currentType = settings.string(AppSettingsKey.defaultCaptureType)
             .flatMap(CaptureType.init(rawValue:)) ?? .memory
@@ -182,6 +191,9 @@ final class AudioRecorderService {
             startMeterLoop()
             publishWidgetState("recording")
             log.info("recording started captureId=\(record.id, privacy: .public) type=\(type.rawValue, privacy: .public)")
+            // Only now, with audio already rolling: the fix is awaited by
+            // nobody on this path, so it can never delay the recording.
+            attachLocationIfEnabled(to: record.id)
         } catch {
             try? store.delete(id: record.id)
             if let url = try? AudioStorage.url(forFileName: record.fileName) {
@@ -300,6 +312,8 @@ final class AudioRecorderService {
         guard phase == .recording || phase == .paused || phase == .preparing else { return }
         pausedByInterruption = false
         stopMeterLoop()
+        locationTask?.cancel()
+        locationTask = nil
         let recorder = self.recorder
         let record = self.activeRecord
         self.recorder = nil
@@ -363,6 +377,46 @@ final class AudioRecorderService {
             }
         }
         publishWidgetState("idle")
+    }
+
+    // MARK: - Location snapshot (design §14.4)
+
+    /// Fires the one-shot location request after recording has started, so it
+    /// can never delay the first second of audio. Off unless the user turned
+    /// on `AppSettingsKey.captureLocation`; precise only when its own switch
+    /// is on too. The snapshot lands on the active record when it arrives, or
+    /// — if the user already stopped — on the stored row, as long as the
+    /// capture has not left the phone yet.
+    private func attachLocationIfEnabled(to captureId: String) {
+        locationTask?.cancel()
+        locationTask = nil
+        guard let locationProvider,
+              settings.bool(AppSettingsKey.captureLocation, default: false) else { return }
+        let precise = settings.bool(AppSettingsKey.captureLocationPrecise, default: false)
+        locationTask = Task { [weak self] in
+            let snapshot = await locationProvider.snapshot(precise: precise)
+            guard !Task.isCancelled, let self, let snapshot else { return }
+            self.attach(snapshot, to: captureId)
+        }
+    }
+
+    private func attach(_ snapshot: LocationContext, to captureId: String) {
+        if activeRecord?.id == captureId {
+            activeRecord?.location = snapshot
+            log.info("location attached to active captureId=\(captureId, privacy: .public)")
+            return
+        }
+        // Stopped before the fix arrived: attach to the saved row while the
+        // upload has not started; once it has, the create request is already
+        // on its way without one, and a late snapshot would never be sent.
+        guard var stored = try? store.capture(id: captureId), stored.state.isUploadPending else { return }
+        stored.location = snapshot
+        do {
+            try store.update(stored)
+            log.info("location attached to saved captureId=\(captureId, privacy: .public)")
+        } catch {
+            log.error("location attach failed captureId=\(captureId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Metering

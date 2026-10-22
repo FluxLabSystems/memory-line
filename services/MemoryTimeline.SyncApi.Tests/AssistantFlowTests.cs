@@ -184,12 +184,17 @@ public class AssistantFlowTests : IClassFixture<SyncApiFixture>
         // No responder on the turn: it inherits the session's preference...
         var inherited = await SubmitTurnAsync(phoneClient, session.SessionId, NewTurnRequest());
         inherited.RequestedResponder.Should().Be(AssistantResponder.OnDevice);
+        // ...which nothing is deployed to answer, so it fails at once rather
+        // than waiting a day for the reaper (see the dedicated test below).
+        inherited.Status.Should().Be(AssistantTurnStatus.Failed);
+        inherited.FailureRetryable.Should().BeFalse();
 
         // ...and a turn may still override it mid-conversation, which is the
         // whole point of choosing per turn rather than per session.
         var overridden = await SubmitTurnAsync(phoneClient, session.SessionId, NewTurnRequest(r =>
             r.Responder = AssistantResponder.Windows));
         overridden.RequestedResponder.Should().Be(AssistantResponder.Windows);
+        overridden.Status.Should().Be(AssistantTurnStatus.Pending);
         overridden.Sequence.Should().Be(2);
 
         // Both responders are recorded when the answer names a different one
@@ -312,6 +317,63 @@ public class AssistantFlowTests : IClassFixture<SyncApiFixture>
         // The owning device is unaffected by any of it.
         var owned = await GetTurnAsync(phoneClient, turn.TurnId);
         owned.Status.Should().Be(AssistantTurnStatus.Pending);
+    }
+
+    [Fact]
+    public async Task Assistant_TurnForAnUndeployedResponder_FailsAtOnceAndIsNeverPublished()
+    {
+        var (_, phoneClient) = await _fixture.RegisterClientAsync("ios", "iPhone");
+        var (_, windowsClient) = await _fixture.RegisterClientAsync("windows", "Desktop");
+        var session = await CreateSessionAsync(phoneClient);
+        var windowsBaseline = await SyncApiFixture.GetCursorAsync(windowsClient);
+
+        // The vocabulary admits provider and on_device, but nothing on this
+        // service answers for either: no LLM provider is configured and no
+        // device pre-processes locally. Accepting the turn as pending would
+        // leave the asker staring at a spinner until the reaper cancels it a
+        // day later; failing it now tells them immediately, and tells them
+        // which mode would work.
+        foreach (var mode in new[] { AssistantResponder.Provider, AssistantResponder.OnDevice })
+        {
+            var turn = await SubmitTurnAsync(phoneClient, session.SessionId, NewTurnRequest(r => r.Responder = mode));
+            turn.RequestedResponder.Should().Be(mode);
+            turn.Status.Should().Be(AssistantTurnStatus.Failed);
+            turn.FailureRetryable.Should().BeFalse("retrying the same mode would fail the same way");
+            turn.FailureReason.Should().Be(
+                $"No responder for mode {mode} is deployed on this sync service; ask again with the windows responder.");
+            turn.ActualResponder.Should().BeNull();
+            turn.Result.Should().BeNull();
+            turn.CompletedAtUtc.Should().NotBeNull("failed is terminal");
+
+            // Polling agrees, and the terminal state holds: cancelling is a no-op.
+            (await GetTurnAsync(phoneClient, turn.TurnId)).Status.Should().Be(AssistantTurnStatus.Failed);
+            (await CancelTurnAsync(phoneClient, turn.TurnId)).Status.Should().Be(AssistantTurnStatus.Failed);
+
+            // A resubmission replays the stored failure rather than asking again.
+            var replay = await phoneClient.PostAsJsonAsync(
+                $"/api/v1/assistant/sessions/{session.SessionId}/turns",
+                new AssistantTurnCreateRequest { TurnId = turn.TurnId, Question = "again?", Responder = mode },
+                SyncApiFixture.Json);
+            replay.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await replay.Content.ReadFromJsonAsync<AssistantTurnResponse>(SyncApiFixture.Json))!.Status
+                .Should().Be(AssistantTurnStatus.Failed);
+        }
+
+        // Nothing rode the feed toward Windows: there is nothing to answer.
+        var windowsPull = await SyncApiFixture.PullAsync(windowsClient, windowsBaseline);
+        windowsPull.Changes.Should().NotContain(c => c.EntityType == SyncChangeEntityType.AssistantTurn);
+
+        // The sequence was consumed all the same, so a later Windows turn is
+        // ordered after the failed ones and proceeds as before.
+        var refreshed = await phoneClient.GetFromJsonAsync<AssistantSessionResponse>(
+            $"/api/v1/assistant/sessions/{session.SessionId}", SyncApiFixture.Json);
+        refreshed!.TurnCount.Should().Be(2);
+        var windowsTurn = await SubmitTurnAsync(phoneClient, session.SessionId, NewTurnRequest());
+        windowsTurn.Sequence.Should().Be(3);
+        windowsTurn.Status.Should().Be(AssistantTurnStatus.Pending);
+        (await SyncApiFixture.PullAsync(windowsClient, windowsBaseline)).Changes
+            .Should().ContainSingle(c => c.EntityType == SyncChangeEntityType.AssistantTurn)
+            .Which.EntityId.Should().Be(windowsTurn.TurnId);
     }
 
     [Fact]

@@ -148,6 +148,13 @@ public class AssistantTurnResponder : IAssistantTurnResponder
             return ChangeApplicationResult.Applied;
         }
 
+        // Answered whole, never as assistant_turn_chunk changes: the contract
+        // defines that change type, but a turn's "stream" request flag lives
+        // on AssistantTurnCreateRequest and is not carried by the
+        // AssistantTurnChangePayload that reaches Windows, so this responder
+        // cannot know whether the client asked for chunks. Chunks are
+        // advisory by contract ("a responder that cannot stream never
+        // publishes any"), so the completed turn alone is a correct answer.
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         MemoryAnswer answer;
         try

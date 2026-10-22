@@ -106,7 +106,7 @@ public class PendingEventDecisionApplier : IPendingEventDecisionApplier
                 return ChangeApplicationResult.FailedPermanent;
             }
 
-            var pendingEvent = await _pendingEventRepository.GetByIdAsync(pendingEventId);
+            var pendingEvent = await _pendingEventRepository.GetByIdAsync(pendingEventId, cancellationToken);
             if (pendingEvent == null)
             {
                 // Rejecting DELETES the row, so a missing pending event is a
@@ -187,7 +187,7 @@ public class PendingEventDecisionApplier : IPendingEventDecisionApplier
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var current = await _pendingEventRepository.GetByIdAsync(pendingEventId);
+            var current = await _pendingEventRepository.GetByIdAsync(pendingEventId, cancellationToken);
             if (current == null || IsResolved(current))
             {
                 _logger.LogInformation(

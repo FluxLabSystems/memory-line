@@ -18,94 +18,94 @@ public class AppSettingRepository : IAppSettingRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<AppSetting?> GetByIdAsync(string id)
+    public async Task<AppSetting?> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.AppSettings.FindAsync(id);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.AppSettings.FindAsync(new object?[] { id }, cancellationToken);
     }
 
-    public async Task<IEnumerable<AppSetting>> GetAllAsync()
+    public async Task<IEnumerable<AppSetting>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.AppSettings.AsNoTracking().OrderBy(s => s.SettingKey).ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.AppSettings.AsNoTracking().OrderBy(s => s.SettingKey).ToListAsync(cancellationToken);
     }
 
-    public async Task<AppSetting> AddAsync(AppSetting entity)
+    public async Task<AppSetting> AddAsync(AppSetting entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.AppSettings.Add(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return entity;
     }
 
-    public async Task UpdateAsync(AppSetting entity)
+    public async Task UpdateAsync(AppSetting entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Entity is detached; Update attaches it and marks it Modified.
         context.AppSettings.Update(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(AppSetting entity)
+    public async Task DeleteAsync(AppSetting entity, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Remove attaches the detached entity and marks it Deleted.
         context.AppSettings.Remove(entity);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task AddRangeAsync(IEnumerable<AppSetting> entities)
+    public async Task AddRangeAsync(IEnumerable<AppSetting> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.AppSettings.AddRange(entities);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteRangeAsync(IEnumerable<AppSetting> entities)
+    public async Task DeleteRangeAsync(IEnumerable<AppSetting> entities, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.AppSettings.RemoveRange(entities);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>> predicate)
+    public async Task<bool> ExistsAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.AppSettings.AnyAsync(predicate);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.AppSettings.AnyAsync(predicate, cancellationToken);
     }
 
-    public async Task<int> CountAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>>? predicate = null)
+    public async Task<int> CountAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>>? predicate = null, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return predicate == null
-            ? await context.AppSettings.CountAsync()
-            : await context.AppSettings.CountAsync(predicate);
+            ? await context.AppSettings.CountAsync(cancellationToken)
+            : await context.AppSettings.CountAsync(predicate, cancellationToken);
     }
 
-    public async Task<IEnumerable<AppSetting>> FindAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>> predicate)
+    public async Task<IEnumerable<AppSetting>> FindAsync(System.Linq.Expressions.Expression<Func<AppSetting, bool>> predicate, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.AppSettings.AsNoTracking().Where(predicate).ToListAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.AppSettings.AsNoTracking().Where(predicate).ToListAsync(cancellationToken);
     }
 
-    public async Task<AppSetting?> GetByKeyAsync(string key)
+    public async Task<AppSetting?> GetByKeyAsync(string key, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        return await context.AppSettings.FindAsync(key);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.AppSettings.FindAsync(new object?[] { key }, cancellationToken);
     }
 
-    public async Task<string?> GetValueAsync(string key)
+    public async Task<string?> GetValueAsync(string key, CancellationToken cancellationToken = default)
     {
-        var setting = await GetByKeyAsync(key);
+        var setting = await GetByKeyAsync(key, cancellationToken);
         return setting?.SettingValue;
     }
 
-    public async Task SetValueAsync(string key, string value)
+    public async Task SetValueAsync(string key, string value, CancellationToken cancellationToken = default)
     {
         // Fetch-then-save happens inside a single context so the read entity
         // is still tracked when SaveChangesAsync runs.
-        await using var context = await _contextFactory.CreateDbContextAsync();
-        var setting = await context.AppSettings.FindAsync(key);
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var setting = await context.AppSettings.FindAsync(new object?[] { key }, cancellationToken);
         if (setting != null)
         {
             setting.SettingValue = value;
@@ -121,15 +121,15 @@ public class AppSettingRepository : IAppSettingRepository
             });
         }
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> SettingExistsAsync(string key) =>
-        await ExistsAsync(s => s.SettingKey == key);
+    public async Task<bool> SettingExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        await ExistsAsync(s => s.SettingKey == key, cancellationToken);
 
-    public async Task<IDictionary<string, string>> GetAllSettingsAsync()
+    public async Task<IDictionary<string, string>> GetAllSettingsAsync(CancellationToken cancellationToken = default)
     {
-        var settings = await GetAllAsync();
+        var settings = await GetAllAsync(cancellationToken);
         return settings.ToDictionary(s => s.SettingKey, s => s.SettingValue);
     }
 }

@@ -78,6 +78,39 @@ public class SyncRemoteChangeApplierTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_CaptureWithLocation_KeepsTheSnapshotOnTheCaptureOnly()
+    {
+        // Arrange - the phone attached a fix at capture time (contract v1.5)
+        var change = CreateCaptureChange(out var payload, out var content);
+        payload.Location = new LocationContext
+        {
+            Latitude = 36.0544,
+            Longitude = -112.1401,
+            HorizontalAccuracyM = 12.5,
+            HeadingDegrees = 90.0,
+            SpeedMps = 0.0,
+        };
+        change.PayloadJson = JsonSerializer.Serialize(payload, WireJson);
+        _transferClient.Content = content;
+
+        // Act
+        var result = await _applier.ApplyAsync(change);
+
+        // Assert - the fix lives on the capture row...
+        result.Should().Be(ChangeApplicationResult.Applied);
+        await using var context = _contextFactory.CreateDbContext();
+        var capture = await context.Captures.SingleAsync();
+        capture.LocationLatitude.Should().Be(36.0544);
+        capture.LocationLongitude.Should().Be(-112.1401);
+        capture.LocationAccuracyM.Should().Be(12.5);
+
+        // ...is not a named place, and never leaves through the outbox (§14.5).
+        (await context.Locations.CountAsync()).Should().Be(0);
+        var outbox = await context.SyncOutboxEntries.SingleAsync();
+        outbox.PayloadJson.Should().NotContain("36.0544").And.NotContain("latitude");
+    }
+
+    [Fact]
     public async Task ApplyAsync_AutoProcessDisabled_AppliesWithoutStartingProcessing()
     {
         // Arrange
@@ -152,9 +185,9 @@ public class SyncRemoteChangeApplierTests : IDisposable
     }
 
     [Fact]
-    public async Task ApplyAsync_DeleteOperation_IsSkippedInPhase1()
+    public async Task ApplyAsync_DeleteOperation_IsSkippedAndTouchesNothing()
     {
-        // Arrange
+        // Arrange - a companion's delete never reaches into the archive
         var change = CreateCaptureChange(out _, out _);
         change.Operation = SyncOperation.Delete;
 
@@ -164,6 +197,27 @@ public class SyncRemoteChangeApplierTests : IDisposable
         // Assert
         result.Should().Be(ChangeApplicationResult.Skipped);
         await AssertNoRowsWrittenAsync();
+    }
+
+    [Fact]
+    public async Task ApplyAsync_MacosOriginatedCapture_IsIngestedAsAMacCapture()
+    {
+        // Arrange - a Mac is a companion like the phone, not this machine
+        var change = CreateCaptureChange(out var payload, out var content);
+        payload.SourcePlatform = CapturePlatform.Macos;
+        change.PayloadJson = JsonSerializer.Serialize(payload, WireJson);
+        _transferClient.Content = content;
+
+        // Act
+        var result = await _applier.ApplyAsync(change);
+
+        // Assert
+        result.Should().Be(ChangeApplicationResult.Applied);
+        await using var context = _contextFactory.CreateDbContext();
+        var queueItem = await context.RecordingQueues.SingleAsync();
+        queueItem.SourcePlatform.Should().Be(CapturePlatform.Macos);
+        queueItem.SyncState.Should().Be(QueueSyncState.Received);
+        (await context.Captures.SingleAsync()).SourcePlatform.Should().Be(CapturePlatform.Macos);
     }
 
     [Fact]

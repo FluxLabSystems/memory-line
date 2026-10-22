@@ -1,46 +1,205 @@
 using System.Data;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging;
 
 namespace MemoryTimeline.Data;
 
 /// <summary>
-/// Ensures the SQLite database schema matches the current EF Core model.
+/// Brings the SQLite database up to the current EF Core model at startup.
 ///
-/// This class substitutes for EF Core migrations until a machine with the
-/// .NET SDK / dotnet-ef can regenerate a proper migration baseline. The
-/// previously checked-in migration was badly stale (it lacked the
-/// era_categories, era_tags, milestones and saved_searches tables plus
-/// several eras/events/tags columns) and has been deleted.
+/// Schema ownership is split by one line in time: the baseline migration
+/// <c>20261022004346_InitialCreate</c> (<see cref="BaselineMigrationId"/>).
 ///
-/// Strategy:
-///  1. Database.EnsureCreatedAsync creates a brand-new database with the FULL
-///     current model (including seed data) when no database file exists yet.
-///  2. For databases created by OLDER builds, EnsureCreated is a no-op, so we
-///     detect schema drift by inspecting sqlite_master / PRAGMA table_info and
-///     apply idempotent, additive DDL (CREATE TABLE IF NOT EXISTS /
-///     ALTER TABLE ... ADD COLUMN) for everything the current model needs that
-///     older schemas are known to be missing.
+///  * Everything at or after the baseline is an EF Core migration under
+///    <c>Migrations/</c>, applied with <c>Database.MigrateAsync</c>. A schema
+///    change ships as a new migration (<c>dotnet ef migrations add</c>, built
+///    through <see cref="AppDbContextDesignTimeFactory"/>) and as nothing
+///    else. <c>MigrateAsync</c> refuses to run while the model has changes no
+///    migration captures, so a model edit without its migration fails at
+///    startup and in the tests instead of drifting quietly.
+///  * Everything before the baseline is the idempotent repair in
+///    <see cref="RepairSchemaDriftAsync"/>: CREATE TABLE IF NOT EXISTS /
+///    ALTER TABLE ... ADD COLUMN for the tables and columns databases from
+///    older builds are known to be missing, the NOCASE identity rebuild, and
+///    the settings backfill. The repair is FROZEN at the baseline shape and
+///    must never learn a post-baseline table or column: SQLite has no
+///    ADD COLUMN IF NOT EXISTS, so a column the repair adds first makes the
+///    migration that owns it fail with "duplicate column name" on every
+///    database the repair baselines.
 ///
-/// All DDL below is derived from AppDbContext.OnModelCreating and the entity
-/// models' snake_case [Table]/[Column] mappings (the source of truth), using
-/// EF Core's SQLite type affinities: TEXT for strings/Guids/DateTimes,
+/// <see cref="EnsureSchemaAsync"/> decides by what is in the file:
+///  1. No tables at all (a new install): <c>MigrateAsync</c> builds the
+///     schema from InitialCreate up, seeds included; the repair then runs as
+///     a no-op.
+///  2. Tables but no <c>__EFMigrationsHistory</c> (a database built by the
+///     EnsureCreated-based startup of earlier builds, or older still): the
+///     repair raises it to the baseline shape, the history table is created
+///     with the baseline recorded as applied, and <c>MigrateAsync</c> applies
+///     every later migration. From then on the database is case 3.
+///  3. History present: <c>MigrateAsync</c> applies anything new, then the
+///     repair runs again (it is idempotent, and a repair that failed on an
+///     earlier start gets another chance).
+///
+/// Baselining labels a repaired database "InitialCreate" although it is not
+/// byte-for-byte what the migration builds. The known difference: the model
+/// and the migration put COLLATE NOCASE on the people.name, tags.tag_name and
+/// locations.name COLUMNS, while a database upgraded from a pre-NOCASE build
+/// carries it on the unique INDEX instead (the repair rebuilds the index; a
+/// column collation cannot be altered in place). Uniqueness is identical
+/// either way; equality in a query is case-sensitive on the index-only shape
+/// unless the query says otherwise, which is why the repositories compare
+/// lower-cased names rather than relying on the column. ALTER TABLE ADD
+/// COLUMN also cannot add a foreign key, so eras.category_id has none on an
+/// upgraded database. Migrations tolerate both shapes because they address
+/// tables and columns by name.
+///
+/// All repair DDL is derived from AppDbContext.OnModelCreating and the entity
+/// models' snake_case [Table]/[Column] mappings as they were at the baseline,
+/// using EF Core's SQLite type affinities: TEXT for strings/Guids/DateTimes,
 /// INTEGER for int/bool/enums, REAL for double.
 ///
-/// A repair failure is logged but never allowed to crash startup.
+/// A repair failure is logged but never allowed to crash startup. A migration
+/// failure propagates: each migration runs in its own transaction, so the
+/// database is left at the previous migration, and starting the app against
+/// a schema behind its model would be worse than not starting.
 /// </summary>
 public static class SchemaUpgrader
 {
-    public static async Task EnsureSchemaAsync(AppDbContext context, Microsoft.Extensions.Logging.ILogger? logger = null)
-    {
-        // Step 1: create the database with the full current model if it does
-        // not exist yet. No-op (by design) when the database already exists.
-        await context.Database.EnsureCreatedAsync();
+    /// <summary>
+    /// The migration an unversioned database is labelled with once the repair
+    /// has raised it to that shape: the first migration in the assembly, the
+    /// one every later migration builds on.
+    /// </summary>
+    public const string BaselineMigrationId = "20261022004346_InitialCreate";
 
-        // Step 2: repair drift on databases created by older builds. Never
-        // let a repair failure crash startup - the app can still run against
-        // the portion of the schema that exists.
+    public static async Task EnsureSchemaAsync(AppDbContext context, ILogger? logger = null)
+    {
+        if (!context.Database.IsRelational())
+        {
+            // Migrations are a relational concept; a non-relational provider
+            // (the EF InMemory provider in tests) still gets the model shape.
+            await context.Database.EnsureCreatedAsync();
+            return;
+        }
+
+        switch (await InspectAsync(context))
+        {
+            case DatabaseState.Empty:
+                logger?.LogInformation("SchemaUpgrader: empty database; creating the schema through migrations.");
+                await context.Database.MigrateAsync();
+                await TryRepairSchemaDriftAsync(context, logger);
+                break;
+
+            case DatabaseState.Unversioned:
+                logger?.LogInformation(
+                    "SchemaUpgrader: database has no migrations history; repairing it to the baseline shape and recording {Baseline} as applied.",
+                    BaselineMigrationId);
+                await TryRepairSchemaDriftAsync(context, logger);
+                await RecordBaselineAsync(context);
+                await context.Database.MigrateAsync();
+                break;
+
+            default:
+                await context.Database.MigrateAsync();
+                await TryRepairSchemaDriftAsync(context, logger);
+                break;
+        }
+    }
+
+    private enum DatabaseState
+    {
+        /// <summary>No tables: a new install (or a file an existence probe created).</summary>
+        Empty,
+
+        /// <summary>Tables but no migrations history: EnsureCreated-built, or older.</summary>
+        Unversioned,
+
+        /// <summary>The migrations history table exists.</summary>
+        Versioned,
+    }
+
+    private static async Task<DatabaseState> InspectAsync(AppDbContext context)
+    {
+        var connection = context.Database.GetDbConnection();
+        var wasOpen = connection.State == ConnectionState.Open;
+        if (!wasOpen)
+        {
+            // Creates the file when it does not exist yet (Mode=ReadWriteCreate),
+            // which is also what MigrateAsync would do a moment later.
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            var tables = await GetTableNamesAsync(connection);
+            if (tables.Contains(HistoryRepository.DefaultTableName))
+            {
+                return DatabaseState.Versioned;
+            }
+
+            return tables.Any(t => !t.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase))
+                ? DatabaseState.Unversioned
+                : DatabaseState.Empty;
+        }
+        finally
+        {
+            if (!wasOpen)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates the migrations history table the way EF itself would and
+    /// records <see cref="BaselineMigrationId"/> in it, so MigrateAsync skips
+    /// the baseline (whose tables the database already has) and applies only
+    /// what came after. The product version written is the one EF writes for
+    /// migrations it applies, so a baselined row is indistinguishable from an
+    /// applied one.
+    /// </summary>
+    private static async Task RecordBaselineAsync(AppDbContext context)
+    {
+        if (!context.Database.GetMigrations().Contains(BaselineMigrationId))
+        {
+            throw new InvalidOperationException(
+                $"SchemaUpgrader: the baseline migration '{BaselineMigrationId}' is not in the migrations assembly; " +
+                "an unversioned database cannot be labelled with a migration that does not exist.");
+        }
+
+        var history = context.GetService<IHistoryRepository>();
+        var connection = context.Database.GetDbConnection();
+        var wasOpen = connection.State == ConnectionState.Open;
+        if (!wasOpen)
+        {
+            await connection.OpenAsync();
+        }
+
+        try
+        {
+            await ExecuteAsync(connection, history.GetCreateIfNotExistsScript());
+            await ExecuteAsync(connection, history.GetInsertScript(
+                new HistoryRow(BaselineMigrationId, ProductInfo.GetVersion())));
+        }
+        finally
+        {
+            if (!wasOpen)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the pre-baseline drift repair. Never lets a repair failure crash
+    /// startup: the app can still run against the portion of the schema that
+    /// exists, and the next start retries.
+    /// </summary>
+    private static async Task TryRepairSchemaDriftAsync(AppDbContext context, ILogger? logger)
+    {
         try
         {
             await RepairSchemaDriftAsync(context, logger);
@@ -51,6 +210,12 @@ public static class SchemaUpgrader
         }
     }
 
+    /// <summary>
+    /// The idempotent repair for databases from builds before the migration
+    /// baseline. Frozen at the baseline shape (see the class remarks): a
+    /// table or column that post-dates <see cref="BaselineMigrationId"/>
+    /// belongs in a migration, never here.
+    /// </summary>
     private static async Task RepairSchemaDriftAsync(AppDbContext context, ILogger? logger)
     {
         var connection = context.Database.GetDbConnection();
@@ -495,10 +660,10 @@ public static class SchemaUpgrader
             await RepairCaseInsensitiveIdentityAsync(connection, existingTables, logger);
 
             // Seed parity with AppDbContext.SeedDefaultSettings (HasData);
-            // EnsureCreated is a no-op on databases created by older builds, so
-            // any settings row seeded after that build is missing there.
-            // INSERT OR IGNORE keeps this idempotent and never overwrites a
-            // value the user has since changed. NOTE (F11): embedding_model was
+            // a database created by an older build never ran the baseline
+            // migration's seed, so any settings row seeded after that build is
+            // missing there. INSERT OR IGNORE keeps this idempotent and never
+            // overwrites a value the user has since changed. NOTE (F11): embedding_model was
             // corrected from 'onnx-text-embedding' to 'all-MiniLM-L6-v2';
             // databases that already carry the old value keep it (never
             // overwritten) — the embedding router keys off embedding_provider
@@ -604,7 +769,7 @@ public static class SchemaUpgrader
         (string ColumnName, string ColumnDdl)[] columns)
     {
         // If the table itself is missing (very old or corrupted database),
-        // there is nothing to alter; EnsureCreated only builds full schemas
+        // there is nothing to alter; the migrations only build full schemas
         // for brand-new databases.
         if (!existingTables.Contains(tableName))
         {

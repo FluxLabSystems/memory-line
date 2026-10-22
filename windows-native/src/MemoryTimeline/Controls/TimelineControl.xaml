@@ -361,14 +361,14 @@
                      the left edge of the events area, one row per lane. Row
                      heights come from the same lane constants the events use,
                      so gutter rows stay aligned with lane rows.
-                     DEFERRED (F8 wave): vertical lane scrolling. The events
-                     area does not scroll vertically, and neither does this,
-                     so lanes past the viewport bottom are reachable only by
-                     collapsing the lanes above them. The spec's synchronised
-                     vertical-scroll note needs a shared scroll surface over
-                     the events canvas plus this gutter and is intentionally
-                     out of scope here (see the reorderable-lanes precedent in
-                     LaneAssignment.cs). -->
+                     DEFERRED (F8 wave; still open 2026-10): vertical lane
+                     scrolling. The events area does not scroll vertically,
+                     and neither does this, so lanes past the viewport bottom
+                     are reachable only by collapsing the lanes above them.
+                     The spec's synchronised vertical-scroll note needs a
+                     shared scroll surface over the events canvas plus this
+                     gutter and is intentionally out of scope here (see the
+                     reorderable-lanes precedent in LaneAssignment.cs). -->
                 <Border x:Name="LaneGutter"
                        Grid.Row="0"
                        Width="140"

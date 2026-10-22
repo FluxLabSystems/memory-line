@@ -108,8 +108,13 @@ public class RemoteChangeApplier : IRemoteChangeApplier
 
             if (string.Equals(change.Operation, SyncOperation.Delete, StringComparison.OrdinalIgnoreCase))
             {
+                // A companion deleting its capture does not reach into the
+                // archive: whatever was ingested stays in the review queue for
+                // the user to keep or remove, so the change is skipped as a
+                // decision, not deferred.
                 _logger.LogDebug(
-                    "Skipping change {ChangeId}: delete operations are not applied in Phase 1", change.ChangeId);
+                    "Skipping change {ChangeId}: a capture delete is not applied to the archive; the queue item, if any, stays for review",
+                    change.ChangeId);
                 return ChangeApplicationResult.Skipped;
             }
 
@@ -339,6 +344,14 @@ public class RemoteChangeApplier : IRemoteChangeApplier
         TitleHint = payload.TitleHint,
         UserNote = payload.UserNote,
         TripId = payload.TripId,
+        Location = payload.Location == null ? null : new RemoteCaptureLocation
+        {
+            Latitude = payload.Location.Latitude,
+            Longitude = payload.Location.Longitude,
+            HorizontalAccuracyM = payload.Location.HorizontalAccuracyM,
+            HeadingDegrees = payload.Location.HeadingDegrees,
+            SpeedMps = payload.Location.SpeedMps,
+        },
         ClientSchemaVersion = payload.ClientSchemaVersion,
         ArtifactId = artifact.ArtifactId,
         OriginalFileName = artifact.OriginalFileName,

@@ -22,6 +22,9 @@ on:
       - 'windows-native/src/MemoryTimeline.Core/**'
       - 'windows-native/src/MemoryTimeline.Data/**'
       - 'windows-native/src/MemoryTimeline.Sync/**'
+      # The dotnet job is the only workflow that runs these tests; a change to
+      # them alone used to run nowhere.
+      - 'windows-native/src/MemoryTimeline.Portability.Tests/**'
       - '.github/workflows/macos-native-build.yml'
   pull_request:
     paths:
@@ -32,6 +35,8 @@ on:
       - 'windows-native/src/MemoryTimeline.Core/**'
       - 'windows-native/src/MemoryTimeline.Data/**'
       - 'windows-native/src/MemoryTimeline.Sync/**'
+      - 'windows-native/src/MemoryTimeline.Portability.Tests/**'
+      - '.github/workflows/macos-native-build.yml'
   workflow_dispatch:
 
 jobs:

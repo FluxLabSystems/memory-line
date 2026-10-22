@@ -25,6 +25,7 @@ on:
   pull_request:
     paths:
       - 'ios-companion/**'
+      - '.github/workflows/ios-companion-build.yml'
   workflow_dispatch:
 
 jobs:

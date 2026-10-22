@@ -65,6 +65,12 @@ public class CaptureResponse
 
     public string? UserNote { get; set; }
 
+    /// <summary>
+    /// The location snapshot the capture was created with (contract v1.5),
+    /// echoed as received; null when the client attached none.
+    /// </summary>
+    public LocationContext? Location { get; set; }
+
     /// <summary>Server-side capture status, see <see cref="SyncCaptureStatus"/>.</summary>
     public string Status { get; set; } = SyncCaptureStatus.Received;
 

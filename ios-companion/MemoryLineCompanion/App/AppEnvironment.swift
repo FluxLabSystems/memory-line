@@ -26,6 +26,11 @@ final class AppEnvironment {
     /// queue. Windows is the only writer; this phone renders what it is sent.
     let projections: SQLiteTimelineProjectionStore
     let statusSync: StatusSyncCoordinator
+    /// One-shot location for the opt-in capture snapshot (design §14.4).
+    let location: CaptureLocationService
+    /// The Ask conversation: questions submitted to the service, answers the
+    /// Windows PC sends back. This phone never answers anything itself.
+    let ask: AskCoordinator
 
     private let logger = AppLog.logger(category: "environment")
 
@@ -45,6 +50,7 @@ final class AppEnvironment {
         // also refreshes what Windows has done. Held weakly there; this
         // environment owns both coordinators for the process lifetime.
         uploads.statusSync = statusSync
+        let location = CaptureLocationService()
 
         self.database = database
         self.captures = captures
@@ -55,10 +61,14 @@ final class AppEnvironment {
         self.statuses = statuses
         self.projections = projections
         self.statusSync = statusSync
+        self.location = location
+        self.ask = AskCoordinator(settings: settings, api: api, surface: "ios")
         // Capture the local `uploads` (not self) so the closure is valid before
         // `self` is fully initialized. Every finalized recording immediately
         // enters the upload pipeline (design §16.1).
-        self.recorder = AudioRecorderService(store: captures, settings: settings) { capture in
+        self.recorder = AudioRecorderService(
+            store: captures, settings: settings, locationProvider: location
+        ) { capture in
             uploads.captureFinalized(capture)
         }
     }
@@ -109,6 +119,9 @@ final class AppEnvironment {
         tokens.clear()
         settings.set(nil, for: AppSettingsKey.deviceId)
         settings.set(false, for: AppSettingsKey.syncEnabled)
+        // The Ask conversation belongs to the registration that just ended,
+        // and its turns are the archive's words — as on the Mac, forget it.
+        ask.reset()
     }
 
     // MARK: - Database bootstrap

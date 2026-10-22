@@ -11,20 +11,33 @@ namespace MemoryTimeline.Tests.UnitTests;
 /// <summary>
 /// Tests for ExportService.ExportNarrativeAsync (F5): Markdown/HTML content,
 /// the atomic temp-file write (no .tmp leftovers, no partial file on
-/// failure), HTML encoding of model text, and the cited-events footer.
+/// failure), HTML encoding of model text, the cited-events footer, and the
+/// attached-media references written when the narrative asked for media.
 /// </summary>
 public class NarrativeExportTests : IDisposable
 {
     private readonly TestDbContextFactory _contextFactory;
     private readonly ExportService _exportService;
     private readonly List<string> _tempPaths = new();
+    private readonly string _mediaRoot;
 
     public NarrativeExportTests()
     {
         _contextFactory = TestDbContextFactory.CreateInMemory();
+
+        // The export only REFERENCES media files, so the root need not exist;
+        // the mock resolves stored relative paths exactly as MediaService does.
+        _mediaRoot = Path.Combine(Path.GetTempPath(), $"NarrativeExportTests_Media_{Guid.NewGuid()}");
+        var mediaServiceMock = new Mock<IMediaService>();
+        mediaServiceMock.Setup(m => m.MediaRoot).Returns(_mediaRoot);
+        mediaServiceMock
+            .Setup(m => m.GetAbsolutePath(It.IsAny<EventMedia>()))
+            .Returns<EventMedia>(media => Path.Combine(_mediaRoot, media.FilePath));
+
         _exportService = new ExportService(
             _contextFactory,
-            new Mock<ILogger<ExportService>>().Object);
+            new Mock<ILogger<ExportService>>().Object,
+            mediaServiceMock.Object);
     }
 
     #region Markdown
@@ -165,6 +178,117 @@ public class NarrativeExportTests : IDisposable
 
     #endregion
 
+    #region Media references (IncludeMedia)
+
+    [Fact]
+    public async Task ExportNarrativeAsync_IncludeMedia_Markdown_ReferencesImagesWithCaptions()
+    {
+        // Arrange: a captioned photo attached to the cited event.
+        await SeedEventAsync("e1", "First day", new DateTime(2019, 3, 14));
+        await SeedMediaAsync("m1", "e1", Path.Combine("2019", "03", "photo.jpg"), MediaType.Image, "Our first morning");
+        var narrative = BuildNarrative("My Year", "2019", "It began. [event:e1]", new List<string> { "e1" });
+        narrative.IncludeMedia = true;
+        var path = NewTempPath(".md");
+
+        // Act
+        await _exportService.ExportNarrativeAsync(narrative, path, NarrativeFormat.Markdown);
+
+        // Assert: an image reference to the file's absolute location plus the
+        // caption and the owning event's title.
+        var content = await File.ReadAllTextAsync(path);
+        var expectedReference = new Uri(Path.Combine(_mediaRoot, "2019", "03", "photo.jpg")).AbsoluteUri;
+        content.Should().Contain($"![Our first morning]({expectedReference})");
+        content.Should().Contain("*Our first morning* — First day");
+    }
+
+    [Fact]
+    public async Task ExportNarrativeAsync_IncludeMediaFalse_OmitsAttachments()
+    {
+        // Arrange: the same attachment, but the narrative did not ask for media.
+        await SeedEventAsync("e1", "First day", new DateTime(2019, 3, 14));
+        await SeedMediaAsync("m1", "e1", Path.Combine("2019", "03", "photo.jpg"), MediaType.Image, "Our first morning");
+        var narrative = BuildNarrative("My Year", "2019", "It began. [event:e1]", new List<string> { "e1" });
+        narrative.IncludeMedia = false;
+        var path = NewTempPath(".md");
+
+        // Act
+        await _exportService.ExportNarrativeAsync(narrative, path, NarrativeFormat.Markdown);
+
+        // Assert
+        var content = await File.ReadAllTextAsync(path);
+        content.Should().NotContain("photo.jpg");
+        content.Should().NotContain("Our first morning");
+    }
+
+    [Fact]
+    public async Task ExportNarrativeAsync_IncludeMedia_UncaptionedImageUsesEventTitle_OtherMediaBecomesLink()
+    {
+        // Arrange: an uncaptioned photo and a captioned document on the same event.
+        await SeedEventAsync("e1", "First day", new DateTime(2019, 3, 14));
+        await SeedMediaAsync("m1", "e1", Path.Combine("2019", "03", "photo.jpg"), MediaType.Image, caption: null, sortOrder: 0);
+        await SeedMediaAsync("m2", "e1", Path.Combine("2019", "03", "notes.pdf"), MediaType.Document, "Scanned notes", sortOrder: 1);
+        var narrative = BuildNarrative("My Year", "2019", "It began. [event:e1]", new List<string> { "e1" });
+        narrative.IncludeMedia = true;
+        var path = NewTempPath(".md");
+
+        // Act
+        await _exportService.ExportNarrativeAsync(narrative, path, NarrativeFormat.Markdown);
+
+        // Assert: the image falls back to the event title; the document is a
+        // plain link (never an image reference), with its caption.
+        var content = await File.ReadAllTextAsync(path);
+        var photoReference = new Uri(Path.Combine(_mediaRoot, "2019", "03", "photo.jpg")).AbsoluteUri;
+        var notesReference = new Uri(Path.Combine(_mediaRoot, "2019", "03", "notes.pdf")).AbsoluteUri;
+        content.Should().Contain($"![First day]({photoReference})");
+        content.Should().Contain($"- [notes.pdf]({notesReference}) — *Scanned notes* — First day");
+        content.Should().NotContain("![notes.pdf]");
+        content.IndexOf("photo.jpg", StringComparison.Ordinal).Should()
+            .BeLessThan(content.IndexOf("notes.pdf", StringComparison.Ordinal), "sort order is preserved");
+    }
+
+    [Fact]
+    public async Task ExportNarrativeAsync_IncludeMedia_Html_RendersEncodedFigure()
+    {
+        // Arrange: a caption with markup-hostile characters.
+        await SeedEventAsync("e1", "First day", new DateTime(2019, 3, 14));
+        await SeedMediaAsync("m1", "e1", Path.Combine("2019", "03", "photo.jpg"), MediaType.Image, "Tom & Jerry's <first> walk");
+        var narrative = BuildNarrative("My Year", "2019", "It began. [event:e1]", new List<string> { "e1" });
+        narrative.IncludeMedia = true;
+        var path = NewTempPath(".html");
+
+        // Act
+        await _exportService.ExportNarrativeAsync(narrative, path, NarrativeFormat.Html);
+
+        // Assert
+        var content = await File.ReadAllTextAsync(path);
+        var reference = new Uri(Path.Combine(_mediaRoot, "2019", "03", "photo.jpg")).AbsoluteUri;
+        content.Should().Contain($"<figure class=\"media\"><img src=\"{reference}\" alt=\"Tom &amp; Jerry&#39;s &lt;first&gt; walk\"/>");
+        content.Should().Contain("<figcaption>Tom &amp; Jerry&#39;s &lt;first&gt; walk — First day</figcaption>");
+        content.Should().NotContain("<first>");
+    }
+
+    [Fact]
+    public async Task ExportNarrativeAsync_IncludeMedia_WithoutMediaService_WritesRelativePath()
+    {
+        // Arrange: no IMediaService registered (the two-argument constructor),
+        // so the stored media-root-relative path is written with forward slashes.
+        var bareService = new ExportService(_contextFactory, new Mock<ILogger<ExportService>>().Object);
+        await SeedEventAsync("e1", "First day", new DateTime(2019, 3, 14));
+        await SeedMediaAsync("m1", "e1", Path.Combine("2019", "03", "photo.jpg"), MediaType.Image, "Morning");
+        var narrative = BuildNarrative("My Year", "2019", "It began. [event:e1]", new List<string> { "e1" });
+        narrative.IncludeMedia = true;
+        var path = NewTempPath(".md");
+
+        // Act
+        await bareService.ExportNarrativeAsync(narrative, path, NarrativeFormat.Markdown);
+
+        // Assert
+        var content = await File.ReadAllTextAsync(path);
+        content.Should().Contain("![Morning](2019/03/photo.jpg)");
+    }
+
+    #endregion
+
     #region Atomic write / failure behavior
 
     [Fact]
@@ -252,6 +376,22 @@ public class NarrativeExportTests : IDisposable
             },
             SourceEventIds = new List<string>(sourceIds)
         };
+    }
+
+    private async Task SeedMediaAsync(
+        string mediaId, string eventId, string filePath, MediaType mediaType, string? caption, int sortOrder = 0)
+    {
+        await using var context = _contextFactory.CreateDbContext();
+        context.EventMedia.Add(new EventMedia
+        {
+            MediaId = mediaId,
+            EventId = eventId,
+            FilePath = filePath,
+            MediaType = mediaType,
+            Caption = caption,
+            SortOrder = sortOrder
+        });
+        await context.SaveChangesAsync();
     }
 
     private string NewTempPath(string extension)

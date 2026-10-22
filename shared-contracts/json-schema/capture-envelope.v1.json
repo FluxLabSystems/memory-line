@@ -24,7 +24,7 @@
     },
     "sourcePlatform": {
       "type": "string",
-      "enum": ["ios", "windows", "other"],
+      "enum": ["ios", "windows", "macos", "other"],
       "default": "ios",
       "description": "Originating platform."
     },
@@ -60,6 +60,38 @@
       "format": "uuid",
       "description": "Trip the capture belongs to, when applicable."
     },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latitude", "longitude"],
+      "description": "The single location fix the device attached at capture time (the sync contract's LocationContext, carried on CaptureChangePayload.location since v1.5). Kept on the capture row as columns; never turned into a named place and never written to the Windows sync outbox.",
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Latitude in decimal degrees."
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "description": "Longitude in decimal degrees."
+        },
+        "horizontalAccuracyM": {
+          "type": "number",
+          "description": "Horizontal accuracy of the fix in metres, as the device reported it."
+        },
+        "headingDegrees": {
+          "type": "number",
+          "description": "Direction of travel in degrees, as the device reported it."
+        },
+        "speedMps": {
+          "type": "number",
+          "description": "Speed in metres per second, as the device reported it."
+        }
+      }
+    },
     "clientSchemaVersion": {
       "type": "integer",
       "minimum": 1,
@@ -92,7 +124,7 @@
     "storageLocator": {
       "type": "string",
       "minLength": 1,
-      "description": "Opaque locator understood by the receiver's artifact resolver. Phase 0 resolves local file paths; Phase 1 replaces the resolver with a sync-service download client without changing this contract."
+      "description": "Opaque locator understood by the receiver's artifact resolver. In practice a local file path: the Windows sync client downloads a remote artifact into its cache before building the envelope, so the resolver only verifies the file is there."
     }
   }
 }

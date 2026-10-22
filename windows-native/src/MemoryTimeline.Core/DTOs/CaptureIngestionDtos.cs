@@ -13,7 +13,7 @@ public class RemoteCaptureEnvelope
 
     public string? SourceDeviceId { get; set; }
 
-    /// <summary>Originating platform, e.g. "ios".</summary>
+    /// <summary>Originating platform: ios, macos, windows or other (the contract's sourcePlatform enum).</summary>
     public string SourcePlatform { get; set; } = "ios";
 
     /// <summary>memory | idea | trip_log | reminder | question | unclassified.</summary>
@@ -30,6 +30,14 @@ public class RemoteCaptureEnvelope
     public string? UserNote { get; set; }
 
     public string? TripId { get; set; }
+
+    /// <summary>
+    /// The single location fix the device attached at capture time (the
+    /// capture contract's LocationContext), or null. Kept on the capture row
+    /// as it arrives; never turned into a named place and never written to
+    /// the sync outbox (privacy rule §14.5).
+    /// </summary>
+    public RemoteCaptureLocation? Location { get; set; }
 
     public int ClientSchemaVersion { get; set; } = 1;
 
@@ -49,12 +57,41 @@ public class RemoteCaptureEnvelope
     public string ExpectedSha256 { get; set; } = string.Empty;
 
     /// <summary>
-    /// Opaque locator understood by <see cref="Services.IArtifactResolver"/>.
-    /// Phase 0 resolves local file paths (test client / same-machine handoff);
-    /// Phase 1 replaces the resolver with a sync-service download client without
-    /// changing this contract.
+    /// Opaque locator understood by the registered
+    /// <see cref="Services.IArtifactResolver"/>. In practice a local file
+    /// path: the sync client downloads a remote artifact into its cache before
+    /// building the envelope, so the resolver only verifies the file is there.
     /// </summary>
     public string StorageLocator { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// A capture's location snapshot as the envelope carries it (mirrors the wire
+/// LocationContext field for field, so a Core consumer needs no reference to
+/// the sync contracts assembly).
+/// </summary>
+public class RemoteCaptureLocation
+{
+    /// <summary>Latitude in decimal degrees, [-90, 90].</summary>
+    public double Latitude { get; set; }
+
+    /// <summary>Longitude in decimal degrees, [-180, 180].</summary>
+    public double Longitude { get; set; }
+
+    public double? HorizontalAccuracyM { get; set; }
+
+    public double? HeadingDegrees { get; set; }
+
+    public double? SpeedMps { get; set; }
+
+    /// <summary>
+    /// Whether the fix is a place on Earth: latitude within [-90, 90] and
+    /// longitude within [-180, 180], neither NaN (a NaN fails both
+    /// comparisons). Ingestion drops a fix that is not, rather than failing
+    /// the capture over it.
+    /// </summary>
+    public bool IsInRange =>
+        Latitude is >= -90 and <= 90 && Longitude is >= -180 and <= 180;
 }
 
 /// <summary>

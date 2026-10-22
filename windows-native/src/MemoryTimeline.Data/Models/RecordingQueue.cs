@@ -170,14 +170,27 @@ public static class QueueProcessingStage
 }
 
 /// <summary>
-/// Synchronization state of a queue item relative to the sync service.
+/// Synchronization state of a queue item relative to the sync service: where
+/// the capture came from and whether its origin has been told it arrived.
+/// Written by capture ingestion (the first two) and by the outbox publisher
+/// (the third); read through the queue DTO.
 /// </summary>
 public static class QueueSyncState
 {
-    /// <summary>Created on this machine; no sync involvement yet.</summary>
+    /// <summary>
+    /// Created on this machine. Its capture record is still pushed to the
+    /// service, but no other device is waiting to hear that it arrived, so
+    /// the item never leaves this state.
+    /// </summary>
     public const string LocalOnly = "local_only";
-    /// <summary>Ingested from a remote capture; receipt not yet acknowledged upstream.</summary>
+    /// <summary>
+    /// Ingested from a remote capture; the capture entry this machine wrote
+    /// to sync_outbox has not been accepted by the service yet.
+    /// </summary>
     public const string Received = "received";
-    /// <summary>Durable receipt acknowledged to the sync service.</summary>
+    /// <summary>
+    /// The service accepted that outbox entry (LocalOutboxPublisher), so the
+    /// receipt is durable upstream and the capturing device can be told.
+    /// </summary>
     public const string Acknowledged = "acknowledged";
 }

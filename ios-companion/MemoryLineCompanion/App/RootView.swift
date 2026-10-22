@@ -1,8 +1,8 @@
 import AVFAudio
 import SwiftUI
 
-/// Root tab layout: Capture | History | Timeline | Settings. Presents the
-/// first-run onboarding sheet while the microphone permission is still
+/// Root tab layout: Capture | History | Timeline | Ask | Settings. Presents
+/// the first-run onboarding sheet while the microphone permission is still
 /// undetermined so permission education happens before driving-mode use
 /// (design §8.6).
 ///
@@ -12,7 +12,9 @@ import SwiftUI
 /// them as separate tabs rather than merging them is deliberate: one is a list
 /// of things this device made and still owns, the other a copy of someone
 /// else's writes, and a single list would blur which is which exactly where a
-/// user might expect to be able to edit.
+/// user might expect to be able to edit. Ask is the one tab that talks to the
+/// archive in words — a question submitted to the service and answered by the
+/// Windows PC — and like Timeline it never writes anything.
 @MainActor
 struct RootView: View {
     @Environment(AppEnvironment.self) private var env
@@ -26,6 +28,8 @@ struct RootView: View {
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             ArchiveTimelineView()
                 .tabItem { Label("Timeline", systemImage: "calendar.day.timeline.left") }
+            AskView()
+                .tabItem { Label("Ask", systemImage: "bubble.left.and.text.bubble.right") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

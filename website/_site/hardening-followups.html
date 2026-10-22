@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Hardening follow-ups · Memory Timeline docs</title>
-<meta name="description" content="Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.">
+<meta name="description" content="The hardening pass’s deferred items with their current status: the captive-DbContext, fire-and-forget-embedding, EF-baseline and plaintext-key items are resolved; unit-of-work beyond approve, analytics brush bindings, CancellationToken plumbing and DateTime.Kind remain open.">
 <meta property="og:title" content="Hardening follow-ups · Memory Timeline docs">
-<meta property="og:description" content="Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.">
+<meta property="og:description" content="The hardening pass’s deferred items with their current status: the captive-DbContext, fire-and-forget-embedding, EF-baseline and plaintext-key items are resolved; unit-of-work beyond approve, analytics brush bindings, CancellationToken plumbing and DateTime.Kind remain open.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%231d1b18%22%2F%3E%3Cpath%20d%3D%22M4%2021h24%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%2F%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2221%22%20r%3D%223.1%22%20fill%3D%22%23e0873f%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2214%22%20r%3D%223.6%22%20fill%3D%22%23f0b46e%22%2F%3E%3Ccircle%20cx%3D%2225%22%20cy%3D%2218%22%20r%3D%222.6%22%20fill%3D%22%236ec2b8%22%2F%3E%3Cpath%20d%3D%22M9%2021%2017%2014%2025%2018%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.2%22%20fill%3D%22none%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.8%22%2F%3E%3C%2Fsvg%3E">
 <link rel="stylesheet" href="assets/styles.css">
@@ -42,7 +42,7 @@
         <svg class="icon-sun" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="4" fill="currentColor"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6 16 16M16 4l-1.4 1.4M5.4 14.6 4 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <svg class="icon-moon" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z" fill="currentColor"/></svg>
       </button>
-      <a class="icon-btn" href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
+      <a class="icon-btn" href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
         <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
     </div>
@@ -127,12 +127,12 @@
     <span>Audits &amp; reviews</span>
   </nav>
   <h1>Hardening follow-ups</h1>
-  <p class="doc-lede">Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.</p>
+  <p class="doc-lede">The hardening pass’s deferred items with their current status: the captive-DbContext, fire-and-forget-embedding, EF-baseline and plaintext-key items are resolved; unit-of-work beyond approve, analytics brush bindings, CancellationToken plumbing and DateTime.Kind remain open.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>862</b> words</span>
-    <span class="doc-meta-item"><b>4</b> min read</span>
-    <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/HARDENING-FOLLOWUPS.md" target="_blank" rel="noopener noreferrer">
+    <span class="doc-meta-item"><b>1,030</b> words</span>
+    <span class="doc-meta-item"><b>5</b> min read</span>
+    <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/HARDENING-FOLLOWUPS.md" target="_blank" rel="noopener noreferrer">
       windows-native/HARDENING-FOLLOWUPS.md ↗
     </a>
   </div>
@@ -150,7 +150,7 @@ non-trivial refactor, a public-API/DI change spanning layers, or a team decision
 task) and run the built test assembly with <code>dotnet vstest</code></strong>, as CI does, to validate
 all applied fixes.</p>
 </blockquote>
-<blockquote><p><strong>Status key (updated 2026-10-22):</strong> ✅ resolved · ⬜ still open.</p>
+<blockquote><p><strong>Status key (updated 2026-10-22):</strong> ✅ resolved · ⬜ still open (needs a decision or work).</p>
 </blockquote>
 <h2 id="high-priority" class="anchored">High priority<a class="heading-anchor" href="#high-priority" aria-label="Link to this section">#</a></h2>
 <h3 id="1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" class="anchored">1. Captive / scope-captured <code>DbContext</code>  <em>(converged flag from 3 agents)</em> — ✅ resolved<a class="heading-anchor" href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" aria-label="Link to this section">#</a></h3>
@@ -181,7 +181,7 @@ Currently masked by an internal catch (embeddings silently fail).
 background work (ctor change → flagged rather than applied).</p>
 <p><strong>Resolution:</strong> the shared-context <code>Task.Run</code> went away with the factory rework; the
 embedding path opens its own context per operation.</p>
-<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em> — ✅ baseline regenerated (runtime path unchanged)<a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" aria-label="Link to this section">#</a></h3>
+<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em> — ✅ resolved (2026-10-22)<a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" aria-label="Link to this section">#</a></h3>
 <p><code>AppDbContextModelSnapshot</code> is an empty stub and <code>InitialCreate</code> is far behind the
 model (missing tables <code>era_categories</code>, <code>era_tags</code>, <code>milestones</code>, <code>saved_searches</code>;
 missing columns on <code>eras</code>/<code>events</code>/<code>tags</code>; missing <code>cross_references</code> FKs; missing
@@ -189,12 +189,15 @@ seed <code>InsertData</code>). Runtime is fine today because startup uses <code>
 (schema built from the model), but <strong>any migration-based deploy will fail</strong>.
 <strong>Fix:</strong> on a machine with the SDK, regenerate the baseline
 (<code>dotnet ef migrations add InitialCreate --force</code>) before shipping migrations.</p>
-<p><strong>Current state (2026-10-22):</strong> a baseline migration
+<p><strong>Resolution (2026-10-22):</strong> a baseline migration
 (<code>Data/Migrations/20261022004346_InitialCreate</code> + snapshot; 25 tables, both seeds) was
-generated with <code>dotnet ef</code> through the new <code>AppDbContextDesignTimeFactory</code>. Startup still
-uses <code>SchemaUpgrader.EnsureSchemaAsync</code> (EnsureCreated + idempotent DDL repairs) and
-nothing calls <code>Migrate()</code>; moving existing EnsureCreated-built databases onto migrations
-still needs a history-table baseline step, which remains open.</p>
+generated with <code>dotnet ef</code> through the new <code>AppDbContextDesignTimeFactory</code>, and
+<code>SchemaUpgrader.EnsureSchemaAsync</code> now runs <code>Database.MigrateAsync</code>. An unversioned
+database (built by <code>EnsureCreated</code> under an older build) is repaired by the idempotent
+DDL, baselined with <code>InitialCreate</code> (the history row is written through
+<code>IHistoryRepository</code>) and migrated forward; the first post-baseline migration is
+<code>AddCaptureLocation</code>. From here on a schema change ships as a migration only — the
+repair is frozen at the baseline shape (see <code>claude.md</code>, &quot;Adding a feature&quot;).</p>
 <h2 id="medium-priority" class="anchored">Medium priority<a class="heading-anchor" href="#medium-priority" aria-label="Link to this section">#</a></h2>
 <ul>
 <li>✅ (approve path) / ⬜ (elsewhere) <strong>Unit-of-work / atomicity</strong> — multi-repository
@@ -212,11 +215,10 @@ and the Anthropic SDK call.</li>
 <code>EventRepository.DeleteAsync</code>/<code>DeleteRangeAsync</code> remove the cross-references naming
 the event at either end in the same <code>SaveChanges</code>, proven by a file-backed SQLite test
 with <code>PRAGMA foreign_keys</code> on.</li>
-<li>⬜ <strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
-are <code>string</code> bound directly to <code>Brush</code> properties via <code>x:Bind</code> in <code>AnalyticsPage.xaml</code>.
-Expose a <code>Brush</code>/<code>SolidColorBrush</code> on the model (as the timeline DTOs do with
-<code>ColorBrush</code>) or add a string→Brush converter. <em>Not re-verified in the 2026-10 pass;
-the project&#39;s convention is now hex strings in Core + <code>HexToBrushConverter</code> in the view.</em></li>
+<li>✅ <strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
+are hex strings; the four <code>x:Bind Color</code> sites in <code>AnalyticsPage.xaml</code> (category bars,
+tag cloud, person nodes, heatmap cells) now go through <code>HexToBrushConverter</code>, the
+project convention for every color that crosses the Core → view boundary (2026-10-22).</li>
 </ul>
 <h2 id="low-priority" class="anchored">Low priority<a class="heading-anchor" href="#low-priority" aria-label="Link to this section">#</a></h2>
 <ul>
@@ -227,15 +229,27 @@ port (<code>DpapiSecretProtector</code> in the head: <code>ProtectedData</code>,
 read. A backup restored under another Windows account reads those secrets as empty and
 they must be re-entered. Keys can also be removed from Settings (&quot;Clear key&quot; / Reset
 to Defaults).</li>
-<li>⬜ <strong><code>CancellationToken</code> not plumbable</strong> through <code>IRepository&lt;T&gt;</code> and specialized repo
-interfaces — add <code>CancellationToken ct = default</code> in a coordinated interface change.</li>
-<li>⬜ <strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; add a UTC
-<code>ValueConverter</code> on <code>DateTime</code> properties to avoid local/UTC comparison bugs.
-<em>Related: <code>Microsoft.Data.Sqlite.Pre10TimeZoneHandling</code> is pinned at both entry
-points; auditing the stored values is still open (see DEVELOPMENT-STATUS).</em></li>
-<li>⬜ <strong>Inclusive viewport boundaries</strong> — <code>EventLayoutEngine.GetVisibleLayouts</code> /
-<code>TimelineViewport.IsEventVisible</code> treat edge-touching (zero-area) events as visible
-on both ends. Internally consistent (tests aligned to it); confirm it&#39;s intended.</li>
+<li>✅ <strong><code>CancellationToken</code> not plumbable</strong> — resolved in the same change set (2026-10-22):
+every repository method takes <code>CancellationToken cancellationToken = default</code> and passes
+it to EF, and the Sync callers forward theirs; on the Core side queue processing
+(<code>ProcessNextItemAsync</code> / <code>ProcessAllPendingAsync</code>) takes a token that reaches the
+Whisper decode and the extraction model call, so a cancelled item goes back to Pending
+instead of failing.</li>
+<li>⬜ <strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; a UTC <code>ValueConverter</code>
+on <code>DateTime</code> properties would avoid local/UTC comparison bugs.
+<em><code>Microsoft.Data.Sqlite.Pre10TimeZoneHandling</code> is pinned at both entry points (app and
+tests) so stored values keep reading as they were written.</em> <strong>Owner decision needed</strong>
+before anything changes: either (a) add the UTC converter and audit/convert the values
+already stored under the old rules (a one-off data migration of every <code>DateTime</code> column —
+user databases hold both local and UTC values today), or (b) keep the pre-10 switch pinned
+indefinitely and document <code>Unspecified</code> as the contract. Until that call is made, no code
+change is planned here.</li>
+<li>✅ <strong>Inclusive viewport boundaries</strong> — closed: inclusive is intended. The predicate the
+timeline actually renders with is <code>TimelineCoordinateConverter.IsRangeVisible</code> (closed on
+both ends, matching the data layer&#39;s overlap query, so an edge-touching event is loaded
+and drawn consistently); the decision is recorded on it and on
+<code>TimelineViewport.IsEventVisible</code>. <code>EventLayoutEngine</code> / <code>EventLayout.cs</code> had no
+production caller and were deleted together with <code>EventLayoutEngineTests.cs</code> (2026-10).</li>
 <li>✅ <strong>Singleton <code>AnthropicLlmService</code> caches <code>_model</code></strong> at first init — a later model
 change in settings needs an app restart. <em>Resolved: <code>RoutingLlmService</code> is the
 registered <code>ILlmService</code> and re-reads provider/model/key on every call, so Settings
@@ -259,7 +273,7 @@ changes apply live.</em></li>
 <li class="toc-item toc-h2"><a href="#high-priority" data-toc-link>High priority</a></li>
 <li class="toc-item toc-h3"><a href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" data-toc-link>1. Captive / scope-captured DbContext  (converged flag from 3 agents) — ✅ resolved</a></li>
 <li class="toc-item toc-h3"><a href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents---resolved" data-toc-link>2. EventService.CreateEventAsync fire-and-forget embedding  (Core + Tests agents) — ✅ resolved</a></li>
-<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release) — ✅ baseline regenerated (runtime path unchanged)</a></li>
+<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release) — ✅ resolved (2026-10-22)</a></li>
 <li class="toc-item toc-h2"><a href="#medium-priority" data-toc-link>Medium priority</a></li>
 <li class="toc-item toc-h2"><a href="#low-priority" data-toc-link>Low priority</a></li>
   </ul>
@@ -275,7 +289,7 @@ changes apply live.</em></li>
       <div class="footer-links">
         <a href="index.html">Home</a>
         <a href="documentation-map.html">All documentation</a>
-        <a href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
       <div class="footer-note">
         This site is generated from the markdown in the repository — edit the source files and rebuild.

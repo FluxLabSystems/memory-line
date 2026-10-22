@@ -155,7 +155,7 @@
                                               CornerRadius="4">
                                             <Border HorizontalAlignment="Left"
                                                     CornerRadius="4"
-                                                    Background="{x:Bind Color}">
+                                                    Background="{x:Bind Color, Converter={StaticResource HexToBrushConverter}}">
                                                 <Border.Width>
                                                     <Binding Path="Percentage" Converter="{StaticResource PercentageToWidthConverter}"/>
                                                 </Border.Width>
@@ -233,7 +233,7 @@
                             </ItemsRepeater.Layout>
                             <ItemsRepeater.ItemTemplate>
                                 <DataTemplate x:DataType="core:TagCloudItem">
-                                    <Border Background="{x:Bind Color}" CornerRadius="4" Padding="8,4">
+                                    <Border Background="{x:Bind Color, Converter={StaticResource HexToBrushConverter}}" CornerRadius="4" Padding="8,4">
                                         <TextBlock Text="{x:Bind Name}" Foreground="White"
                                                    FontSize="{x:Bind FontSize}"/>
                                     </Border>
@@ -273,7 +273,7 @@
                                             </Grid.ColumnDefinitions>
 
                                             <Ellipse Grid.Column="0" Width="{x:Bind Size}" Height="{x:Bind Size}"
-                                                     Fill="{x:Bind Color}" Margin="0,0,8,0"/>
+                                                     Fill="{x:Bind Color, Converter={StaticResource HexToBrushConverter}}" Margin="0,0,8,0"/>
 
                                             <StackPanel Grid.Column="1">
                                                 <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold"/>
@@ -343,7 +343,7 @@
                             <ItemsRepeater.ItemTemplate>
                                 <DataTemplate x:DataType="core:ActivityHeatmapCell">
                                     <StackPanel Width="50">
-                                        <Border Height="40" Background="{x:Bind Color}" CornerRadius="4">
+                                        <Border Height="40" Background="{x:Bind Color, Converter={StaticResource HexToBrushConverter}}" CornerRadius="4">
                                             <TextBlock Text="{x:Bind Value}" HorizontalAlignment="Center"
                                                        VerticalAlignment="Center" FontSize="11"
                                                        Foreground="White"/>

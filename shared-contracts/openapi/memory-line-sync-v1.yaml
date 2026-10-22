@@ -15,7 +15,7 @@ openapi: 3.0.3
 
 info:
   title: Memory Line Sync API
-  version: 1.4.0
+  version: 1.5.0
   description: >-
     Device-neutral sync, capture, assistant, and roadtrip API for Memory Line.
     Conventions (design doc section 11.1): base path /api/v1, JSON metadata,
@@ -1243,7 +1243,7 @@ components:
           format: uuid
         sourcePlatform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         captureType:
           type: string
           enum: [memory, idea, trip_log, reminder, question, unclassified]
@@ -1268,6 +1268,15 @@ components:
         userNote:
           type: string
           nullable: true
+        location:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LocationContext'
+          description: >-
+            The location snapshot the capture was created with
+            (CaptureCreateRequest.locationContext), echoed as received. Null
+            when the client attached none. Added in v1.5; before that the
+            service stored the snapshot but never returned it.
         status:
           type: string
           enum: [local_only, uploading, received, processing, review_ready, completed, failed]
@@ -1604,7 +1613,7 @@ components:
           format: uuid
         sourcePlatform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         captureType:
           type: string
           enum: [memory, idea, trip_log, reminder, question, unclassified]
@@ -1627,6 +1636,15 @@ components:
         userNote:
           type: string
           nullable: true
+        location:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LocationContext'
+          description: >-
+            The location snapshot the capture was created with, so Windows
+            can keep it on the capture it ingests (as columns on that capture,
+            never as a place of its own). Null when the client attached none.
+            Added in v1.5.
         clientSchemaVersion:
           type: integer
           default: 1
@@ -2233,7 +2251,7 @@ components:
           description: Owner pairing code proving the caller may join this sync domain.
         platform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         displayName:
           type: string
         appVersion:
@@ -2298,7 +2316,7 @@ components:
           format: uuid
         platform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         displayName:
           type: string
         lastSeenAtUtc:

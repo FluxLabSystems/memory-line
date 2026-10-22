@@ -59,10 +59,14 @@ public class EventExtractionService : IEventExtractionService
     /// Processes a queue source: resolve its transcript (inline text for
     /// Text/Imported sources, speech-to-text for Audio sources) and extract events.
     /// </summary>
-    public async Task<int> ProcessRecordingAsync(string queueId, IProgress<(int, string)>? progress = null)
+    public async Task<int> ProcessRecordingAsync(
+        string queueId,
+        IProgress<(int, string)>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogInformation("Processing queue source {QueueId}", queueId);
 
             // API-key pre-flight BEFORE any work (transcription is wasted effort
@@ -106,7 +110,7 @@ public class EventExtractionService : IEventExtractionService
                 progress?.Report((20, "Transcribing audio..."));
                 _logger.LogInformation("Transcribing audio file: {FilePath}", queueItem.AudioFilePath);
 
-                var transcriptionResult = await _sttService.TranscribeAsync(queueItem.AudioFilePath);
+                var transcriptionResult = await _sttService.TranscribeAsync(queueItem.AudioFilePath, null, cancellationToken);
 
                 if (!transcriptionResult.Success || string.IsNullOrWhiteSpace(transcriptionResult.Text))
                 {
@@ -136,7 +140,7 @@ public class EventExtractionService : IEventExtractionService
             // Step 2: Extract events using LLM (transcript + audio path are persisted
             // on every pending event so nothing lives only in memory)
             progress?.Report((50, "Extracting events..."));
-            var pendingEvents = await ExtractAndCreatePendingEventsAsync(queueId, transcript);
+            var pendingEvents = await ExtractAndCreatePendingEventsAsync(queueId, transcript, cancellationToken);
 
             progress?.Report((100, $"Extracted {pendingEvents.Count} events"));
             _logger.LogInformation("Successfully extracted {Count} events from recording {QueueId}",
@@ -155,10 +159,12 @@ public class EventExtractionService : IEventExtractionService
     /// Extracts events from transcript and creates pending events.
     /// The transcript and source audio path are persisted on each pending event.
     /// </summary>
-    public async Task<List<PendingEvent>> ExtractAndCreatePendingEventsAsync(string queueId, string transcript)
+    public async Task<List<PendingEvent>> ExtractAndCreatePendingEventsAsync(
+        string queueId, string transcript, CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogInformation("Extracting events from transcript for queue {QueueId}", queueId);
 
             // Resolve the source audio file path so it can be persisted with each
@@ -174,7 +180,7 @@ public class EventExtractionService : IEventExtractionService
             var context = await BuildExtractionContextAsync();
 
             // Extract events using LLM
-            var extraction = await _llmService.ExtractEventsAsync(transcript, context);
+            var extraction = await _llmService.ExtractEventsAsync(transcript, context, cancellationToken);
 
             if (!extraction.Success)
             {

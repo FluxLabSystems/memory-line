@@ -134,7 +134,11 @@ public class TimelineViewport
     }
 
     /// <summary>
-    /// Checks if an event is visible in the viewport.
+    /// Checks if an event is visible in the viewport. Inclusive on both ends
+    /// by design, matching <see cref="TimelineCoordinateConverter.IsRangeVisible"/>
+    /// (the predicate the timeline renders with): an edge-touching event is
+    /// visible. No production path calls this today — it is kept as the
+    /// viewport-level form of the same rule for tests and future callers.
     /// </summary>
     public bool IsEventVisible(DateTime startDate, DateTime? endDate)
     {

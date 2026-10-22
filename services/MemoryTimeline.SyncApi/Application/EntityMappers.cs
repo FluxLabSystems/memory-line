@@ -36,6 +36,7 @@ internal static class EntityMappers
         TripId = capture.TripId,
         TitleHint = capture.TitleHint,
         UserNote = capture.UserNote,
+        Location = DeserializeLocation(capture.LocationJson),
         Status = capture.Status,
         ServerRevision = capture.Revision,
         CreatedAtUtc = capture.CreatedAtUtc,
@@ -71,6 +72,7 @@ internal static class EntityMappers
             TripId = capture.TripId,
             TitleHint = capture.TitleHint,
             UserNote = capture.UserNote,
+            Location = DeserializeLocation(capture.LocationJson),
             ClientSchemaVersion = capture.ClientSchemaVersion,
             Status = capture.Status,
             AudioArtifact = audioArtifact,
@@ -234,6 +236,30 @@ internal static class EntityMappers
         try
         {
             return JsonSerializer.Deserialize<List<AssistantContextItem>>(json, SyncJson.Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Rehydrates the capture's location snapshot (contract v1.5). Written by
+    /// CaptureService from a validated request, so malformed JSON means the
+    /// row was corrupted rather than that a client sent something odd; the
+    /// capture still maps, without its snapshot, instead of failing the read
+    /// or the whole pull.
+    /// </summary>
+    private static LocationContext? DeserializeLocation(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<LocationContext>(json, SyncJson.Options);
         }
         catch (JsonException)
         {

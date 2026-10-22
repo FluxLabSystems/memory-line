@@ -774,11 +774,50 @@ public class PersonServiceTests : IDisposable
         profile.LastSeen.Should().Be(new DateTime(2024, 3, 20));
 
         profile.TopCoOccurring.Should().HaveCount(2);
-        profile.TopCoOccurring[0].Should().Be((q.PersonId, "Quinn Often", 2));
-        profile.TopCoOccurring[1].Should().Be((r.PersonId, "Rare Guest", 1));
+        profile.TopCoOccurring[0].Should().Be(new PersonCoOccurrence(q.PersonId, "Quinn Often", 2));
+        profile.TopCoOccurring[1].Should().Be(new PersonCoOccurrence(r.PersonId, "Rare Guest", 1));
+        profile.TopCoOccurring[0].SharedEventsDisplay.Should().Be("2 shared memories");
+        profile.TopCoOccurring[1].SharedEventsDisplay.Should().Be("1 shared memory");
 
-        profile.TopLocations.Should().Equal(("Lake House", 2), ("Office", 1));
+        profile.TopLocations.Should().Equal(new PersonLocationCount("Lake House", 2), new PersonLocationCount("Office", 1));
+        profile.TopLocations[1].CountDisplay.Should().Be("1 memory");
         profile.Aliases.Should().Equal("Pat");
+    }
+
+    [Fact]
+    public async Task GetProfileAsync_TopCoOccurring_CapsAtFiveLivingPeopleOrderedByCountThenName()
+    {
+        // Arrange - a hub person on a party with six guests (one event each),
+        // one guest who also shares a second event, and a tombstoned person
+        // linked directly (a stray row a merge would normally repoint).
+        var hub = await _personService.CreatePersonAsync(new PersonDto { Name = "Hub Person" });
+        var party = await SeedEventAsync("Big party", new DateTime(2023, 7, 1));
+        await SeedLinkAsync(party.EventId, hub.PersonId);
+        foreach (var name in new[] { "Fay", "Eve", "Dan", "Cal", "Bea", "Ann" })
+        {
+            var guest = await _personService.CreatePersonAsync(new PersonDto { Name = name });
+            await SeedLinkAsync(party.EventId, guest.PersonId);
+        }
+
+        var twice = await _personService.CreatePersonAsync(new PersonDto { Name = "Zed Twice" });
+        await SeedLinkAsync(party.EventId, twice.PersonId);
+        var dinner = await SeedEventAsync("Dinner", new DateTime(2023, 8, 1));
+        await SeedLinkAsync(dinner.EventId, hub.PersonId);
+        await SeedLinkAsync(dinner.EventId, twice.PersonId);
+
+        var ghost = await _personService.CreatePersonAsync(new PersonDto { Name = "Ghost Row" });
+        var keeper = await _personService.CreatePersonAsync(new PersonDto { Name = "Keeper" });
+        await _personService.MergeAsync(ghost.PersonId, keeper.PersonId);
+        await SeedLinkAsync(party.EventId, ghost.PersonId);
+
+        // Act
+        var profile = await _personService.GetProfileAsync(hub.PersonId);
+
+        // Assert - most shared first, then by name; five at most; living only.
+        profile!.TopCoOccurring.Select(c => c.Name).Should().Equal("Zed Twice", "Ann", "Bea", "Cal", "Dan");
+        profile.TopCoOccurring[0].SharedEvents.Should().Be(2);
+        profile.TopCoOccurring.Should().OnlyContain(c => c.SharedEvents >= 1);
+        profile.TopCoOccurring.Select(c => c.Name).Should().NotContain("Ghost Row").And.NotContain("Keeper");
     }
 
     [Fact]

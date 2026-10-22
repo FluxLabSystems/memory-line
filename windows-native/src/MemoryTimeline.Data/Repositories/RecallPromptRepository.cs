@@ -18,20 +18,20 @@ public class RecallPromptRepository : IRecallPromptRepository
         _contextFactory = contextFactory;
     }
 
-    public async Task<List<RecallPrompt>> GetActiveAsync(DateTime now)
+    public async Task<List<RecallPrompt>> GetActiveAsync(DateTime now, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.RecallPrompts
             .AsNoTracking() // Read-only optimization
             .Where(p => p.Status == RecallPromptStatus.Active &&
                         (p.SnoozedUntil == null || p.SnoozedUntil <= now))
             .OrderBy(p => p.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsForAsync(RecallPromptKind kind, string? entityId, DateTime? anchorStart)
+    public async Task<bool> ExistsForAsync(RecallPromptKind kind, string? entityId, DateTime? anchorStart, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
 
         // Deliberately matches rows of EVERY status: a Dismissed or Answered
         // row must keep blocking regeneration of the same question.
@@ -45,31 +45,31 @@ public class RecallPromptRepository : IRecallPromptRepository
             query = query.Where(p => p.AnchorStart == anchor);
         }
 
-        return await query.AnyAsync();
+        return await query.AnyAsync(cancellationToken);
     }
 
-    public async Task<RecallPrompt> AddAsync(RecallPrompt prompt)
+    public async Task<RecallPrompt> AddAsync(RecallPrompt prompt, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         context.RecallPrompts.Add(prompt);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return prompt;
     }
 
-    public async Task UpdateAsync(RecallPrompt prompt)
+    public async Task UpdateAsync(RecallPrompt prompt, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         // Entity is detached (loaded by a different, already-disposed context):
         // Update attaches it and marks it Modified.
         context.RecallPrompts.Update(prompt);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<RecallPrompt?> GetByIdAsync(string promptId)
+    public async Task<RecallPrompt?> GetByIdAsync(string promptId, CancellationToken cancellationToken = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.RecallPrompts
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.PromptId == promptId);
+            .FirstOrDefaultAsync(p => p.PromptId == promptId, cancellationToken);
     }
 }

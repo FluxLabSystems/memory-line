@@ -113,7 +113,8 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     public bool IsIdle => !IsRecording && !IsPaused && !IsProcessing;
     public bool HasPendingItems => PendingCount > 0;
     public bool IsQueueEmpty => QueueItems.Count == 0;
-    public string FormattedRecordingDuration => TimeSpan.FromSeconds(_recordingDuration).ToString(@"mm\:ss");
+    /// <summary>Elapsed recording time as "mm:ss", or "h:mm:ss" once it passes an hour (no wrap).</summary>
+    public string FormattedRecordingDuration => DurationFormat.Clock(_recordingDuration);
     public string StatusMessage => StatusText;
     public bool CanStopPlayback => IsPlaying;
 

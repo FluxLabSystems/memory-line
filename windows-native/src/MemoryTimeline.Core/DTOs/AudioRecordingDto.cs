@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MemoryTimeline.Core.Models;
 using MemoryTimeline.Data.Models;
 
 namespace MemoryTimeline.Core.DTOs;
@@ -46,6 +47,15 @@ public partial class AudioRecordingDto : ObservableObject
     [ObservableProperty]
     private int _pendingEventCount;
 
+    /// <summary>
+    /// Sync state of the queue row (<see cref="QueueSyncState"/> values):
+    /// local_only for a recording made here, received for a remote capture
+    /// the service has not yet acknowledged, acknowledged once it has. Null
+    /// on rows older than the sync columns.
+    /// </summary>
+    [ObservableProperty]
+    private string? _syncState;
+
     [ObservableProperty]
     private double _progress;
 
@@ -77,8 +87,9 @@ public partial class AudioRecordingDto : ObservableObject
     public bool IsAudioSource => SourceType == QueueSourceType.Audio
         && !string.IsNullOrEmpty(AudioFilePath);
 
+    /// <summary>"mm:ss", or "h:mm:ss" once the recording reaches an hour; "Unknown" without a duration.</summary>
     public string DurationDisplay => DurationSeconds.HasValue
-        ? TimeSpan.FromSeconds(DurationSeconds.Value).ToString(@"mm\:ss")
+        ? DurationFormat.Clock(DurationSeconds.Value)
         : "Unknown";
 
     public string DurationText => DurationDisplay;
@@ -227,7 +238,8 @@ public partial class AudioRecordingDto : ObservableObject
             ProcessedAt = queue.ProcessedAt,
             ErrorMessage = queue.ErrorMessage,
             TranscriptionText = queue.Transcript,
-            PendingEventCount = queue.PendingEvents.Count
+            PendingEventCount = queue.PendingEvents.Count,
+            SyncState = queue.SyncState
         };
     }
 }

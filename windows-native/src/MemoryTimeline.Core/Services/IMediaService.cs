@@ -16,6 +16,27 @@ public interface IMediaService
     string MediaRoot { get; }
 
     /// <summary>
+    /// Copies a chosen image into the managed tree's people-photos folder
+    /// (<c>{MediaRoot}/people/{guid}{ext}</c>) and returns the path to store
+    /// in <c>people.photo_path</c>, RELATIVE to the media root like
+    /// <see cref="EventMedia.FilePath"/> — so backups of the media tree carry
+    /// it and the tree can move. The Clear Cache sweep keeps every file a
+    /// person row references; a photo that no person references any more
+    /// (replaced, or its person deleted) is swept as an orphan. Throws
+    /// <see cref="FileNotFoundException"/> for a missing source and
+    /// <see cref="InvalidOperationException"/> (user-presentable) for a
+    /// non-image extension.
+    /// </summary>
+    Task<string> ImportPersonPhotoAsync(string sourceFilePath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolves a stored <c>people.photo_path</c> for display: a media-root-
+    /// relative path is combined with the root, an absolute path is returned
+    /// as-is, and null/blank yields null.
+    /// </summary>
+    string? GetAbsolutePersonPhotoPath(string? photoPath);
+
+    /// <summary>
     /// Attaches a file to an event: validates the extension allowlist,
     /// verifies the event exists, hashes the content (attaching a file whose
     /// hash is already attached to the SAME event is a no-op returning the

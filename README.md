@@ -177,7 +177,7 @@ msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x
 | **Anthropic** ([console](https://console.anthropic.com/)) | Claude — extraction, Ask, narratives, recall wording | Needed for the default (Claude) LLM provider; alternatively point the app at a local **OpenAI-compatible endpoint** (Ollama, LM Studio) and no Anthropic key is needed |
 | **OpenAI** ([keys](https://platform.openai.com/api-keys)) | Embeddings — Connections / Ask similarity | Optional — the **default embedding provider is a local ONNX model** that needs no key |
 
-The LLM and embedding providers are each selected in **Settings** and routed **per call**, so switching applies live. Changing embedding provider changes vector dimensions (384 local vs. 1536 OpenAI); a dimension guard prevents mixing them, and Settings offers a re-embed flow. Keys and preferences are stored in the local `app_settings` table and can be changed at any time from **Settings** (no restart needed). Encrypting API keys at rest (Windows DPAPI) is a tracked hardening item — see [Roadmap](#roadmap--known-follow-ups).
+The LLM and embedding providers are each selected in **Settings** and routed **per call**, so switching applies live. Changing embedding provider changes vector dimensions (384 local vs. 1536 OpenAI); a dimension guard prevents mixing them, and Settings offers a re-embed flow. Keys and preferences are stored in the local `app_settings` table and can be changed at any time from **Settings** (no restart needed). API keys and sync tokens are stored **DPAPI-protected** (`ISecretProtector` / `DpapiSecretProtector`, current-user scope); a backup restored under another Windows account must have its keys re-entered.
 
 ### Data & model locations
 ```
@@ -213,7 +213,7 @@ Twelve features from a structured feature spec landed in August 2026, in depende
 11. **Pluggable AI (F11)** — local ONNX embeddings (Connections without any API key), OpenAI-compatible LLM endpoints (Ollama/LM Studio), per-call provider routing, dimension guard + re-embed flow, per-session usage counter.
 12. **Backup, restore & revisions (F12)** — `.mtbak` backup archives, restore with preview+confirm, scheduled backups, append-only event revision history, a real Clear Cache.
 
-Infrastructure alongside: a read-only-connection fix for the SQLite pragma interceptor, CI triggering on the feature branch, and three-way `app_settings` seed parity (33 keys).
+Infrastructure alongside: a read-only-connection fix for the SQLite pragma interceptor, CI triggering on the feature branch, and three-way `app_settings` seed parity (29 keys today).
 
 ### 2026-07 — feature audit and fix pass
 
@@ -225,7 +225,7 @@ Before the feature wave, the app went through a structured, multi-agent **featur
 - **Repaired RAG & settings** — embeddings now read the correct settings key and set provider/dimension; RAG queries use mapped columns and persist cross-references; the settings writer/reader key mismatch that made settings "revert" was unified behind a `SettingKeys` constants class.
 - **Export/Import, notifications, navigation, and Windows integration** wiring corrected.
 
-A **CI workflow** (`.github/workflows/windows-native-build.yml`) compiles the full solution and runs tests on a Windows runner for every push to the development branch.
+A **CI workflow** (`.github/workflows/windows-native-build.yml`) compiles the full solution and runs the tests on a Windows runner for every pull request and every push to `main`.
 
 Full details: [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT.md) (findings + root causes) and [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) (deferred items).
 
@@ -234,10 +234,7 @@ Full details: [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT
 ## Roadmap / known follow-ups
 
 - **Runtime validation** of the pipeline and the 2026-08 feature wave end-to-end on a real Windows machine.
-- **Encrypt API keys at rest** (Windows DPAPI / `ProtectedData`).
-- **Regenerate EF Core migrations** to replace the `SchemaUpgrader` stopgap with a proper migration history.
-- **Deferred items from the 2026-08 wave** — photo-import wizard, map tile basemaps, timeline location chip, LLM token streaming, PDF narrative export, and others; see [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md).
-- **Whisper model options** (larger models for accuracy; language selection UI).
+- **Deferred items from the 2026-08 wave** — photo-import wizard, map tile basemaps, timeline location chip, PDF narrative export, vertical swimlane scrolling, reorderable lanes; see [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md). (Done since: DPAPI-protected keys, the EF migration baseline — startup now migrates — Whisper model/language options, and real LLM token streaming.)
 - A few remaining UI polish items.
 - MSIX packaging and Microsoft Store submission (Phase 7).
 - **macOS app** — SwiftUI head under `macos-native/`; see [`docs/design/MACOS-PORT-PLAN.md`](./docs/design/MACOS-PORT-PLAN.md).
@@ -303,7 +300,7 @@ Tests cover timeline math, services, repository/integration behavior, and perfor
 - **Selective cloud calls** — only the transcript text you process is sent to your configured LLM provider (which can itself be a local OpenAI-compatible endpoint), and only the event text you embed is sent to your embedding provider if you choose OpenAI.
 - **Geocoding is opt-in and off by default** — coordinates otherwise come only from photo EXIF or manual pin drops; when enabled, only the location name is sent to Nominatim.
 - **You own your recordings** — original audio is never automatically deleted.
-- **Note:** API keys are currently stored in the local settings database; encrypting them at rest is a tracked follow-up.
+- **Note:** API keys are stored in the local settings database, DPAPI-protected (current-user scope); a backup restored under another Windows account reads them as empty and they must be re-entered.
 
 ---
 

@@ -10,7 +10,7 @@ import SwiftUI
 /// the single write the contract admits from a companion. Ask is a thin client
 /// over the service's assistant endpoints: the question goes to the Windows PC
 /// over the sync service and the answer comes back the same way, with the pane
-/// saying plainly while it is still waiting (`MacAskCoordinator`).
+/// saying plainly while it is still waiting (the shared `AskCoordinator`).
 ///
 /// See `docs/design/MACOS-PORT-PLAN.md` §5 for how each section was filled in.
 struct RootView: View {

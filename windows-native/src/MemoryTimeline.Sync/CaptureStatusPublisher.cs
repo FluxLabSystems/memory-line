@@ -76,7 +76,7 @@ public class CaptureStatusPublisher : ICaptureStatusPublisher
             Operation = SyncOutboxOperation.Upsert,
             PayloadJson = JsonSerializer.Serialize(payload, SyncJson.Options),
             CreatedAt = payload.UpdatedAtUtc,
-        });
+        }, cancellationToken);
 
         _logger.LogInformation(
             "Published capture status {Status} ({Stage}) for capture {CaptureId} from queue item {QueueId}",
@@ -203,7 +203,7 @@ public class CaptureStatusPublisher : ICaptureStatusPublisher
     {
         try
         {
-            var pendingEvents = await _pendingEventRepository.GetByQueueIdAsync(queueId);
+            var pendingEvents = await _pendingEventRepository.GetByQueueIdAsync(queueId, cancellationToken);
 
             var pending = 0;
             var approved = 0;

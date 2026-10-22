@@ -42,7 +42,7 @@
         <svg class="icon-sun" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="4" fill="currentColor"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6 16 16M16 4l-1.4 1.4M5.4 14.6 4 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <svg class="icon-moon" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z" fill="currentColor"/></svg>
       </button>
-      <a class="icon-btn" href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
+      <a class="icon-btn" href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
         <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
     </div>
@@ -143,9 +143,9 @@
   <p class="doc-lede">The repository README: what Memory Timeline is, the memory pipeline, the full feature list, tech stack, architecture, setup, configuration, and privacy model.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>3,213</b> words</span>
+    <span class="doc-meta-item"><b>3,225</b> words</span>
     <span class="doc-meta-item"><b>15</b> min read</span>
-    <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/README.md" target="_blank" rel="noopener noreferrer">
+    <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/README.md" target="_blank" rel="noopener noreferrer">
       README.md ↗
     </a>
   </div>
@@ -354,7 +354,7 @@ cd memory-line/windows-native/src
 <td>Optional — the <strong>default embedding provider is a local ONNX model</strong> that needs no key</td>
 </tr>
 </tbody></table></div>
-<p>The LLM and embedding providers are each selected in <strong>Settings</strong> and routed <strong>per call</strong>, so switching applies live. Changing embedding provider changes vector dimensions (384 local vs. 1536 OpenAI); a dimension guard prevents mixing them, and Settings offers a re-embed flow. Keys and preferences are stored in the local <code>app_settings</code> table and can be changed at any time from <strong>Settings</strong> (no restart needed). Encrypting API keys at rest (Windows DPAPI) is a tracked hardening item — see <a href="#roadmap--known-follow-ups">Roadmap</a>.</p>
+<p>The LLM and embedding providers are each selected in <strong>Settings</strong> and routed <strong>per call</strong>, so switching applies live. Changing embedding provider changes vector dimensions (384 local vs. 1536 OpenAI); a dimension guard prevents mixing them, and Settings offers a re-embed flow. Keys and preferences are stored in the local <code>app_settings</code> table and can be changed at any time from <strong>Settings</strong> (no restart needed). API keys and sync tokens are stored <strong>DPAPI-protected</strong> (<code>ISecretProtector</code> / <code>DpapiSecretProtector</code>, current-user scope); a backup restored under another Windows account must have its keys re-entered.</p>
 <h3 id="data--model-locations" class="anchored">Data &amp; model locations<a class="heading-anchor" href="#data--model-locations" aria-label="Link to this section">#</a></h3>
 <figure class="diagram"><pre aria-label="Diagram">%LOCALAPPDATA%\MemoryTimeline\
 ├── memory-timeline.db          SQLite database (WAL)
@@ -382,7 +382,7 @@ cd memory-line/windows-native/src
 <li><strong>Pluggable AI (F11)</strong> — local ONNX embeddings (Connections without any API key), OpenAI-compatible LLM endpoints (Ollama/LM Studio), per-call provider routing, dimension guard + re-embed flow, per-session usage counter.</li>
 <li><strong>Backup, restore &amp; revisions (F12)</strong> — <code>.mtbak</code> backup archives, restore with preview+confirm, scheduled backups, append-only event revision history, a real Clear Cache.</li>
 </ol>
-<p>Infrastructure alongside: a read-only-connection fix for the SQLite pragma interceptor, CI triggering on the feature branch, and three-way <code>app_settings</code> seed parity (33 keys).</p>
+<p>Infrastructure alongside: a read-only-connection fix for the SQLite pragma interceptor, CI triggering on the feature branch, and three-way <code>app_settings</code> seed parity (29 keys today).</p>
 <h3 id="2026-07--feature-audit-and-fix-pass" class="anchored">2026-07 — feature audit and fix pass<a class="heading-anchor" href="#2026-07--feature-audit-and-fix-pass" aria-label="Link to this section">#</a></h3>
 <p>Before the feature wave, the app went through a structured, multi-agent <strong>feature audit and fix pass</strong>. Highlights of what changed:</p>
 <ul>
@@ -392,16 +392,13 @@ cd memory-line/windows-native/src
 <li><strong>Repaired RAG &amp; settings</strong> — embeddings now read the correct settings key and set provider/dimension; RAG queries use mapped columns and persist cross-references; the settings writer/reader key mismatch that made settings &quot;revert&quot; was unified behind a <code>SettingKeys</code> constants class.</li>
 <li><strong>Export/Import, notifications, navigation, and Windows integration</strong> wiring corrected.</li>
 </ul>
-<p>A <strong>CI workflow</strong> (<code>.github/workflows/windows-native-build.yml</code>) compiles the full solution and runs tests on a Windows runner for every push to the development branch.</p>
+<p>A <strong>CI workflow</strong> (<code>.github/workflows/windows-native-build.yml</code>) compiles the full solution and runs the tests on a Windows runner for every pull request and every push to <code>main</code>.</p>
 <p>Full details: <a href="feature-audit.html"><code>windows-native/FEATURE-AUDIT.md</code></a> (findings + root causes) and <a href="hardening-followups.html"><code>windows-native/HARDENING-FOLLOWUPS.md</code></a> (deferred items).</p>
 <hr>
 <h2 id="roadmap--known-follow-ups" class="anchored">Roadmap / known follow-ups<a class="heading-anchor" href="#roadmap--known-follow-ups" aria-label="Link to this section">#</a></h2>
 <ul>
 <li><strong>Runtime validation</strong> of the pipeline and the 2026-08 feature wave end-to-end on a real Windows machine.</li>
-<li><strong>Encrypt API keys at rest</strong> (Windows DPAPI / <code>ProtectedData</code>).</li>
-<li><strong>Regenerate EF Core migrations</strong> to replace the <code>SchemaUpgrader</code> stopgap with a proper migration history.</li>
-<li><strong>Deferred items from the 2026-08 wave</strong> — photo-import wizard, map tile basemaps, timeline location chip, LLM token streaming, PDF narrative export, and others; see <a href="development-status.html"><code>windows-native/DEVELOPMENT-STATUS.md</code></a>.</li>
-<li><strong>Whisper model options</strong> (larger models for accuracy; language selection UI).</li>
+<li><strong>Deferred items from the 2026-08 wave</strong> — photo-import wizard, map tile basemaps, timeline location chip, PDF narrative export, vertical swimlane scrolling, reorderable lanes; see <a href="development-status.html"><code>windows-native/DEVELOPMENT-STATUS.md</code></a>. (Done since: DPAPI-protected keys, the EF migration baseline — startup now migrates — Whisper model/language options, and real LLM token streaming.)</li>
 <li>A few remaining UI polish items.</li>
 <li>MSIX packaging and Microsoft Store submission (Phase 7).</li>
 <li><strong>macOS app</strong> — SwiftUI head under <code>macos-native/</code>; see <a href="macos-port-plan.html"><code>docs/design/MACOS-PORT-PLAN.md</code></a>.</li>
@@ -454,11 +451,11 @@ cd memory-line/windows-native/src
 <li><strong>Selective cloud calls</strong> — only the transcript text you process is sent to your configured LLM provider (which can itself be a local OpenAI-compatible endpoint), and only the event text you embed is sent to your embedding provider if you choose OpenAI.</li>
 <li><strong>Geocoding is opt-in and off by default</strong> — coordinates otherwise come only from photo EXIF or manual pin drops; when enabled, only the location name is sent to Nominatim.</li>
 <li><strong>You own your recordings</strong> — original audio is never automatically deleted.</li>
-<li><strong>Note:</strong> API keys are currently stored in the local settings database; encrypting them at rest is a tracked follow-up.</li>
+<li><strong>Note:</strong> API keys are stored in the local settings database, DPAPI-protected (current-user scope); a backup restored under another Windows account reads them as empty and they must be re-entered.</li>
 </ul>
 <hr>
 <h2 id="macos-app-in-progress" class="anchored">macOS app (in progress)<a class="heading-anchor" href="#macos-app-in-progress" aria-label="Link to this section">#</a></h2>
-<p>A native <strong>SwiftUI</strong> macOS app is being brought up under <a href="https://github.com/ethanbissbort/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>,
+<p>A native <strong>SwiftUI</strong> macOS app is being brought up under <a href="https://github.com/FluxLabSystems/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>,
 sharing its domain models, sync networking, persistence, and Keychain code with the
 existing iOS companion under <code>ios-companion/MemoryLineCompanion/Shared/</code>.</p>
 <p>Groundwork already in the tree: <code>MemoryTimeline.Core</code> and <code>MemoryTimeline.Sync</code> were
@@ -470,9 +467,9 @@ plan and the inventory of what is still Windows-bound.</p>
 <h2 id="documentation" class="anchored">Documentation<a class="heading-anchor" href="#documentation" aria-label="Link to this section">#</a></h2>
 <p>Everything below is also published as a <strong>browsable documentation website</strong> — one place
 with a sidebar, cross-links, per-page tables of contents and full-text search. Open
-<a href="https://github.com/ethanbissbort/memory-line/blob/main/website/_site/index.html" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>website/_site/index.html</code></a> locally, or build it with
+<a href="https://github.com/FluxLabSystems/memory-line/blob/main/website/_site/index.html" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>website/_site/index.html</code></a> locally, or build it with
 <code>npm --prefix website install &amp;&amp; npm --prefix website run build</code>.
-See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>website/README.md</code></a>.</p>
+See <a href="https://github.com/FluxLabSystems/memory-line/blob/main/website/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>website/README.md</code></a>.</p>
 <div class="table-wrap"><table><thead><tr>
 <th>Document</th>
 <th>Description</th>
@@ -510,11 +507,11 @@ See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/READ
 <td>macOS port plan &amp; Windows-bound inventory</td>
 </tr>
 <tr>
-<td><a href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md</code></a></td>
+<td><a href="https://github.com/FluxLabSystems/memory-line/blob/main/docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md</code></a></td>
 <td>iOS companion &amp; sync system design</td>
 </tr>
 <tr>
-<td><a href="https://github.com/ethanbissbort/memory-line/blob/main/services/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>services/README.md</code></a></td>
+<td><a href="https://github.com/FluxLabSystems/memory-line/blob/main/services/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>services/README.md</code></a></td>
 <td>Sync service operator guide</td>
 </tr>
 <tr>
@@ -590,7 +587,7 @@ See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/READ
       <div class="footer-links">
         <a href="index.html">Home</a>
         <a href="documentation-map.html">All documentation</a>
-        <a href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
       <div class="footer-note">
         This site is generated from the markdown in the repository — edit the source files and rebuild.

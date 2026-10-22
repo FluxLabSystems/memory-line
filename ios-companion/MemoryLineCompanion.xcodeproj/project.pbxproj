@@ -364,6 +364,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/MemoryLineCompanion-Info.plist";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Memory Line can note where you were when a memory was captured. This is off unless you turn on Attach location in Settings.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Memory Line records the audio memories you capture with one touch.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -393,6 +394,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/MemoryLineCompanion-Info.plist";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Memory Line can note where you were when a memory was captured. This is off unless you turn on Attach location in Settings.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Memory Line records the audio memories you capture with one touch.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

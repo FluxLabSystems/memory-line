@@ -11,9 +11,10 @@ plan, the decisions behind it, and the open questions.
 **Toolchain:** Xcode 16+ (the project uses `objectVersion = 77` synchronized folder groups)
 **Status:** Port-plan phases 0–4 are in the tree (skeleton, Keychain + sync pull, upload,
 capture, timeline projection, review decisions); phase 5's Ask pane is a thin client over the
-service's assistant endpoints and waits on a Windows responder that is not built yet; phase 6
-(packaging) is not started. Builds and tests green in CI; not runtime-validated against a live
-sync server.
+service's assistant endpoints, answered by the Windows client's `AssistantTurnResponder`
+(`windows-native/src/MemoryTimeline.Sync`) whenever the PC is up; phase 6 (packaging) is not
+started. The Mac registers with the service as platform `macos` (contract v1.5). Builds and
+tests green in CI; not runtime-validated against a live sync server.
 
 ---
 
@@ -35,6 +36,7 @@ compiles the iOS companion's:
 
 ```
 ios-companion/MemoryLineCompanion/Shared/
+├── Assistant/      AskCoordinator + the AssistantAsking seam — the Ask conversation both apps share
 ├── Domain/         CaptureRecord, lifecycle states, settings keys, protocol seams
 ├── Networking/     SyncAPIClient + the v1 wire DTOs (captures, sync, projections, assistant)
 ├── Persistence/    SQLiteDatabase, SQLiteCaptureStore, SQLiteSettingsStore
@@ -85,7 +87,7 @@ macos-native/
 │   │   ├── MacAppEnvironment.swift    composition root (mirrors the iOS AppEnvironment)
 │   │   └── RootView.swift             sidebar navigation
 │   └── Features/
-│       ├── Ask/        AskView, MacAskCoordinator, AskSeams — questions to the service, answers from Windows
+│       ├── Ask/        AskView — the pane; the conversation itself is Shared/Assistant/AskCoordinator
 │       ├── Capture/    CaptureView, MacAudioRecorderService (AVAudioEngine), MacAudioDeviceEnumerator,
 │       │               MenuBarCapture, CaptureSeams
 │       ├── Eras/       ErasView (projection)
@@ -95,7 +97,7 @@ macos-native/
 │       ├── Search/     SearchView (projection)
 │       ├── Sync/       MacSyncCoordinator (pull → apply → ack), MacUploadCoordinator (drain), SettingsScene
 │       └── Timeline/   ArchiveTimelineView (projection)
-└── MemoryLineMacTests/   environment, sync, upload and review coordinator tests
+└── MemoryLineMacTests/   environment, sync, upload, review and Ask coordinator tests
 ```
 
 `MacAppEnvironment` builds its own recorder and uploader rather than sharing the iOS

@@ -42,8 +42,10 @@ final class MacAppEnvironment {
     /// The one thing this Mac writes to the change feed: review verdicts.
     let reviews: MacReviewCoordinator
     /// The Ask conversation: questions submitted to the service, answers the
-    /// Windows PC sends back. This Mac never answers anything itself.
-    let ask: MacAskCoordinator
+    /// Windows PC sends back. This Mac never answers anything itself. Shared
+    /// source (`Shared/Assistant/AskCoordinator.swift`); the phone composes
+    /// the same coordinator with surface "ios".
+    let ask: AskCoordinator
 
     private let logger = AppLog.logger(category: "environment")
 
@@ -75,7 +77,7 @@ final class MacAppEnvironment {
         self.uploads = uploads
         self.reviews = MacReviewCoordinator(
             settings: settings, api: api, store: decisions, projections: projections)
-        self.ask = MacAskCoordinator(settings: settings, api: api)
+        self.ask = AskCoordinator(settings: settings, api: api, surface: "mac")
         self.inputs = MacAudioDeviceEnumerator()
         // Capture the local `uploads` rather than self: the closure has to be
         // valid before `self` is fully initialized. Every finalized recording

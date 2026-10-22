@@ -110,8 +110,8 @@ ios-companion/
 ├── Config/                            # Info.plists + entitlements (outside synced folders)
 ├── MemoryLineCompanion/               # app target (folder-synchronized)
 │   ├── App/                           # entry point, environment/DI, root view
-│   ├── Features/Capture|History|Settings|Sync|Timeline/
-│   ├── Shared/Domain|Persistence|Networking|Security|Support|Timeline/
+│   ├── Features/Ask|Capture|History|Settings|Sync|Timeline/
+│   ├── Shared/Assistant|Domain|Persistence|Networking|Security|Support|Timeline/
 │   │                                  # compiled into the macOS app too (macos-native/README.md)
 │   ├── AppIntents/                    # Siri / Shortcuts / Action Button intents
 │   └── Assets.xcassets
@@ -119,13 +119,46 @@ ios-companion/
 └── MemoryLineCompanionTests/          # unit tests (XCTest, app-hosted)
 ```
 
+## Ask (design §19 Phase 4)
+
+The Ask tab is a thin client over the sync service's assistant endpoints,
+shared with the Mac's Ask pane (`Shared/Assistant/AskCoordinator.swift` over the
+`AssistantAsking` seam; the phone opens its session with surface `ios`). A
+question is submitted as an assistant turn, the phone polls it every few seconds
+while it is open, and the owner's Windows PC — the only machine holding the
+archive and the retrieval index — answers through its `AssistantTurnResponder`
+over the change feed. Nothing is searched or generated on the phone: a turn
+shows "waiting for your Windows PC" while the PC is asleep, every answer carries
+its grounding and anything short of `archive` is labelled, and a turn for a
+responder mode the service has nothing deployed for (`provider`, `on_device`)
+comes back already failed with the reason. The conversation lives in memory for
+the app's lifetime, is forgotten on unpair, and is reaped by the service after a
+day idle (the next question simply opens a new session).
+
+## Location (design §14.4)
+
+Off by default, and scoped separately from the microphone. Settings → Location →
+**Attach location to captures** takes one best-effort CoreLocation fix *after* a
+recording has started — it is awaited by nothing on the recording path, so it can
+never delay the first second of audio — and stores it in the `capture_location`
+side table next to the capture (idempotent DDL applied from
+`SQLiteCaptureStore.init`, no `user_version` bump, the `captures` columns
+untouched). `UploadCoordinator` sends it as `locationContext`; a fix that arrives
+after the recording stopped is attached to the saved row while the upload has not
+started. The snapshot is coarse — rounded to about a kilometre, no heading or
+speed — unless **Precise location** is also on. Coordinates are never logged. The
+first use asks for when-in-use permission
+(`INFOPLIST_KEY_NSLocationWhenInUseUsageDescription` in the project file). The
+Mac never attaches a location.
+
 ## Not in this phase
 
-Assistant, trips/detours, CarPlay screens (design phases 4–6) have no UI on the
-phone. The sync service implements the assistant endpoints (the macOS app has an Ask
-pane over them) and the trip/detour endpoints; the phone does not call either yet.
-Location is never attached to a capture (`locationContext` is sent as null); the
-opt-in snapshot design §14.4 describes is not built. Per the resolved §22 decisions,
-CarPlay will be simulator-designed later — rendering on a real head
-unit needs an Apple-granted entitlement even for sideloaded builds; Siri, the Lock
-Screen widget, and the Action Button carry the in-car experience meanwhile.
+Trips/detours and CarPlay screens (design phases 5–6) have no UI on the phone.
+The sync service implements the trip/detour endpoints (with Google Places or
+Apple Maps behind detour generation when the operator configures a provider);
+the phone does not call them yet. On-device transcription stays a disabled
+switch (§22 decision 4): the Ask tab works without it, since the PC answers from
+the archive. Per the resolved §22 decisions, CarPlay will be simulator-designed
+later — rendering on a real head unit needs an Apple-granted entitlement even
+for sideloaded builds; Siri, the Lock Screen widget, and the Action Button carry
+the in-car experience meanwhile.

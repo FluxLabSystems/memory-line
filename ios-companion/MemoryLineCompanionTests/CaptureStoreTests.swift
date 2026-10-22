@@ -151,6 +151,72 @@ final class CaptureStoreTests: XCTestCase {
         }
     }
 
+    // MARK: - Location side table (design §14.4)
+
+    func testLocationRoundTripsThroughTheSideTableOnEveryReadPath() throws {
+        var capture = TestSupport.makeCapture(id: "cap-located")
+        capture.location = LocationContext(
+            latitude: 39.7392, longitude: -104.9903,
+            horizontalAccuracyM: 12.5, headingDegrees: 270, speedMps: 27.3)
+        try store.insert(capture)
+
+        let fetched = try XCTUnwrap(store.capture(id: "cap-located"))
+        XCTAssertEqual(fetched.location, capture.location)
+        XCTAssertEqual(try store.allCaptures().first?.location, capture.location)
+        XCTAssertEqual(try store.pendingUploads().first?.location, capture.location, "the upload path reads it too")
+        // The capture columns decode exactly as before the join.
+        XCTAssertEqual(fetched.id, "cap-located")
+        XCTAssertEqual(fetched.state, .savedLocal)
+        XCTAssertEqual(fetched.fileName, "cap-located.m4a")
+    }
+
+    func testCoarseLocationKeepsNilOptionals_AndUpdateReplacesOrClearsIt() throws {
+        var capture = TestSupport.makeCapture(id: "cap-coarse")
+        capture.location = LocationContext(
+            latitude: 39.74, longitude: -104.99, horizontalAccuracyM: 1_000, headingDegrees: nil, speedMps: nil)
+        try store.insert(capture)
+        XCTAssertEqual(try store.capture(id: "cap-coarse")?.location, capture.location)
+
+        capture.location = LocationContext(
+            latitude: 40, longitude: -105, horizontalAccuracyM: nil, headingDegrees: nil, speedMps: nil)
+        try store.update(capture)
+        XCTAssertEqual(try store.capture(id: "cap-coarse")?.location?.latitude, 40)
+        XCTAssertNil(try store.capture(id: "cap-coarse")?.location?.horizontalAccuracyM)
+
+        capture.location = nil
+        try store.update(capture)
+        XCTAssertNil(try store.capture(id: "cap-coarse")?.location, "clearing the snapshot removes the side row")
+    }
+
+    func testCaptureWithoutLocationReadsAsNil_AndDeleteRemovesTheSideRow() throws {
+        try store.insert(TestSupport.makeCapture(id: "cap-nowhere"))
+        XCTAssertNil(try store.capture(id: "cap-nowhere")?.location)
+
+        var located = TestSupport.makeCapture(id: "cap-gone")
+        located.location = LocationContext(
+            latitude: 1, longitude: 2, horizontalAccuracyM: nil, headingDegrees: nil, speedMps: nil)
+        try store.insert(located)
+        try store.delete(id: "cap-gone")
+        XCTAssertEqual(
+            try database.scalarInt64("SELECT COUNT(*) FROM capture_location WHERE capture_id = 'cap-gone';"), 0)
+
+        // Re-using the ID without a location must not resurrect the old snapshot.
+        try store.insert(TestSupport.makeCapture(id: "cap-gone"))
+        XCTAssertNil(try store.capture(id: "cap-gone")?.location)
+    }
+
+    func testLocationSchemaIsIdempotentAcrossStoreInstances() throws {
+        // A second store over the same connection re-applies the DDL; the
+        // table and its rows survive, and user_version is untouched.
+        var capture = TestSupport.makeCapture(id: "cap-again")
+        capture.location = LocationContext(
+            latitude: 3, longitude: 4, horizontalAccuracyM: 5, headingDegrees: nil, speedMps: nil)
+        try store.insert(capture)
+        let second = SQLiteCaptureStore(database: database)
+        XCTAssertEqual(try second.capture(id: "cap-again")?.location, capture.location)
+        XCTAssertEqual(try database.scalarInt64("PRAGMA user_version;"), Int64(AppDatabase.migrations.count))
+    }
+
     // MARK: - Helpers
 
     private func assertSameInstant(

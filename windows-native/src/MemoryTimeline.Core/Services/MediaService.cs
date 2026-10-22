@@ -129,6 +129,7 @@ public class MediaService : IMediaService
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly IThumbnailGenerator _thumbnailGenerator;
     private readonly ITimelineProjectionPublisher? _projectionPublisher;
+    private readonly IRecordingStorage? _recordingStorage;
     private readonly ILogger<MediaService> _logger;
 
     /// <summary>
@@ -136,9 +137,11 @@ public class MediaService : IMediaService
     /// default %LOCALAPPDATA%\MemoryTimeline\Media root - production leaves it
     /// null (the DI container cannot resolve a string, so the default kicks
     /// in); tests inject a temp directory.
-    /// <paramref name="projectionPublisher"/> is optional and trailing so every
-    /// existing construction keeps compiling: production picks up the registered
-    /// implementation, and the many tests that predate sync stay silent.
+    /// <paramref name="projectionPublisher"/> and <paramref name="recordingStorage"/>
+    /// are optional and trailing so every existing construction keeps compiling:
+    /// production picks up the registered implementations, and the many tests
+    /// that predate them stay silent. With a recording storage, Clear Cache
+    /// sweeps the recording trees as well as the media tree.
     /// </summary>
     public MediaService(
         IEventMediaRepository mediaRepository,
@@ -146,12 +149,14 @@ public class MediaService : IMediaService
         IThumbnailGenerator thumbnailGenerator,
         ILogger<MediaService> logger,
         string? mediaRootOverride = null,
-        ITimelineProjectionPublisher? projectionPublisher = null)
+        ITimelineProjectionPublisher? projectionPublisher = null,
+        IRecordingStorage? recordingStorage = null)
     {
         _mediaRepository = mediaRepository;
         _contextFactory = contextFactory;
         _thumbnailGenerator = thumbnailGenerator;
         _projectionPublisher = projectionPublisher;
+        _recordingStorage = recordingStorage;
         _logger = logger;
 
         MediaRoot = string.IsNullOrWhiteSpace(mediaRootOverride)
@@ -596,10 +601,27 @@ public class MediaService : IMediaService
     {
         var result = new MediaCleanupResult();
 
-        if (!System.IO.Directory.Exists(MediaRoot))
+        if (System.IO.Directory.Exists(MediaRoot))
         {
-            return result;
+            await SweepMediaTreeAsync(result, ct);
         }
+
+        // Recording files are orphaned by queue removals that predate the
+        // release-on-remove rule, by failed ingestions, and by downloads whose
+        // ingestion was deduplicated; the same Clear Cache action collects them.
+        if (_recordingStorage != null)
+        {
+            var recordings = await _recordingStorage.CleanupOrphansAsync(ct);
+            result.RecordingsDeleted = recordings.FilesDeleted;
+            result.FilesDeleted += recordings.FilesDeleted;
+            result.BytesFreed += recordings.BytesFreed;
+        }
+
+        return result;
+    }
+
+    private async Task SweepMediaTreeAsync(MediaCleanupResult result, CancellationToken ct)
+    {
 
         // Snapshot ORDER matters: materialize the FILE list first, the DB row
         // sets second. AttachAsync copies a file into the managed tree BEFORE
@@ -703,7 +725,6 @@ public class MediaService : IMediaService
         // delete, both of which already published. A file deleted here has no
         // event id to attribute it to anyway; publishing "everything" to be safe
         // would flood the outbox to say nothing.
-        return result;
     }
 
     /// <summary>

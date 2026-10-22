@@ -131,6 +131,9 @@ public partial class App : Application
                     // app-side WinRT implementation; MediaService itself is
                     // UI-free and lives in Core.
                     services.AddSingleton<IThumbnailGenerator, WindowsThumbnailGenerator>();
+                    // Recording files (recorder output, synced artifacts, normalized
+                    // WAVs): released when a queue row is removed, swept by Clear Cache.
+                    services.AddSingleton<IRecordingStorage, RecordingStorage>();
                     services.AddSingleton<IMediaService, MediaService>();
 
                     // Phase 3: Audio & Queue services

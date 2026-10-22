@@ -112,7 +112,11 @@ public class TimelineCoordinateConverter
 public class TimeRulerConfig
 {
     /// <summary>
-    /// Major tick interval in days.
+    /// Major tick interval in days. Exact for <see cref="TimeRulerIntervalType.Day"/>
+    /// and <see cref="TimeRulerIntervalType.Week"/>; for the calendar interval
+    /// types (month, quarter, year, five-year) it is the NOMINAL length — the
+    /// ruler advances those by calendar units (see <see cref="GenerateTicks"/>),
+    /// so a major tick always lands on the 1st of a month / 1 January.
     /// </summary>
     public double MajorTickIntervalDays { get; set; }
 
@@ -209,54 +213,134 @@ public class TimeRulerConfig
     }
 
     /// <summary>
-    /// Generates tick marks for the visible viewport.
+    /// Generates tick marks for the visible viewport, from one major interval
+    /// before the aligned visible start to one after the visible end.
+    /// Day and week rulers advance by fixed day counts; month, quarter, year
+    /// and five-year rulers advance by CALENDAR units, so every major tick
+    /// lands on a real boundary (the 1st of the month, 1 January) instead of
+    /// drifting by the difference between 30 days and a month. Minor ticks
+    /// subdivide each major interval: by calendar months/years when the
+    /// subdivision is a whole number of them (quarter → months, year →
+    /// quarters, five-year → years), otherwise evenly in time (a month's four
+    /// "weekly" ticks).
     /// </summary>
     public IEnumerable<TimeRulerTick> GenerateTicks(TimelineCoordinateConverter converter)
     {
         var ticks = new List<TimeRulerTick>();
-        var minorIntervalDays = MajorTickIntervalDays / MinorTicksPerMajor;
+        var minorPerMajor = Math.Max(1, MinorTicksPerMajor);
 
-        // Find the first major tick before or at the visible start
-        var firstTickDate = GetAlignedDate(converter.VisibleStartDate);
+        // One major before the aligned visible start, one after the visible end (buffer).
+        var currentMajor = StepMajor(GetAlignedDate(converter.VisibleStartDate), -1);
+        var endDate = StepMajor(converter.VisibleEndDate, 1);
 
-        // Generate ticks from before visible area to after (with buffer)
-        var currentDate = firstTickDate.AddDays(-MajorTickIntervalDays);
-        var endDate = converter.VisibleEndDate.AddDays(MajorTickIntervalDays);
-
-        int minorCounter = 0;
-        while (currentDate <= endDate)
+        while (currentMajor <= endDate)
         {
-            var screenX = converter.DateToScreen(currentDate);
-            var isMajor = minorCounter % MinorTicksPerMajor == 0;
-
-            ticks.Add(new TimeRulerTick
+            var nextMajor = StepMajor(currentMajor, 1);
+            if (nextMajor <= currentMajor)
             {
-                Date = currentDate,
-                ScreenX = screenX,
-                IsMajor = isMajor,
-                Label = isMajor ? currentDate.ToString(LabelFormat) : null
-            });
+                // Clamped at the end of the DateTime range: nothing further to draw.
+                ticks.Add(CreateTick(converter, currentMajor, isMajor: true));
+                break;
+            }
 
-            currentDate = currentDate.AddDays(minorIntervalDays);
-            minorCounter++;
+            ticks.Add(CreateTick(converter, currentMajor, isMajor: true));
+            for (var i = 1; i < minorPerMajor; i++)
+            {
+                ticks.Add(CreateTick(converter, MinorTickDate(currentMajor, nextMajor, i, minorPerMajor), isMajor: false));
+            }
+
+            currentMajor = nextMajor;
         }
 
         return ticks;
     }
 
+    private TimeRulerTick CreateTick(TimelineCoordinateConverter converter, DateTime date, bool isMajor)
+    {
+        return new TimeRulerTick
+        {
+            Date = date,
+            ScreenX = converter.DateToScreen(date),
+            IsMajor = isMajor,
+            Label = isMajor ? date.ToString(LabelFormat) : null
+        };
+    }
+
+    /// <summary>Months in one major interval for the calendar interval types; 0 for day/week.</summary>
+    private int MajorIntervalMonths => IntervalType switch
+    {
+        TimeRulerIntervalType.Month => 1,
+        TimeRulerIntervalType.Quarter => 3,
+        TimeRulerIntervalType.Year => 12,
+        TimeRulerIntervalType.FiveYear => 60,
+        _ => 0
+    };
+
+    /// <summary>Moves a date by <paramref name="count"/> major intervals (calendar-aware), clamped to the DateTime range.</summary>
+    private DateTime StepMajor(DateTime date, int count)
+    {
+        var months = MajorIntervalMonths;
+        return months > 0
+            ? AddMonthsClamped(date, months * count)
+            : AddDaysClamped(date, MajorTickIntervalDays * count);
+    }
+
     /// <summary>
-    /// Aligns a date to the nearest interval boundary.
+    /// The <paramref name="index"/>-th of <paramref name="count"/> minor ticks
+    /// between two consecutive major ticks: a whole number of calendar months
+    /// when the interval divides that way, else an even share of the real span.
+    /// </summary>
+    private DateTime MinorTickDate(DateTime major, DateTime nextMajor, int index, int count)
+    {
+        var months = MajorIntervalMonths;
+        if (months > 0 && months % count == 0)
+        {
+            return AddMonthsClamped(major, months / count * index);
+        }
+
+        var spanTicks = (nextMajor - major).Ticks;
+        return major.AddTicks(spanTicks / count * index);
+    }
+
+    private static DateTime AddMonthsClamped(DateTime date, int months)
+    {
+        try
+        {
+            return date.AddMonths(months);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return months > 0 ? DateTime.MaxValue : DateTime.MinValue;
+        }
+    }
+
+    private static DateTime AddDaysClamped(DateTime date, double days)
+    {
+        try
+        {
+            return date.AddDays(days);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return days > 0 ? DateTime.MaxValue : DateTime.MinValue;
+        }
+    }
+
+    /// <summary>
+    /// Aligns a date to the interval boundary at or before it (midnight, the
+    /// week's Sunday, the 1st of the month/quarter, 1 January, or 1 January
+    /// of the five-year block).
     /// </summary>
     private DateTime GetAlignedDate(DateTime date)
     {
         return IntervalType switch
         {
             TimeRulerIntervalType.Day => date.Date,
-            TimeRulerIntervalType.Week => date.Date.AddDays(-(int)date.DayOfWeek),
+            TimeRulerIntervalType.Week => AddDaysClamped(date.Date, -(int)date.DayOfWeek),
             TimeRulerIntervalType.Month => new DateTime(date.Year, date.Month, 1),
             TimeRulerIntervalType.Quarter => new DateTime(date.Year, ((date.Month - 1) / 3) * 3 + 1, 1),
             TimeRulerIntervalType.Year => new DateTime(date.Year, 1, 1),
-            TimeRulerIntervalType.FiveYear => new DateTime((date.Year / 5) * 5, 1, 1),
+            TimeRulerIntervalType.FiveYear => new DateTime(Math.Max(1, (date.Year / 5) * 5), 1, 1),
             _ => date.Date
         };
     }

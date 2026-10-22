@@ -39,7 +39,7 @@ endpoints are implemented as persistence and lifecycle — see
 |------|----------|
 | `MemoryTimeline.Services.sln` | Solution: the service, its tests, and the shared contracts library. |
 | `MemoryTimeline.SyncApi/` | The service — `Domain/` (EF entities), `Application/` (services, options, error codes), `Infrastructure/` (DbContext, artifact store, bootstrapper). |
-| `MemoryTimeline.SyncApi.Tests/` | xUnit tests, including `WebApplicationFactory`-based integration tests of the full HTTP surface. |
+| `MemoryTimeline.SyncApi.Tests/` | xUnit tests, including `WebApplicationFactory`-based integration tests of the full HTTP surface and the **contract-compatibility gate** (`ContractCompatibilityTests`), which fails the run when the OpenAPI document, the shared DTOs and the registered routes disagree (see `shared-contracts/README.md`). |
 | `../shared-contracts/dotnet/MemoryTimeline.SyncContracts/` | Wire DTOs shared with the Windows client (referenced by project, camelCase JSON). |
 
 ## Run locally

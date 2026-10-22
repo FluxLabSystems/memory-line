@@ -170,7 +170,8 @@ public partial class ConnectionsViewModel : ObservableObject
     {
         try
         {
-            var similar = await _ragService.FindSimilarEventsAsync(eventId, topK: 10, threshold: 0.7);
+            // No explicit threshold: the service reads the rag_similarity_threshold setting.
+            var similar = await _ragService.FindSimilarEventsAsync(eventId, topK: 10);
 
             SimilarEvents.Clear();
             foreach (var item in similar)

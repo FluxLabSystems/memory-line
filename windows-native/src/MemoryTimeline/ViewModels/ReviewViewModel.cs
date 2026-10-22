@@ -248,6 +248,8 @@ public partial class ReviewViewModel : ObservableObject
 
             await UpdateCountsAsync();
 
+            // Let the shell re-count its Review badge (rejection raises no Core message).
+            WeakReferenceMessenger.Default.Send(new PendingEventsChangedMessage());
             StatusMessage = $"Approved: {eventDto.Title}";
             _logger.LogInformation("Approved pending event: {EventId}", createdEvent.EventId);
         }
@@ -291,6 +293,8 @@ public partial class ReviewViewModel : ObservableObject
 
             await UpdateCountsAsync();
 
+            // Let the shell re-count its Review badge (rejection raises no Core message).
+            WeakReferenceMessenger.Default.Send(new PendingEventsChangedMessage());
             StatusMessage = $"Rejected: {eventDto.Title}";
             _logger.LogInformation("Rejected pending event: {EventId}", eventDto.PendingEventId);
         }
@@ -371,6 +375,8 @@ public partial class ReviewViewModel : ObservableObject
 
             await UpdateCountsAsync();
 
+            // Let the shell re-count its Review badge (rejection raises no Core message).
+            WeakReferenceMessenger.Default.Send(new PendingEventsChangedMessage());
             StatusMessage = $"Approved {approvedCount} of {eventsToApprove.Count} events";
             _logger.LogInformation("Bulk approved {Count} events", approvedCount);
         }
@@ -444,6 +450,8 @@ public partial class ReviewViewModel : ObservableObject
 
             await UpdateCountsAsync();
 
+            // Let the shell re-count its Review badge (rejection raises no Core message).
+            WeakReferenceMessenger.Default.Send(new PendingEventsChangedMessage());
             StatusMessage = $"Rejected {rejectedCount} of {eventsToReject.Count} events";
             _logger.LogInformation("Bulk rejected {Count} events", rejectedCount);
         }

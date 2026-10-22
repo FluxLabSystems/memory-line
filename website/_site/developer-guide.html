@@ -136,8 +136,8 @@
   <p class="doc-lede">The condensed contributor briefing: solution layout, the per-operation DbContext rule, MVVM conventions, settings keys, build reality, and how to add a feature.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Contributors</span>
-    <span class="doc-meta-item"><b>2,717</b> words</span>
-    <span class="doc-meta-item"><b>12</b> min read</span>
+    <span class="doc-meta-item"><b>3,179</b> words</span>
+    <span class="doc-meta-item"><b>14</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/claude.md" target="_blank" rel="noopener noreferrer">
       claude.md ↗
     </a>
@@ -164,15 +164,17 @@ Core, plain net10.0 — <strong>CAN be built/tested with the <code>dotnet</code>
 needed; own Linux CI workflow <code>sync-api-build.yml</code>) and the <strong>Windows sync client
 library</strong> <code>windows-native/src/MemoryTimeline.Sync</code> — the iOS roadtrip companion sync
 layer. See <a href="#sync-service-ios-companion">Sync service (iOS companion)</a>.</li>
-<li><strong>You cannot build this repo in the cloud sandbox</strong> — there is no .NET SDK, and the
-WinUI 3 app cannot be built with <code>dotnet build</code> anyway (see <a href="#build--run-reality">Build &amp; run reality</a>).
-Changes are validated by <strong>CI on a Windows runner</strong>, not by a local build. Reason
-carefully and keep changes correct-by-construction.</li>
+<li><strong>You cannot build the app in the cloud sandbox.</strong> The WinUI 3 head cannot be built with
+<code>dotnet build</code> at all (see <a href="#build--run-reality">Build &amp; run reality</a>), and a sandbox may
+have no .NET SDK. When one is present (e.g. <code>/root/.dotnet</code>), only the plain-<code>net10.0</code>
+projects — Core, Data, Sync, Portability.Tests, the sync service — can be built or tested
+with it. Head changes are validated by <strong>CI on a Windows runner</strong>, not by a local build.
+Reason carefully and keep changes correct-by-construction.</li>
 </ul>
 <hr>
 <h2 id="windows-native--the-app-you-work-on" class="anchored">Windows Native — the app you work on<a class="heading-anchor" href="#windows-native--the-app-you-work-on" aria-label="Link to this section">#</a></h2>
 <h3 id="solution-layout-clean-architecture" class="anchored">Solution layout (clean architecture)<a class="heading-anchor" href="#solution-layout-clean-architecture" aria-label="Link to this section">#</a></h3>
-<p>The solution is <code>windows-native/src/MemoryTimeline.sln</code>, six projects:</p>
+<p>The solution is <code>windows-native/src/MemoryTimeline.sln</code>, six projects, plus one plain-<code>net10.0</code> test project that deliberately sits outside it:</p>
 <div class="table-wrap"><table><thead><tr>
 <th>Project</th>
 <th>Role</th>
@@ -201,6 +203,10 @@ carefully and keep changes correct-by-construction.</li>
 <td><strong>MemoryTimeline.SyncContracts</strong></td>
 <td>Shared wire DTOs; lives at <code>shared-contracts/dotnet/</code> and is referenced into both this solution and <code>services/MemoryTimeline.Services.sln</code>. CamelCase JSON per the OpenAPI contract.</td>
 </tr>
+<tr>
+<td><strong>MemoryTimeline.Portability.Tests</strong></td>
+<td>Plain <code>net10.0</code> xUnit tests, <strong>not in the .sln</strong>: they prove the archive stack (Core → Data, Sync) <em>runs</em> off Windows rather than merely compiling there. Executed with <code>dotnet test</code> by the macOS workflow; <code>MemoryTimeline.Tests</code> is <code>net10.0-windows</code> and can only run on a Windows runner.</td>
+</tr>
 </tbody></table></div>
 <p>Dependency direction: <code>MemoryTimeline</code> → <code>Core</code> → <code>Data</code>; <code>Sync</code> sits beside them
 (<code>Sync</code> → <code>Core</code>/<code>Data</code>/<code>SyncContracts</code>). Keep it that way; don&#39;t make
@@ -222,8 +228,10 @@ after adding an event). Don&#39;t recreate it.</li>
 <li>Because repositories/services are <strong>stateless over the factory</strong>, they are registered
 <strong>Singleton</strong>. Follow that when adding a new repository or service.</li>
 <li>Startup uses <code>SchemaUpgrader.EnsureSchemaAsync</code> (EnsureCreated + idempotent DDL
-repairs for schema drift on older DBs) — a deliberate stopgap until real EF migrations
-are regenerated. Don&#39;t swap it for raw <code>EnsureCreated</code>.</li>
+repairs for schema drift on older DBs). A baseline EF migration now exists under
+<code>MemoryTimeline.Data/Migrations</code> (generated with <code>dotnet ef</code> through
+<code>AppDbContextDesignTimeFactory</code>), but nothing calls <code>Migrate()</code> yet; keep
+<code>SchemaUpgrader</code> as the runtime path and don&#39;t swap it for raw <code>EnsureCreated</code>.</li>
 </ul>
 <h3 id="mvvm--ui-conventions" class="anchored">MVVM &amp; UI conventions<a class="heading-anchor" href="#mvvm--ui-conventions" aria-label="Link to this section">#</a></h3>
 <ul>
@@ -260,13 +268,13 @@ the next call.</li>
 </tr>
 </thead><tbody><tr>
 <td><strong>Speech-to-text</strong></td>
-<td><strong>Local Whisper</strong> via <code>WhisperSpeechToTextService</code> (Whisper.net, ggml <code>base</code> model)</td>
-<td>File-based, fully offline after a one-time ~140 MB model download to <code>%LOCALAPPDATA%\MemoryTimeline\Models\</code>. The recorded WAV is transcribed on-device — **not** the old Windows <code>SpeechRecognizer</code>, which is mic-only and can&#39;t transcribe a file.</td>
+<td><strong>Local Whisper</strong> via <code>WhisperSpeechToTextService</code> (Whisper.net; the ggml model and language come from <code>whisper_model</code> / <code>whisper_language</code>, default <code>base</code> / <code>auto</code>)</td>
+<td>File-based, fully offline after a one-time model download to <code>%LOCALAPPDATA%\MemoryTimeline\Models\</code> (~140 MB for <code>base</code>). Non-WAV captures (an iPhone <code>.m4a</code>) are normalized to 16 kHz mono WAV at ingestion through the <code>IAudioNormalizer</code> port (<code>WindowsAudioNormalizer</code>, MediaTranscoder) before transcription. Transcription happens on-device — **not** the old Windows <code>SpeechRecognizer</code>, which is mic-only and can&#39;t transcribe a file.</td>
 </tr>
 <tr>
 <td><strong>LLM</strong> (extraction, Ask, narratives, recall wording)</td>
 <td><strong>Anthropic Claude</strong> (<code>AnthropicLlmService</code>) <strong>or</strong> any <strong>OpenAI-compatible endpoint</strong> (<code>OpenAiCompatibleLlmService</code> — Ollama, LM Studio, vLLM)</td>
-<td><code>RoutingLlmService</code> is the registered <code>ILlmService</code>; it re-reads <code>llm_provider</code> on <strong>every call</strong>, so switching providers applies live. <code>ILlmUsageTracker</code> counts per-session calls/tokens for the Settings UI.</td>
+<td><code>RoutingLlmService</code> is the registered <code>ILlmService</code>; it re-reads <code>llm_provider</code> on <strong>every call</strong>, so switching providers applies live. <code>ILlmUsageTracker</code> counts per-session calls/tokens for the Settings UI. Transient network, timeout, 429 and 5xx failures are retried with bounded jittered back-off (<code>HttpRetryPolicy</code>, Polly).</td>
 </tr>
 <tr>
 <td><strong>Embeddings (RAG / Ask)</strong></td>
@@ -319,25 +327,28 @@ architecture this feeds.</p>
 <ul>
 <li><strong>x64 only.</strong> The solution defines x64/x86/ARM64 — <strong>no AnyCPU</strong>. Always pass
 <code>-p:Platform=x64</code> (or select x64 in Visual Studio).</li>
-<li><strong>Build with Visual Studio 2022 (17.8+) or <code>msbuild.exe</code>, NOT <code>dotnet build</code> / <code>dotnet run</code>.</strong>
+<li><strong>Build with Visual Studio 2026 (18.0+) or its <code>msbuild.exe</code>, NOT <code>dotnet build</code> / <code>dotnet run</code>.</strong>
 WinUI 3 PRI resource generation (<code>MrtCore.PriGen</code> → <code>ExpandPriContent</code>) uses a .NET
 Framework MSBuild task that loads under VS&#39;s <code>msbuild.exe</code> but <strong>fails under the
 <code>dotnet</code> CLI build engine</strong> (error <strong>MSB4062</strong>). So <code>dotnet build</code> / <code>dotnet run</code>
 cannot build or launch the app.</li>
-<li><strong>SDK pin.</strong> <code>windows-native/src/global.json</code> pins the <strong>.NET 10</strong> SDK to its
-<code>10.0.1xx</code> feature band (<code>10.0.100</code>, <code>rollForward: &quot;latestPatch&quot;</code>). The band is
-deliberate: <code>10.0.1xx</code> declares MSBuild 17.14 as its minimum, so Visual Studio 2022
-can still build; bands <code>10.0.2xx</code>+ require MSBuild 18 / Visual Studio 2026. (An
+<li><strong>SDK pin.</strong> <code>windows-native/src/global.json</code> pins the <strong>.NET 10</strong> SDK at
+<code>10.0.300</code> with <code>rollForward: &quot;latestFeature&quot;</code>, i.e. any 10.0.3xx-or-newer SDK. The
+repo moved off the <code>10.0.1xx</code> band deliberately: bands <code>10.0.2xx</code>+ require MSBuild 18,
+so <strong>Visual Studio 2026 is the supported IDE and VS 2022 can no longer build this
+repo.</strong> (An
 earlier note here claimed .NET 10 was incompatible with the WindowsAppSDK PRI task —
 that is not the case; CI builds it green via VS msbuild.)</li>
 <li><strong>CI is the validation gate.</strong> <code>.github/workflows/windows-native-build.yml</code> builds
-<strong>Release | x64</strong> on <strong>windows-latest</strong> via VS <code>msbuild</code> (<code>/t:Restore,Build</code>) and runs
-tests best-effort. Compile success is the gate.</li>
-<li><strong>No .NET SDK exists in the cloud dev sandbox.</strong> You cannot build or run locally here —
-rely on CI to validate. Make changes that are correct by inspection; don&#39;t assume you
-can &quot;just run it&quot;.</li>
+<strong>Release | x64</strong> on <strong>windows-latest</strong> (VS 2026 / MSBuild 18) via VS <code>msbuild</code> (<code>/t:Restore,Build</code>) and then
+runs the built <code>MemoryTimeline.Tests.dll</code> with <code>dotnet vstest</code>. <strong>Both gate the run</strong>: a
+compile error, a failing test, or a missing test assembly fails the workflow.</li>
+<li><strong>The cloud dev sandbox cannot build or run the app.</strong> Even with a .NET SDK present you
+can only build the plain-<code>net10.0</code> projects (<code>dotnet build windows-native/src/MemoryTimeline.Core/MemoryTimeline.Core.csproj</code>
+is a useful smoke check after touching Core/Data/Sync); the head is CI-only. Make head
+changes that are correct by inspection; don&#39;t assume you can &quot;just run it&quot;.</li>
 </ul>
-<p>For local dev on a real Windows machine: open the solution in VS 2022 and press F5, or
+<p>For local dev on a real Windows machine: open the solution in VS 2026 and press F5, or
 <code>msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64</code>.</p>
 <h3 id="troubleshooting-a-local-build" class="anchored">Troubleshooting a local build<a class="heading-anchor" href="#troubleshooting-a-local-build" aria-label="Link to this section">#</a></h3>
 <p><strong><code>MSB4064: The &quot;DisabledXamlOptionalChanges&quot; parameter is not supported by the &quot;CompileXaml&quot; task</code> (followed by <code>MSB4063</code>).</strong> Read the two paths in the error: the
@@ -353,11 +364,11 @@ references 1.8.</p>
 (<code>$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk.winui\1.8.*</code>) and restore again.
 A clean CI checkout builds this commit green, so a local-only failure of this shape is
 almost always leftover state.</p>
-<p><strong><code>global.json</code> SDK resolution fails.</strong> The pin is <code>10.0.100</code> with
-<code>rollForward: latestPatch</code>, which accepts <code>10.0.1xx</code> patches <strong>only</strong> — it will not roll
-forward to <code>10.0.2xx</code>. A machine with only a newer band installed (Visual Studio 2026
-ships one) cannot resolve it. Install a 10.0.1xx SDK, or raise the pin deliberately; the
-band is chosen so Visual Studio 2022 can still build (see the note inside <code>global.json</code>).</p>
+<p><strong><code>global.json</code> SDK resolution fails.</strong> The pin is <code>10.0.300</code> with
+<code>rollForward: latestFeature</code>, which accepts any 10.0.3xx-or-newer SDK. A machine with only
+a 10.0.1xx/2xx SDK (for example Visual Studio 2022&#39;s) cannot resolve it — install the
+current .NET 10 SDK, which Visual Studio 2026 ships. The CI <code>setup-dotnet</code> steps use
+<code>dotnet-version: &#39;10.0.x&#39;</code> to match.</p>
 <h3 id="tests-the-sqlite-parallelism-hazard" class="anchored">Tests: the SQLite parallelism hazard<a class="heading-anchor" href="#tests-the-sqlite-parallelism-hazard" aria-label="Link to this section">#</a></h3>
 <p><code>SqliteConnection.ClearAllPools()</code> is <strong>process-global</strong> — it disposes the underlying
 <code>SQLitePCL.sqlite3</code> handle of every pooled connection, for every connection string.
@@ -410,10 +421,13 @@ hash), <code>event_revisions</code> (append-only edit history), <code>recall_pro
 questions, deduped forever).
 RAG: <code>event_embeddings</code> (with per-row <code>embedding_dimension</code>), <code>cross_references</code>.
 UX: <code>drafts</code>, <code>saved_searches</code>.
-System: <code>app_settings</code> — 33 seeded keys; <strong>seed parity is three-way</strong> (the
-<code>AppDbContext.SeedDefaultSettings</code> HasData seed, the <code>SchemaUpgrader</code> INSERT OR IGNORE
-backfill, and the <code>SettingKeys</code> constants must stay in sync — keep all three when adding
-a seeded setting).
+System: <code>app_settings</code>. <strong>The rule:</strong> a setting that has a seeded default must appear in
+all three places — the <code>AppDbContext.SeedDefaultSettings</code> HasData seed (fresh databases),
+the <code>SchemaUpgrader</code> INSERT OR IGNORE backfill (upgraded databases), and the <code>SettingKeys</code>
+constants. <code>SettingKeys</code> is the authoritative list of keys; its comments say which keys are
+deliberately <strong>not</strong> seeded (<code>last_toast_date</code>, <code>last_backup_at</code>, the sync tokens, ...),
+and the seed/backfill pair must agree with each other for everything else. When you add a
+seeded setting, change all three in the same commit.
 Identity: the unique name indexes on <code>people</code>/<code>tags</code>/<code>locations</code> are <strong>COLLATE NOCASE</strong>;
 <code>SchemaUpgrader</code> defensively merges pre-existing case-variant duplicates (backfilling the
 keeper&#39;s empty contact columns) before rebuilding each index.
@@ -427,9 +441,11 @@ cloud. Only the text you choose to process is sent to the configured LLM/embeddi
 provider (which can itself be a local OpenAI-compatible endpoint).</li>
 <li><strong>Geocoding is opt-in and off by default</strong>; when enabled, only the location&#39;s name is
 sent to Nominatim. Media/EXIF processing is entirely local.</li>
-<li><strong>API keys today live in the <code>app_settings</code> table</strong> (not Windows Credential Manager —
-that&#39;s stale). <strong>Encrypting keys at rest with DPAPI (<code>ProtectedData</code>) is a tracked
-follow-up</strong>, not yet implemented. Don&#39;t describe key storage as encrypted; don&#39;t log keys.</li>
+<li><strong>API keys and sync tokens live in the <code>app_settings</code> table</strong> (not Windows Credential
+Manager — that&#39;s stale), <strong>stored DPAPI-protected</strong> through the <code>ISecretProtector</code> port
+(<code>DpapiSecretProtector</code>: <code>ProtectedData</code>, CurrentUser scope, <code>dpapi:v1:</code> prefix; legacy
+plaintext rows are re-written protected on first read). A backup restored under another
+Windows account reads those secrets as empty and they must be re-entered. Don&#39;t log keys.</li>
 <li>Use parameterized EF Core queries (default with LINQ) — no string-built SQL.</li>
 </ul>
 <hr>
@@ -448,7 +464,7 @@ follow-up</strong>, not yet implemented. Don&#39;t describe key storage as encry
 </tr>
 <tr>
 <td><a href="hardening-followups.html"><code>windows-native/HARDENING-FOLLOWUPS.md</code></a></td>
-<td>Deferred hardening items (DPAPI, EF migrations, etc.).</td>
+<td>Hardening items and their status (DPAPI and the EF baseline are done; the migration switch-over and others remain).</td>
 </tr>
 <tr>
 <td><a href="development-status.html"><code>windows-native/DEVELOPMENT-STATUS.md</code></a></td>
@@ -486,10 +502,16 @@ head needs a path abstraction; the port plan tracks this.</li>
 <hr>
 <h2 id="the-swift-apps-ios-companion--macos" class="anchored">The Swift apps (iOS companion + macOS)<a class="heading-anchor" href="#the-swift-apps-ios-companion--macos" aria-label="Link to this section">#</a></h2>
 <p>Two SwiftUI apps share one folder of code: <code>ios-companion/MemoryLineCompanion/Shared/</code>
-(domain models, sync client, SQLite stores, Keychain). The macOS project compiles that
-folder directly via an Xcode <strong>synchronized folder group</strong>, so a file added there lands in
-both apps with no project edit. Full detail: <a href="https://github.com/ethanbissbort/memory-line/blob/main/macos-native/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/README.md</code></a>
-and <a href="macos-port-plan.html"><code>docs/design/MACOS-PORT-PLAN.md</code></a>.</p>
+(domain models, sync client, SQLite stores, Keychain, and the timeline projection). The
+macOS project compiles that folder directly via an Xcode <strong>synchronized folder group</strong>, so a
+file added there lands in both apps with no project edit. Full detail:
+<a href="https://github.com/ethanbissbort/memory-line/blob/main/macos-native/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/README.md</code></a> and
+<a href="macos-port-plan.html"><code>docs/design/MACOS-PORT-PLAN.md</code></a>.</p>
+<p><strong>Both apps have CI</strong>, and both need a <em>committed shared scheme</em> to have it. Xcode writes
+schemes per-user under <code>xcuserdata/</code>, which is not in git, so <code>xcodebuild -scheme</code> has
+nothing to resolve without one — the iOS app had no CI for exactly this reason until
+<code>MemoryLineCompanion.xcscheme</code> was committed. If you add a target or a project, commit its
+scheme in the same change.</p>
 <p><strong>Rules for anything under <code>Shared/</code>:</strong></p>
 <ul>
 <li><strong>It must compile on both platforms.</strong> No <code>UIKit</code>, no <code>WidgetKit</code>, no
@@ -511,10 +533,21 @@ and the iOS <code>StatusSyncCoordinator</code> are separate implementations — 
 acking; hold the cursor when <em>applying</em> fails so the page replays; never ack a cursor that
 did not advance; and last-write-wins on the Windows-authored <code>updatedAtUtc</code>. Change one
 and check the other.</p>
+<p>Both coordinators make <strong>two disjoint sweeps</strong> over a page: <code>capture_status</code> inline, because
+it moves a local capture&#39;s lifecycle and can raise a notification; everything in
+<code>SyncChangeEntityType.projectedByWindows</code> through the shared <code>TimelineProjectionApplier</code>.
+That split is what keeps a coordinator from growing a case per entity type. A page is not
+applied atomically and does not need to be — every write on both paths is an idempotent
+upsert or a delete, so a failed page simply replays.</p>
 <p>Windows remains the only writer and the only editing/approval surface. Everything the
-phone and the Mac show about processing is a <strong>read-only projection</strong> (design §19).</p>
+phone and the Mac show of the archive is a <strong>read-only projection</strong> (design §19). The one
+exception is a <code>pending_event_decision</code>: approving or rejecting an extracted event is one
+idempotent bit with no field values to merge, so the contract admits it from a companion
+without making the system multi-writer. The Mac sends them
+(<code>MacReviewCoordinator</code>, queued to disk before any network call); the phone does not, and
+whether it should is an open question, not an oversight.</p>
 <hr>
-<p><strong>Last Updated:</strong> 2026-08-07<br><strong>Primary target:</strong> Windows Native (.NET 10 / WinUI 3) — <code>windows-native/</code><br><strong>In progress:</strong> macOS (SwiftUI) — <code>macos-native/</code>  </p>
+<p><strong>Last Updated:</strong> 2026-10-21<br><strong>Primary target:</strong> Windows Native (.NET 10 / WinUI 3) — <code>windows-native/</code><br><strong>In progress:</strong> macOS (SwiftUI) — <code>macos-native/</code>  </p>
 
 <nav class="pager" aria-label="Document navigation">
   <a class="pager-link pager-prev" href="overview.html">
@@ -556,7 +589,7 @@ phone and the Mac show about processing is a <strong>read-only projection</stron
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

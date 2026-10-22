@@ -21,6 +21,43 @@ public enum TimelineProjectionEntity
 }
 
 /// <summary>
+/// How <see cref="ITimelineProjectionPublisher.PublishAllAsync"/> treats a
+/// projection the outbox has already delivered.
+/// </summary>
+public enum TimelineProjectionBackfillMode
+{
+    /// <summary>
+    /// Queue only what the outbox never sent, or sent in a different shape:
+    /// the ordinary unchanged-projection suppression applies to delivered rows
+    /// too. The cheap catch-up for an archive that predates projection
+    /// publishing, when the server it synced with is still the one it talks to.
+    /// </summary>
+    MissingOrChanged,
+
+    /// <summary>
+    /// Queue every projection again, whatever the outbox says was delivered,
+    /// skipping only rows still waiting in the outbox with identical content.
+    /// For a new registration or a restored archive: the outbox's memory of
+    /// what was delivered describes a server, a device identity or an archive
+    /// that no longer matches, so "already sent" is no longer true.
+    /// </summary>
+    Everything,
+}
+
+/// <summary>Outcome of one backfill run.</summary>
+/// <param name="Eras">Era projections queued.</param>
+/// <param name="Events">Event projections queued.</param>
+/// <param name="People">Person projections queued.</param>
+/// <param name="PendingEvents">Pending-event projections queued.</param>
+/// <param name="Unchanged">Rows left alone because the outbox already carries an identical projection.</param>
+public sealed record TimelineProjectionBackfillResult(
+    int Eras, int Events, int People, int PendingEvents, int Unchanged)
+{
+    /// <summary>Everything queued, across entity types.</summary>
+    public int Published => Eras + Events + People + PendingEvents;
+}
+
+/// <summary>
 /// Projects the Windows archive — events, eras, people and the review queue —
 /// onto the sync feed so a companion device can render a timeline it does not
 /// own (design §19 Phase 3).
@@ -82,23 +119,42 @@ public enum TimelineProjectionEntity
 /// companion, and a file-only orphan sweep changes no projection at all.</description></item>
 /// </list></para>
 ///
-/// <para><b>Still not published.</b> Two remain, both outside any single
-/// service's reach:
-/// <list type="bullet">
-/// <item><description>The EXIF backfill in <c>MediaService.AttachAsync</c> writes
-/// coordinates onto a <c>Location</c> row, which is shared. Other events linked to
-/// that location keep a stale map pin until something else touches them; fixing it
-/// means fanning out to every event linked to the backfilled locations.</description></item>
-/// <item><description><c>BackupService.RestoreAsync</c> replaces the whole
-/// database file on disk, <c>sync_outbox</c> included. Nothing is published
-/// because nothing goes through the context at all, and the outbox a companion's
-/// state depends on is swapped out underneath it.</description></item>
-/// </list>
-/// Neither is a hole in the sync protocol — the first self-corrects when the
-/// entity is next touched — but the second is a genuine open question.</para>
+/// <para><b>Shared rows fan out.</b> The EXIF backfill in
+/// <c>MediaService.AttachAsync</c> writes coordinates onto a <c>Location</c>
+/// row, which is shared. The attaching event is published by the attach
+/// itself; every OTHER event linked to a backfilled location is republished by
+/// the backfill, because its map pin moved too and nothing else would say so.
+/// </para>
+///
+/// <para><b>Backfill.</b> Publishing on change is only half of a feed: an
+/// archive that existed before a companion was paired, an archive restored
+/// from a backup (which replaces <c>sync_outbox</c> on disk along with
+/// everything else), or an archive pointed at a fresh server has rows the
+/// outbox will never mention again. <see cref="PublishAllAsync"/> walks the
+/// whole archive and projects every row. <c>SyncSettingsStore</c> flags a
+/// backfill when a registration is saved, <c>BackupService.RestoreAsync</c>
+/// flags one after a restore, and the sync worker runs the flagged backfill in
+/// its next cycle before draining the outbox; the head may also call it
+/// directly (a "resend my archive" action).</para>
 /// </summary>
 public interface ITimelineProjectionPublisher
 {
+    /// <summary>
+    /// Projects every era, event, person and pending event in the archive
+    /// (in that order, so a truncated delivery is still a consistent prefix:
+    /// eras before the events that reference them, events before the people
+    /// whose counts they explain). Idempotent at the row level — a projection
+    /// identical to one still waiting in the outbox is never queued twice —
+    /// with <paramref name="mode"/> deciding what an already-delivered row
+    /// means. Entities deleted since the outbox last saw them cannot be
+    /// tombstoned here: there is nothing left to enumerate.
+    /// </summary>
+    /// <param name="mode">What to do about projections the outbox already delivered.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>How many projections were queued, per entity type, and how many were unchanged.</returns>
+    Task<TimelineProjectionBackfillResult> PublishAllAsync(
+        TimelineProjectionBackfillMode mode, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Publishes an event as an <c>event</c> upsert, with its tags, people and
     /// locations denormalised inline. No-ops when the event does not exist (a

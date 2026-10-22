@@ -67,4 +67,16 @@ public interface ISyncSettingsStore
 
     /// <summary>Clears device identity, tokens, and cursor (unpair).</summary>
     Task ClearRegistrationAsync();
+
+    /// <summary>
+    /// Whether a full timeline projection backfill is owed to the server
+    /// (<c>SettingKeys.TimelineProjectionBackfillPending</c>): set by
+    /// <see cref="SaveRegistrationAsync"/> and by a restore, consumed by the
+    /// sync worker. Default implementations so a fake store that does not
+    /// care about backfills keeps compiling and never asks for one.
+    /// </summary>
+    Task<bool> IsProjectionBackfillPendingAsync() => Task.FromResult(false);
+
+    /// <summary>Records or clears the owed backfill.</summary>
+    Task SetProjectionBackfillPendingAsync(bool pending) => Task.CompletedTask;
 }

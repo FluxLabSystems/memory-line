@@ -242,6 +242,31 @@ public class DeviceFlowTests : IClassFixture<SyncApiFixture>
         }
     }
 
+    [Fact]
+    public async Task Register_IdempotencyKeyOverTheLimit_Returns400BeforeTouchingThePairingCode()
+    {
+        using var client = _fixture.CreateClient();
+
+        // 129 characters: one over the OpenAPI parameter's maxLength, which the
+        // authenticated routes' filter enforces and register used to skip.
+        var overLong = await client.SendAsync(NewRegisterRequest(new string('k', 129)));
+        overLong.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await SyncApiFixture.ReadApiErrorAsync(overLong);
+        error.Code.Should().Be("validation_error");
+        error.Message.Should().Contain("128");
+
+        // Exactly at the limit is accepted and replays like any other key.
+        var atLimit = new string('k', 128);
+        var first = await client.SendAsync(NewRegisterRequest(atLimit));
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        var registered = await first.Content.ReadFromJsonAsync<DeviceRegisterResponse>(SyncApiFixture.Json);
+
+        var replay = await client.SendAsync(NewRegisterRequest(atLimit));
+        replay.StatusCode.Should().Be(HttpStatusCode.Created);
+        var replayed = await replay.Content.ReadFromJsonAsync<DeviceRegisterResponse>(SyncApiFixture.Json);
+        replayed!.DeviceId.Should().Be(registered!.DeviceId);
+    }
+
     /// <summary>A valid registration request carrying the given Idempotency-Key header (single-use — build one per send).</summary>
     private static HttpRequestMessage NewRegisterRequest(string idempotencyKey)
     {

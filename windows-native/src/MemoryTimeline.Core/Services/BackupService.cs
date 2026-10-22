@@ -444,6 +444,25 @@ public class BackupService : IBackupService
                 + "Unpair and re-pair in Settings before enabling sync.");
         }
 
+        // (5b) The restored sync_outbox is the backup's outbox: it remembers
+        // deliveries made by another archive state, so once this installation
+        // pairs again nothing would republish the restored rows and the
+        // companion would keep rendering whatever it held before. Flag a full
+        // projection backfill; the sync worker runs it in its first cycle
+        // after pairing (ITimelineProjectionPublisher.PublishAllAsync). The
+        // flag is a plain setting rather than a call because the publisher
+        // lives in MemoryTimeline.Sync, which Core must not depend on.
+        try
+        {
+            await _settingsService.SetSettingAsync(SettingKeys.TimelineProjectionBackfillPending, true);
+        }
+        catch (Exception backfillEx)
+        {
+            _logger.LogWarning(backfillEx,
+                "Archive restored, but the timeline projection backfill could not be scheduled; "
+                + "companions keep their pre-restore timeline until the archive is next edited.");
+        }
+
         // (6) Restart recommendation: singleton caches (settings, view-model
         // state) still reflect the pre-restore database.
         _logger.LogWarning(

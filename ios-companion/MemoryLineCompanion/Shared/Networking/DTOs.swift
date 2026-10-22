@@ -299,3 +299,118 @@ enum SyncOperation {
     static let upsert = "upsert"
     static let delete = "delete"
 }
+
+// MARK: - Assistant (Phase 4)
+
+/// Swift mirrors of `AssistantContracts.cs`. The service stores and routes a
+/// turn; Windows (or another responder) answers it over the change feed, and
+/// a client polls `GET /assistant/turns/{turnId}` for the result. Property
+/// names are the wire names.
+
+struct AssistantSessionCreateRequest: Codable, Sendable {
+    /// One of `AssistantResponder`; the service defaults to windows.
+    var preferredResponder: String = AssistantResponder.windows
+    /// Free-text surface label for diagnostics only ("mac"); never used for routing.
+    var surface: String?
+    var mode: String = "memory_query"
+    var tripId: String?
+}
+
+struct AssistantSessionResponse: Codable, Sendable {
+    var sessionId: String
+    var deviceId: String
+    var preferredResponder: String
+    var createdAtUtc: Date
+    var lastTurnAtUtc: Date
+    var turnCount: Int
+    /// Optional here so a pre-v1.3 service that omits them still decodes.
+    var mode: String?
+    var tripId: String?
+}
+
+struct AssistantTurnCreateRequest: Codable, Sendable {
+    /// Client-generated (lowercased UUID), so a retried submission after a lost
+    /// response is idempotent rather than asking twice.
+    var turnId: String
+    var question: String
+    var userAudioArtifactId: String?
+    var responder: String?
+    var clientContext: [AssistantContextItem]?
+    var stream: Bool = false
+}
+
+struct AssistantContextItem: Codable, Sendable {
+    var eventId: String
+    var title: String
+    var eventDateUtc: Date?
+    var excerpt: String?
+    var score: Double?
+}
+
+struct AssistantTurnResponse: Codable, Sendable {
+    var turnId: String
+    var sessionId: String
+    var sequence: Int
+    var question: String
+    /// One of `AssistantTurnStatus`.
+    var status: String
+    var requestedResponder: String
+    var actualResponder: String?
+    var createdAtUtc: Date
+    var completedAtUtc: Date?
+    /// Present once `status` is completed.
+    var result: AssistantTurnResult?
+    /// Display-safe failure text; never a path or a credential (design §14.5).
+    var failureReason: String?
+    var failureRetryable: Bool?
+}
+
+struct AssistantTurnResult: Codable, Sendable {
+    var answer: String
+    /// One of `AssistantGrounding`. Anything other than archive must be
+    /// surfaced rather than passed off as the user's own history.
+    var grounding: String
+    /// Always an array from the shipped service; optional only for tolerance.
+    var citations: [AssistantCitation]?
+    var model: String?
+    var elapsedMs: Int?
+    var assistantAudioArtifactId: String?
+}
+
+struct AssistantCitation: Codable, Sendable {
+    var eventId: String
+    var title: String
+    /// Precision-honest display date ("Summer 2003"), already formatted by the responder.
+    var displayDate: String?
+    var excerpt: String?
+}
+
+/// Wire values of `AssistantResponder` (AssistantContracts.cs).
+enum AssistantResponder {
+    static let windows = "windows"
+    static let provider = "provider"
+    static let onDevice = "on_device"
+}
+
+/// Wire values of `AssistantTurnStatus` (AssistantContracts.cs). The terminal
+/// rule mirrors the service's: completed, failed and cancelled never change
+/// again, so a client stops polling on them.
+enum AssistantTurnStatus {
+    static let pending = "pending"
+    static let dispatched = "dispatched"
+    static let answering = "answering"
+    static let completed = "completed"
+    static let failed = "failed"
+    static let cancelled = "cancelled"
+
+    static func isTerminal(_ status: String) -> Bool {
+        status == completed || status == failed || status == cancelled
+    }
+}
+
+/// Wire values of `AssistantGrounding` (AssistantContracts.cs).
+enum AssistantGrounding {
+    static let archive = "archive"
+    static let clientContext = "client_context"
+    static let none = "none"
+}

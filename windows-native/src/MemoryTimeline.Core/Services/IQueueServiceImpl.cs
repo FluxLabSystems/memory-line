@@ -17,24 +17,33 @@ public class QueueService : IQueueService
     private readonly IEventExtractionService _extractionService;
     private readonly INotificationService _notificationService;
     private readonly ICaptureStatusPublisher? _statusPublisher;
+    private readonly IRecordingStorage? _recordingStorage;
     private readonly ILogger<QueueService> _logger;
     private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
 
     public event EventHandler<QueueItemStatusChangedEventArgs>? QueueItemStatusChanged;
     public event EventHandler<QueueProcessingProgressEventArgs>? ProcessingProgressChanged;
 
+    /// <summary>
+    /// Creates the service. <paramref name="recordingStorage"/> is optional and
+    /// trailing like the status publisher: with it, removing a queue row also
+    /// releases the recording files the row owned; without it the rows go and
+    /// the files stay for the cache sweep.
+    /// </summary>
     public QueueService(
         IRecordingQueueRepository queueRepository,
         IEventExtractionService extractionService,
         ILogger<QueueService> logger,
         INotificationService notificationService,
-        ICaptureStatusPublisher? statusPublisher = null)
+        ICaptureStatusPublisher? statusPublisher = null,
+        IRecordingStorage? recordingStorage = null)
     {
         _queueRepository = queueRepository;
         _extractionService = extractionService;
         _logger = logger;
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _statusPublisher = statusPublisher;
+        _recordingStorage = recordingStorage;
     }
 
     /// <summary>
@@ -213,6 +222,10 @@ public class QueueService : IQueueService
             {
                 await _queueRepository.DeleteAsync(item);
                 _logger.LogInformation("Removed queue item: {QueueId}", queueId);
+
+                // The row is gone; its files go too, unless an approved event
+                // or another row still plays them.
+                await TryReleaseRecordingAsync(item);
             }
         }
         catch (Exception ex)
@@ -411,6 +424,7 @@ public class QueueService : IQueueService
             {
                 await _queueRepository.DeleteAsync(item);
                 count++;
+                await TryReleaseRecordingAsync(item);
             }
 
             _logger.LogInformation("Cleared {Count} completed items from queue", count);
@@ -423,6 +437,31 @@ public class QueueService : IQueueService
     }
 
     #region Private Methods
+
+    /// <summary>
+    /// Releases the recording files a removed row owned. Best-effort: the row
+    /// delete has already committed, and a file that would not delete is a
+    /// warning for the log and a candidate for the next cache sweep, never a
+    /// failed removal for the user.
+    /// </summary>
+    private async Task TryReleaseRecordingAsync(RecordingQueue removedItem)
+    {
+        if (_recordingStorage == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _recordingStorage.ReleaseAsync(removedItem);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Could not release the recording files for removed queue item {QueueId}; the cache sweep will collect them",
+                removedItem.QueueId);
+        }
+    }
 
     /// <summary>
     /// Processes a single queue item with retry logic.

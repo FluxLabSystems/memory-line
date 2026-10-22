@@ -1,9 +1,48 @@
 # Windows Native Development Status
 
-**Last Updated:** 2026-08-07
-**Current Phase:** Phase 7 - Testing & Deployment (plus the 2026-08 feature-spec wave, landed)
+**Last Updated:** 2026-10-21
+**Current Phase:** Phase 7 - Testing & Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring pass, landed)
 **Overall Progress:** Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress
 **Status:** 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing
+
+---
+
+## Head wiring pass (2026-10)
+
+**Date:** 2026-10-21
+
+A read-only audit of the WinUI head found a set of registered-but-dead or decorative
+surfaces; this pass wired or removed them, and the companion Core changes — DPAPI
+secret protection, non-WAV audio normalization, cross-reference heuristics, seed
+parity, the projection backfill and the assistant responder — landed in the same
+change:
+
+- **Shell:** `MainViewModel` implemented (Queue / Review `InfoBadge` counts, refreshed from
+  queue status events and messenger signals); NavigationView selection and back button now
+  follow every navigation (programmatic "view on timeline", draft resume, activations);
+  Ctrl+1..7 page accelerators and Alt+Left/Right history chords wired.
+- **Jump List:** "Recent Events" tracks created/opened events; "New Event" opens the
+  add-event dialog and "Start Recording" starts capturing. Unpackaged caveat: the API needs
+  package identity, so the service logs the first failure once and then no-ops.
+- **Audio:** "Import Audio…" on the Queue page (through `ICaptureIngestionService`);
+  live input-level meter while recording; microphone picker in Settings
+  (`audio_input_device_id`); the decorative sample-rate/bit-depth boxes replaced by
+  read-only text (the format is fixed at 16 kHz / 16-bit / mono for Whisper).
+- **Settings:** default zoom level now applied on the timeline's first load; Reset to
+  Defaults uses the seeded values and can remove stored API keys ("Clear key").
+- **Eras / Connections:** milestones can be edited and deleted (context flyout,
+  double-click); era/milestone dialogs stay open and show the error when a save fails;
+  tag suggestions have an Add button.
+- **Removed as dead code:** `WindowsTimelineService` (User Activities; no callers, needs
+  identity, Timeline UI gone from Windows 11), the fail-fast `WindowsSpeechRecognitionService`
+  stub, the divergent `windows-native/packaging/Package.appxmanifest`, the csproj's
+  reference to a publish profile that never existed, the nested GitHub workflow under
+  `windows-native/.github/`, and the tracked `.vs/` and `log/` files.
+- **Single instancing:** the secondary instance no longer blocks the STA thread on
+  `RedirectActivationToAsync` (worker thread + `CoWaitForMultipleObjects`, bounded).
+- **Scripts/docs:** setup scripts moved to .NET 10 / VS 2026 / WinAppSDK 2.3.1; stale
+  claims (Windows Timeline, Windows Ink, Credential Manager, best-effort tests, dotnet
+  build/test commands, DirectML) corrected across the docs.
 
 ---
 
@@ -60,9 +99,10 @@ similar ways — both surface as assembly-load and type-resolution errors.
   gross-regression gate. It passed under .NET 8 at the old bound, so **a modest
   EF Core 10 write-path slowdown is unconfirmed but not excluded** — worth
   measuring on real hardware.
-- Untested from CI: the runtime interaction between
-  `Microsoft.ML.OnnxRuntime.DirectML` 1.16.3 and the ONNX runtime bundled in
-  WinAppSDK 2.3.1 (two ONNX runtimes in one process is a known hazard).
+- Untested from CI: the runtime interaction between the `Microsoft.ML.OnnxRuntime`
+  package Core references (plain CPU execution provider — the `.DirectML` variant is
+  deliberately **not** referenced; see claude.md "Keeping Core portable") and the ONNX
+  runtime bundled in WinAppSDK 2.3.1 (two ONNX runtimes in one process is a known hazard).
 
 ---
 
@@ -167,7 +207,7 @@ Phase 1 of the iOS roadtrip companion plan (design doc section 19; see the
 Phase 0 entry below for the groundwork it builds on) landed:
 
 - **Sync service** — new `services/MemoryTimeline.SyncApi` (ASP.NET Core,
-  net8.0; unlike the WinUI solution it is plain cross-platform .NET and
+  net10.0; unlike the WinUI solution it is plain cross-platform .NET and
   builds/tests/runs with the `dotnet` CLI). Self-hosted Mode A server
   (design §4.2): device pairing/registration gated by an owner pairing code,
   self-issued HMAC-SHA256 JWT access tokens with refresh-token rotation and
@@ -196,8 +236,10 @@ Phase 0 entry below for the groundwork it builds on) landed:
   `JsonSerializerDefaults.Web`).
 - **CI** — new Linux workflow `.github/workflows/sync-api-build.yml` builds
   `services/MemoryTimeline.Services.sln` and runs the SyncApi test suite with
-  the dotnet CLI on `ubuntu-latest`; the Windows workflow now also triggers
-  on this branch and on `shared-contracts/dotnet/**` changes.
+  the dotnet CLI on `ubuntu-latest`, on pull requests and on pushes to `main`
+  (path-filtered to `services/**`, `shared-contracts/**` and the workflow
+  itself); the Windows workflow runs on pull requests and `main` and also for
+  `shared-contracts/dotnet/**` changes.
 
 **Exit criterion status:** implemented and integration-tested at the service
 level — a test client can register, create a capture, upload its audio
@@ -205,23 +247,29 @@ artifact, and the Windows pull → ingest path dedupes it into review exactly
 once. End-to-end validation against a real iPhone awaits the Phase 2 iOS
 client.
 
-**Known follow-ups (from the post-fix verification pass):**
+**Known follow-ups (from the post-fix verification pass) — status as of 2026-10-22:**
 
-- The `RefreshTokenHash` concurrency token applies to every device-row update;
-  ack/revoke racing a concurrent refresh can surface a retryable 500 (only
-  refresh has reload-and-retry today).
-- Crash-orphaned `*.tmp` assembly files in the service's artifact store are
-  never swept (in-process failures clean up after themselves).
-- The register endpoint reads the `Idempotency-Key` header directly and does
-  not enforce the 128-char limit the authenticated-route filter applies.
-- Service schema is `EnsureCreated` (no migrations); pre-release upgrades
-  across schema changes require deleting `sync.db` (see services/README.md).
-- Sync tokens are stored in the Windows app's settings table like the other
-  keys; DPAPI-at-rest remains the tracked hardening follow-up.
-- Per the resolved design §22 decisions (2026-08-07): the service needs an
-  artifact retention sweep (delete artifacts 14 days after Windows
-  acknowledges archival, or sooner under storage pressure) — artifacts are
-  currently retained indefinitely.
+- ✅ The `RefreshTokenHash` concurrency token applies to every device-row update;
+  ack, revoke and the capture complete/retry touch now reload and retry
+  (`DeviceRowConcurrency`, three attempts) instead of surfacing a 500 when they
+  race a concurrent refresh.
+- ✅ Crash-orphaned `*.tmp` assembly files in the service's artifact store are
+  swept by `RetentionSweepHostedService` once they are older than
+  `TemporaryFileGraceMinutes` (60).
+- ✅ The register endpoint shares the authenticated-route `Idempotency-Key`
+  reader and rejects keys longer than 128 characters with 400.
+- Service schema is still `EnsureCreated` plus idempotent startup DDL (no
+  migrations); the startup DDL now also creates the capture_status, assistant
+  and trip tables, so upgrades across those phases no longer require deleting
+  `sync.db` (see services/README.md).
+- ✅ Sync tokens are stored in the Windows app's settings table like the other
+  keys, through the `ISecretProtector` port (DPAPI on Windows; legacy plaintext
+  rows are re-written in protected form on first read).
+- ✅ Artifact retention per the resolved design §22 decisions: artifact bytes are
+  purged 14 days after Windows acknowledges a `completed` capture_status
+  (`ArtifactRetentionDays`), or oldest-acknowledged-first under
+  `ArtifactStorageBudgetBytes`; the row survives as `purged` and downloads
+  answer a permanent 410.
 
 **Design decisions:** all §22 open decisions were resolved by the owner on
 2026-08-07 — self-hosted only, no user accounts (pairing-code device model),
@@ -341,9 +389,10 @@ ONNX embedder (CPU is used).
 
 **Honest caveats:** all of the above is code-complete and CI-green, but **runtime
 validation on a real Windows machine is still pending** — none of the new features have
-been exercised end-to-end outside tests. The **EF migration baseline has still not been
-regenerated**; every schema addition above ships through `SchemaUpgrader`'s idempotent
-DDL, and API keys remain plaintext in `app_settings` (DPAPI still a follow-up).
+been exercised end-to-end outside tests. A **baseline EF migration now exists**
+(`Data/Migrations/20261022004346_InitialCreate`), but every schema addition still ships
+through `SchemaUpgrader`'s idempotent DDL at runtime; API keys and sync tokens are
+DPAPI-protected through `ISecretProtector`.
 
 ---
 
@@ -412,15 +461,16 @@ remaining Phase 7 work is runtime verification plus the follow-ups listed below.
 - The solution is **x64-only** (no AnyCPU configuration).
 - WinUI 3 PRI generation needs **Visual Studio `msbuild.exe`**; `dotnet build`
   fails with **MSB4062**.
-- `global.json` pins the **.NET 8 SDK** with `rollForward: "major"`.
+- `global.json` pins the **.NET 10 SDK** at `10.0.300` with `rollForward: "latestFeature"`
+  (any 10.0.3xx-or-newer band; those bands need MSBuild 18 / Visual Studio 2026).
 - CI (`windows-native-build.yml`) builds `Release|x64` on `windows-latest` and runs
-  tests.
+  the built test assembly with `dotnet vstest`; both gate the run.
 
 **Immediate follow-ups (see `HARDENING-FOLLOWUPS.md`):** end-to-end runtime
-validation; DPAPI encryption of API keys at rest; regenerate the EF migration
-baseline; Whisper model/language options; analytics export; MSIX packaging +
-Microsoft Store submission; update tests still using the old constructor signatures
-to the context factory.
+validation; switching existing databases from `SchemaUpgrader` to the generated
+migration baseline; MSIX packaging + Microsoft Store submission. (DPAPI protection of
+keys and tokens, the EF baseline migration, the Whisper model/language options and
+analytics export have landed; the tests were moved to the context factory and gate CI.)
 
 ---
 
@@ -445,7 +495,7 @@ Microsoft Store submission. The application is **not yet production ready**.
 | **Phase 3: Audio & Processing** | ✅ Complete | 100% | Audio recording, Queue system, Windows STT, QueuePage UI |
 | **Phase 4: LLM Integration** | ✅ Complete | 100% | Claude API, Event extraction, ReviewPage, PendingEvent workflow |
 | **Phase 5: RAG & Embeddings** | ✅ Complete | 100% | Backend services, ConnectionsPage UI, embedding workflow |
-| **Phase 6: Polish & Integration** | ✅ Complete | 100% | Export/Import, Windows notifications, JumpList, Timeline |
+| **Phase 6: Polish & Integration** | ✅ Complete | 100% | Export/Import, Windows notifications, JumpList (the Windows Timeline integration was later removed as dead code) |
 | **Phase 7: Testing & Deployment** | 🔄 In Progress | — | CI Windows build green; runtime validation, MSIX, Store pending |
 
 > **Note (2026-07-10):** A post-Phase-6 multi-agent feature audit + fix pass hardened the
@@ -483,6 +533,7 @@ Established complete project structure, solution configuration, and foundational
   - [x] Moq + FluentAssertions
   - [x] Anthropic SDK
   - [x] ONNX Runtime with DirectML
+  - *(Historical list. The toolchain has since moved to Windows App SDK 2.3.1 and EF Core 10, and Core references the plain `Microsoft.ML.OnnxRuntime` package on the CPU execution provider — the DirectML variant is not used. See the toolchain roll-up above.)*
 
 - [x] **Database Layer**
   - [x] All 13 data models (Event, Era, Tag, Person, Location, etc.)
@@ -497,7 +548,7 @@ Established complete project structure, solution configuration, and foundational
   - [x] DPI awareness configured
 
 **Completion Date:** 2025-11-21
-**Verification:** See `PHASE0-COMPLETION-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -521,7 +572,7 @@ Implemented complete database layer, settings system, navigation framework, and 
 - [x] **Settings System**
   - [x] SettingsService with Windows.Storage integration
   - [x] Strongly-typed settings models
-  - [x] API key secure storage (Windows Credential Manager)
+  - [x] API key storage in the `app_settings` table, DPAPI-protected through `ISecretProtector` (Windows Credential Manager was never used)
   - [x] Theme settings (Light/Dark)
   - [x] LLM configuration settings
   - [x] Audio quality settings
@@ -542,7 +593,7 @@ Implemented complete database layer, settings system, navigation framework, and 
   - [x] All Pages registered
 
 **Completion Date:** 2025-11-21
-**Verification:** See `PHASE1-COMPLETED.md` and `PHASE1-VERIFICATION-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -577,7 +628,7 @@ Built high-performance timeline rendering with zoom/pan controls, touch support,
 
 - [x] **Touch & Pen Support**
   - [x] Touch gestures (pinch-to-zoom, drag-to-pan)
-  - [x] Windows Ink integration (ready for Phase 6+)
+  - [ ] ~~Windows Ink integration~~ — never implemented; no Ink code exists in the app
   - [x] High-DPI support
   - [x] Per-monitor DPI awareness
 
@@ -585,11 +636,11 @@ Built high-performance timeline rendering with zoom/pan controls, touch support,
   - [x] Command bar with zoom controls
   - [x] Date range display
   - [x] Event details panel
-  - [x] Filter controls (placeholder)
+  - [x] Era filter row (per-era checkboxes with All/None)
   - [x] Loading indicators
 
 **Completion Date:** 2025-11-22
-**Verification:** See `PHASE2-IMPLEMENTATION-PLAN.md` and `PHASE2-PROGRESS-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -602,11 +653,12 @@ Implemented audio recording, queue management, and speech-to-text integration us
 
 - [x] **Audio Recording**
   - [x] MediaCapture API integration
-  - [x] Audio device selection
-  - [x] Format: 16kHz, 16-bit WAV
+  - [x] Audio device selection (Settings → Audio Recording microphone picker, persisted as `audio_input_device_id`; wired 2026-10)
+  - [x] Format: 16 kHz, 16-bit, mono WAV (fixed — exactly what the local Whisper engine consumes)
   - [x] Pause/resume/cancel controls
-  - [x] Real-time waveform preview
-  - [x] File management (ApplicationData folder)
+  - [x] Live input-level meter while recording (dB-scaled peak sampled from a `MediaFrameReader`; wired 2026-10 — a level bar, not a waveform)
+  - [x] File management (`%LOCALAPPDATA%\MemoryTimeline\AudioRecordings`; the app is unpackaged, so not the MSIX ApplicationData folder)
+  - [x] Import existing audio files (Queue page "Import Audio…", through the capture-ingestion pipeline; 2026-10)
 
 - [x] **Queue System**
   - [x] RecordingQueue database table
@@ -618,7 +670,7 @@ Implemented audio recording, queue management, and speech-to-text integration us
 
 - [x] **Speech-to-Text**
   - [x] ISpeechToTextService interface
-  - [x] Windows Speech Recognition implementation
+  - [x] Local Whisper implementation (`WhisperSpeechToTextService`, file-based, offline). The original Windows Speech Recognition implementation transcribed the live microphone instead of the file; it was reduced to a fail-fast stub in the 2026-07 audit pass and deleted in 2026-10.
   - [x] Mock STT service for testing
   - [x] Transcription progress reporting
   - [x] Confidence scoring
@@ -633,7 +685,7 @@ Implemented audio recording, queue management, and speech-to-text integration us
   - [x] File metadata display (duration, size, timestamp)
 
 **Completion Date:** 2025-11-22
-**Verification:** See `PHASE3-VERIFICATION-REPORT.md` and `PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -680,7 +732,7 @@ Integrated Anthropic Claude API for intelligent event extraction from transcript
   - [x] Empty state handling
 
 **Completion Date:** 2025-11-23
-**Verification:** See `PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md` and `PHASE4-5-VERIFICATION-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -704,10 +756,10 @@ Implemented RAG (Retrieval-Augmented Generation) capabilities with vector embedd
   - [x] IRagService interface
   - [x] RagService implementation
   - [x] Similarity search (find similar events)
-  - [x] Cross-reference detection (6 relationship types)
+  - [x] Cross-reference detection — **heuristic**, four relationship types (Temporal, Participatory via shared people, Locational via shared locations, Thematic via category/tags), persisted through `ICrossReferenceRepository`
   - [x] Pattern detection (categories, clusters, transitions)
-  - [x] Tag suggestions based on similarity
-  - [x] LLM-powered relationship analysis
+  - [x] Tag suggestions based on similarity (with a one-click Add on the Connections page; 2026-10)
+  - [ ] ~~LLM-powered relationship analysis~~ — not implemented; cross-references are heuristic and involve no LLM call
 
 - [x] **Data Layer**
   - [x] EventEmbedding entity
@@ -739,14 +791,14 @@ Implemented RAG (Retrieval-Augmented Generation) capabilities with vector embedd
   - [x] ViewModel and Page registered in DI
 
 **Completion Date:** 2025-11-24
-**Verification:** See `PHASE5-IMPLEMENTATION-REPORT.md` and `PHASE4-5-VERIFICATION-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
 ## Phase 6: Polish & Windows Integration - ✅ COMPLETED
 
 ### Summary
-Added export/import functionality, Windows 11 integration features (notifications, JumpList, Timeline), and comprehensive UI polish.
+Added export/import functionality, Windows 11 integration features (notifications, JumpList; the Windows Timeline integration built here was later removed as dead code), and comprehensive UI polish.
 
 ### Completed Items
 
@@ -782,21 +834,20 @@ Added export/import functionality, Windows 11 integration features (notification
 - [x] **Windows JumpList Service**
   - [x] IJumpListService interface
   - [x] JumpListService implementation
-  - [x] Recent events (last 10 accessed)
-  - [x] Quick actions (New Event, Start Recording, View Timeline, Search)
+  - [x] Recent events (last 10 created/opened — fed from the messenger since 2026-10)
+  - [x] Quick actions (New Event, Start Recording, View Timeline, Search — since 2026-10 the first two open the add-event dialog and start capturing instead of only navigating)
+  - [ ] Works on an unpackaged install — `Windows.UI.StartScreen.JumpList` needs package identity; the service logs the first failure once and no-ops thereafter
   - [x] Deep linking with arguments
   - [x] Group-based organization
   - [x] Duplicate prevention
 
-- [x] **Windows Timeline Service**
-  - [x] IWindowsTimelineService interface
-  - [x] WindowsTimelineService implementation
-  - [x] Publish events to Windows Timeline
-  - [x] User Activity API integration
-  - [x] Adaptive Card visualization
-  - [x] Deep link support (memory-timeline://event/{id})
-  - [x] Activity update and removal
-  - [x] Protocol handler registration
+- ~~**Windows Timeline Service**~~ — **removed 2026-10.** `IWindowsTimelineService` /
+  `WindowsTimelineService` (User Activity API + Adaptive Cards, `memory-timeline://event/{id}`
+  deep links) were registered in DI but never called by anything, the User Activity channel
+  needs package identity this unpackaged app does not have, the protocol handler existed only
+  in an unused packaging manifest, and Windows 11 dropped the Timeline UI. The port plan (§4.4)
+  also calls for dropping it. Deep links into events now exist only as the Jump List's
+  `event:{id}` launch arguments and toast activations.
 
 - [x] **Settings UI Enhancement**
   - [x] Export/Import section added to SettingsPage
@@ -817,7 +868,7 @@ Added export/import functionality, Windows 11 integration features (notification
   - [x] Window handle initialization for pickers
 
 **Completion Date:** 2025-11-25
-**Verification:** See `PHASE6-IMPLEMENTATION-REPORT.md`
+**Verification:** consolidated into `DEVELOPMENT-HISTORY.md` (the original per-phase reports are no longer in the tree).
 
 ---
 
@@ -836,8 +887,8 @@ store submission.
   on `windows-latest` and runs the test suite. **The solution builds green in CI.**
 
 **Still ahead:** end-to-end runtime validation on real hardware; regenerating the EF
-migration baseline; updating tests still on the old constructor signatures; performance
-validation; MSIX packaging + code signing; Microsoft Store submission.
+migration baseline; performance validation; MSIX packaging + code signing; Microsoft Store
+submission. (The tests now gate CI; see 7.1 for what exists.)
 
 ### Objectives
 
@@ -869,21 +920,26 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 ### Pending Items
 
 #### 7.1 Testing
+
+*Status 2026-10:* `MemoryTimeline.Tests` (xUnit; unit, integration and performance suites)
+runs in CI with `dotnet vstest` and **gates** the workflow; the plain-`net10.0`
+`MemoryTimeline.Portability.Tests` runs with `dotnet test` on the macOS workflow.
+
 - [ ] **Unit Tests**
-  - [ ] EventService tests (CRUD operations)
-  - [ ] SettingsService tests
-  - [ ] AudioService tests
-  - [ ] LlmService tests (with mocked API)
-  - [ ] RagService tests
-  - [ ] ExportService tests
-  - [ ] ImportService tests
-  - [ ] Repository tests
-  - [ ] Target: > 80% code coverage
+  - [x] EventService tests (CRUD operations) — `Services/EventServiceTests.cs`
+  - [x] SettingsService tests — `Services/SettingsServiceTests.cs`
+  - [ ] AudioService tests — the WinRT `MediaCapture` recorder has no test seam; only the pure `AudioLevelMeter` math is covered
+  - [x] LlmService tests (with mocked API) — `UnitTests/OpenAiCompatibleLlmServiceTests.cs`, `RoutingServicesTests.cs`
+  - [x] RagService tests — `UnitTests/RagServiceTests.cs`, `RagDimensionGuardTests.cs`, `ReEmbedAllAsyncTests.cs`
+  - [x] ExportService tests — `UnitTests/ExportServiceTests.cs`, `NarrativeExportTests.cs`
+  - [x] ImportService tests — `UnitTests/ImportServiceTests.cs`
+  - [x] Repository tests — `Integration/DatabaseIntegrationTests.cs`, `UnitTests/SyncOutboxRepositoryTests.cs`, the schema tests
+  - [ ] Target: > 80% code coverage (no coverage collection is configured)
 
 - [ ] **Integration Tests**
-  - [ ] Database integration tests
-  - [ ] API integration tests (LLM, STT, Embeddings)
-  - [ ] File system tests (audio files, exports)
+  - [x] Database integration tests — `Integration/*`
+  - [ ] API integration tests (LLM, STT, Embeddings) — provider routing is covered with mocked HTTP only; no live-API or Whisper tests
+  - [x] File system tests (audio files, exports) — `BackupServiceTests`, `ExportServiceTests`, `MediaServiceTests`, `MediaCleanupTests`
   - [ ] Windows API integration tests
 
 - [ ] **UI Tests**
@@ -896,14 +952,27 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
   - [ ] Accessibility tests (keyboard, screen reader)
 
 - [ ] **Performance Tests**
-  - [ ] Load testing with 10/100/1000/5000/10000 events
+  - [x] Load testing with 10/100/1000/5000/10000 events — `Performance/PerformanceTests.cs` (gross-regression bounds)
   - [ ] Memory profiling (Visual Studio Profiler)
   - [ ] Render performance benchmarks
-  - [ ] Database query performance tests
+  - [x] Database query performance tests — `Performance/PerformanceTests.cs`
   - [ ] Embedding generation performance tests
   - [ ] Timeline FPS monitoring
 
 #### 7.2 Packaging
+
+> **Honest state (2026-10):** the app ships **unpackaged** (`WindowsPackageType=None`,
+> self-contained Windows App SDK) and no MSIX identity exists. The only manifest is
+> `src/MemoryTimeline/Package.appxmanifest`, which still carries the template
+> placeholders (`Publisher="CN=Your Name"`, a dummy `PhoneIdentity` GUID) and
+> references `Assets\*.png` files that have not been created (`src/MemoryTimeline/Assets/`
+> does not exist; the csproj's `Assets\**` glob matches nothing). A second, divergent
+> manifest under `windows-native/packaging/` (different publisher, MinVersion 19041, and
+> protocol / file-type / share-target extensions nothing in the app handled) was deleted
+> in 2026-10, as was the csproj's reference to a `win-$(Platform).pubxml` publish profile
+> that was never added. Filling in a real publisher identity, producing the icon assets,
+> and signing are still to do — nothing below has been started.
+
 - [ ] **MSIX Package**
   - [ ] Configure Package.appxmanifest
     - [ ] Identity (name, publisher, version)
@@ -979,9 +1048,10 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 
 ### Timeline
 
-- **Phase 7 Duration:** 3 weeks
-- **Start Date:** TBD (after current updates committed)
-- **Target Completion:** TBD
+No dates are scheduled. Phase 7 is being worked incrementally — the 2026-07 audit/fix
+pass, the 2026-08 feature wave, and the 2026-10 head wiring pass have all landed — and
+what remains (runtime validation on real hardware, MSIX identity/assets/signing, Store
+submission) has neither a start nor a target date.
 
 ---
 
@@ -989,9 +1059,9 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 
 | Component | Technology | Version | Status |
 |-----------|-----------|---------|--------|
-| **UI Framework** | WinUI 3 + XAML | Windows App SDK 1.5+ | ✅ |
-| **Runtime** | .NET 8 | 8.0 | ✅ |
-| **Database** | SQLite + EF Core | EF Core 8.0 | ✅ |
+| **UI Framework** | WinUI 3 + XAML | Windows App SDK 2.3.1 | ✅ |
+| **Runtime** | .NET 10 (LTS) | SDK 10.0.3xx+ (global.json) | ✅ |
+| **Database** | SQLite + EF Core | EF Core 10.0.10 | ✅ |
 | **MVVM** | CommunityToolkit.Mvvm | 8.2.2 | ✅ |
 | **Audio** | Windows.Media.Capture | Windows SDK | ✅ |
 | **STT** | Local Whisper (Whisper.net, ggml base) | offline after first model download | ✅ |
@@ -1002,15 +1072,15 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 | **Navigation** | Frame-based | WinUI 3 | ✅ |
 | **Theming** | Light/Dark mode | WinUI 3 | ✅ |
 | **Notifications** | AppNotifications | Windows App SDK | ✅ |
-| **JumpList** | Windows.UI.StartScreen | UWP API | ✅ |
-| **Timeline** | UserActivities | UWP API | ✅ |
+| **JumpList** | Windows.UI.StartScreen | UWP API — needs package identity; no-ops (logged once) on an unpackaged install | ✅ |
+| ~~**Timeline**~~ | ~~UserActivities~~ | removed 2026-10 (dead code; Windows 11 dropped the Timeline UI) | — |
 
 ---
 
 ## Code Statistics
 
 ### Overall Project (after the 2026-08 feature wave)
-- **Total Projects:** 4 (Main App, Core, Data, Tests)
+- **Total Projects:** 7 (Main App, Core, Data, Sync, Tests, Portability.Tests, plus the shared SyncContracts project referenced from `shared-contracts/dotnet`)
 - **Total Code Files:** 250+ (`.cs`/`.xaml`, excluding build output)
 - **Total Lines of Code:** ~70,000+ (including XAML and tests)
 - **Data Models:** 20
@@ -1038,11 +1108,11 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 1. **Runtime validation:** The post-audit fixes *and* the entire F1–F12 feature wave
    build green in CI but are not yet validated end-to-end on real hardware (Phase 7,
    in progress)
-2. **Automated tests:** Some older tests still use the old constructor signatures and
-   need updating to the `IDbContextFactory` pattern; broad coverage still pending (Phase 7)
+2. **Automated tests:** unit/integration/performance suites exist and gate CI; AudioService
+   tests, UI tests (WinAppDriver) and coverage reporting are still absent (Phase 7)
 3. **EF migrations:** Stale migrations deleted; a real migration baseline still needs
    regenerating — all 2026-08 schema additions ship via `SchemaUpgrader.EnsureSchemaAsync`
-4. **API keys:** Stored in plaintext; DPAPI encryption is a follow-up
+4. **API keys:** DPAPI-protected at rest through `ISecretProtector` (CurrentUser scope); a backup restored under another Windows account must have its keys re-entered
 5. **Performance:** Not yet validated with 5000+ events (Phase 7)
 6. **MSIX Package / Store Submission:** Not created or submitted yet (Phase 7)
 7. **ONNX acceleration:** The local embedder runs on the CPU execution provider;
@@ -1072,7 +1142,7 @@ validation; MSIX packaging + code signing; Microsoft Store submission.
 - [x] Clean architecture maintained
 - [x] MVVM pattern throughout
 - [x] Full dependency injection
-- [x] Windows-exclusive features (Notifications, JumpList, Timeline)
+- [x] Windows-exclusive features (Notifications, JumpList)
 - [x] Export/Import functionality
 - [x] RAG capabilities (embeddings, cross-references, patterns)
 
@@ -1101,14 +1171,15 @@ These reflect the real post-audit follow-ups (see `HARDENING-FOLLOWUPS.md`).
 2. **Data-layer / migrations**
    - Regenerate a real EF migration baseline (stale migrations were deleted; startup
      currently uses `SchemaUpgrader.EnsureSchemaAsync`).
-   - Update tests still using the old constructor signatures to the `IDbContextFactory`.
 
 3. **Security & config hardening**
-   - Encrypt API keys at rest via DPAPI / `ProtectedData`.
-   - Add Whisper model/language options; wire up analytics export.
+   - ~~Encrypt API keys at rest via DPAPI / `ProtectedData`~~ — done (`ISecretProtector` / `DpapiSecretProtector`).
+   - ~~Add Whisper model/language options~~ — done (`whisper_model` / `whisper_language`, chosen in
+     Settings and read per transcription). Analytics export is done.
 
 4. **Testing & performance baseline**
-   - Set up xUnit structure, in-memory/test DB, first EventService tests.
+   - The xUnit structure, SQLite test factory and EventService tests exist and gate CI;
+     still to do: AudioService tests, UI tests (WinAppDriver), coverage reporting.
    - Generate test datasets (100/1000/5000 events) and measure baseline metrics.
 
 5. **MSIX & Store**
@@ -1119,27 +1190,23 @@ These reflect the real post-audit follow-ups (see `HARDENING-FOLLOWUPS.md`).
 
 ## Documentation References
 
-- **Migration Plan:** `../MIGRATION-TO-NATIVE-WIN.md`
-- **Windows README:** `README-WINDOWS.md`
+- **Windows README:** `README.md` (this folder) — overview, setup, tech stack
+- **AI-assistant / contributor guide:** `../claude.md`
+- **Feature audit (2026-07):** `FEATURE-AUDIT.md`; **deferred hardening items:** `HARDENING-FOLLOWUPS.md`
+- **Exhaustive repo audit (2026-07):** `../docs/reviews/exhaustive-audit-2026-07.md`
 - **Deployment Guide:** `DEPLOYMENT.md`
 - **Testing Guide:** `TESTING.md`
-- **Phase Reports:**
-  - `PHASE0-COMPLETION-REPORT.md`
-  - `PHASE1-COMPLETED.md`
-  - `PHASE1-VERIFICATION-REPORT.md`
-  - `PHASE2-IMPLEMENTATION-PLAN.md`
-  - `PHASE2-PROGRESS-REPORT.md`
-  - `PHASE3-VERIFICATION-REPORT.md`
-  - `PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md`
-  - `PHASE4-5-VERIFICATION-REPORT.md`
-  - `PHASE5-IMPLEMENTATION-REPORT.md`
-  - `PHASE6-IMPLEMENTATION-REPORT.md`
+- **Setup scripts:** `scripts/README.md`
+- **Phase Reports:** consolidated into `DEVELOPMENT-HISTORY.md` (the original
+  `PHASE*-REPORT.md` files, `MIGRATION-TO-NATIVE-WIN.md` and `README-WINDOWS.md` are no
+  longer in the tree)
+- **Design docs:** `../docs/design/` (macOS port plan, iOS companion system design, people feature contracts)
 
 ---
 
 **Document Owner:** Development Team
-**Phase 7 Status:** In progress (CI Windows build green through the F1–F12 wave pushes; runtime validation ongoing)
+**Phase 7 Status:** In progress (CI Windows build + tests green through the F1–F12 wave and the 2026-10 head wiring pass; runtime validation ongoing)
 **Next Review:** After end-to-end runtime validation
-**Last Updated:** 2026-08-07
+**Last Updated:** 2026-10-21
 
 <!-- CI retrigger 2026-08-06: runs 31117811806/31119588286/31121424093/31124292681 died (pushes a4f25ca/b9f4276 produced no runs at all — Actions event pipeline outage) to runner/Actions-service infrastructure failures before reaching the code; tree identical to 0d365b2. -->

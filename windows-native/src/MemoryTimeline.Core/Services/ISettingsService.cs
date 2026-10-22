@@ -28,19 +28,41 @@ public interface ISettingsService
 
 /// <summary>
 /// Settings service implementation using database storage.
+///
+/// <para><b>Secrets.</b> The keys in <see cref="SecretProtection.SecretKeys"/>
+/// (provider API keys, sync tokens) pass through the <see cref="ISecretProtector"/>
+/// on the way in and out: callers read and write plaintext as before, the row
+/// holds whatever the protector produced. With the portable
+/// <see cref="PassthroughSecretProtector"/> (the default when none is injected)
+/// that is still plaintext; with the Windows DPAPI protector it is
+/// <c>dpapi:v1:</c>-prefixed ciphertext. A legacy plaintext row is read as-is
+/// and re-written in protected form the first time it is read while the
+/// protector is protecting, so existing installations migrate on their own.
+/// Values are never logged — keys only.</para>
 /// </summary>
 public class SettingsService : ISettingsService
 {
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly ILogger<SettingsService> _logger;
+    private readonly ISecretProtector _secretProtector;
     private readonly Dictionary<string, string> _cache;
     private bool _cacheInitialized;
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
 
-    public SettingsService(IDbContextFactory<AppDbContext> contextFactory, ILogger<SettingsService> logger)
+    /// <summary>
+    /// Creates the service. <paramref name="secretProtector"/> is optional and
+    /// trailing so every existing construction keeps compiling: production
+    /// injects the registered implementation, tests and the portable stack get
+    /// the passthrough.
+    /// </summary>
+    public SettingsService(
+        IDbContextFactory<AppDbContext> contextFactory,
+        ILogger<SettingsService> logger,
+        ISecretProtector? secretProtector = null)
     {
         _contextFactory = contextFactory;
         _logger = logger;
+        _secretProtector = secretProtector ?? new PassthroughSecretProtector();
         _cache = new Dictionary<string, string>();
         _cacheInitialized = false;
     }
@@ -62,9 +84,29 @@ public class SettingsService : ISettingsService
         {
             await EnsureCacheInitializedAsync();
 
-            if (_cache.TryGetValue(key, out var value))
+            // Reads take the same lock the writers hold: Dictionary is not safe
+            // to read while another thread mutates it, and settings are read
+            // from the sync worker, the queue and the UI thread concurrently.
+            string? value;
+            bool found;
+            await _cacheLock.WaitAsync();
+            try
             {
-                return DeserializeValue<T>(value);
+                found = _cache.TryGetValue(key, out value);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+
+            if (found)
+            {
+                if (SecretProtection.IsSecretKey(key))
+                {
+                    value = await RevealSecretAsync(key, value!);
+                }
+
+                return DeserializeValue<T>(value!);
             }
 
             _logger.LogWarning("Setting '{Key}' not found, returning default value", key);
@@ -85,39 +127,12 @@ public class SettingsService : ISettingsService
         try
         {
             var serializedValue = SerializeValue(value);
-
-            await using var context = await _contextFactory.CreateDbContextAsync();
-
-            var setting = await context.AppSettings.FindAsync(key);
-
-            if (setting != null)
+            if (SecretProtection.IsSecretKey(key))
             {
-                setting.SettingValue = serializedValue;
-                setting.UpdatedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                setting = new AppSetting
-                {
-                    SettingKey = key,
-                    SettingValue = serializedValue,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                await context.AppSettings.AddAsync(setting);
+                serializedValue = ProtectForStorage(serializedValue);
             }
 
-            await context.SaveChangesAsync();
-
-            // Update cache
-            await _cacheLock.WaitAsync();
-            try
-            {
-                _cache[key] = serializedValue;
-            }
-            finally
-            {
-                _cacheLock.Release();
-            }
+            await WriteRowAsync(key, serializedValue);
 
             _logger.LogInformation("Setting '{Key}' updated successfully", key);
         }
@@ -136,7 +151,29 @@ public class SettingsService : ISettingsService
         try
         {
             await EnsureCacheInitializedAsync();
-            return new Dictionary<string, string>(_cache);
+
+            Dictionary<string, string> snapshot;
+            await _cacheLock.WaitAsync();
+            try
+            {
+                snapshot = new Dictionary<string, string>(_cache);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+
+            // Callers of this method see the same plaintext GetSettingAsync
+            // returns; the stored form is an implementation detail of the row.
+            foreach (var key in SecretProtection.SecretKeys)
+            {
+                if (snapshot.TryGetValue(key, out var stored))
+                {
+                    snapshot[key] = _secretProtector.Unprotect(stored);
+                }
+            }
+
+            return snapshot;
         }
         catch (Exception ex)
         {
@@ -151,7 +188,16 @@ public class SettingsService : ISettingsService
     public async Task<bool> SettingExistsAsync(string key)
     {
         await EnsureCacheInitializedAsync();
-        return _cache.ContainsKey(key);
+
+        await _cacheLock.WaitAsync();
+        try
+        {
+            return _cache.ContainsKey(key);
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     /// <summary>
@@ -218,9 +264,99 @@ public class SettingsService : ISettingsService
 
     // Private helper methods
 
+    /// <summary>
+    /// Upserts one row and mirrors it into the cache. Shared by the public
+    /// setter and the secret migration so both write a row the same way.
+    /// </summary>
+    private async Task WriteRowAsync(string key, string storedValue)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+
+        var setting = await context.AppSettings.FindAsync(key);
+
+        if (setting != null)
+        {
+            setting.SettingValue = storedValue;
+            setting.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            setting = new AppSetting
+            {
+                SettingKey = key,
+                SettingValue = storedValue,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await context.AppSettings.AddAsync(setting);
+        }
+
+        await context.SaveChangesAsync();
+
+        await _cacheLock.WaitAsync();
+        try
+        {
+            _cache[key] = storedValue;
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// The stored form of a secret. Empty stays empty (an absent key is not a
+    /// secret worth encrypting, and an empty ciphertext would read back as a
+    /// non-empty key), and a value already in the protected form is kept as-is
+    /// so a caller that round-trips a stored value cannot double-wrap it.
+    /// </summary>
+    private string ProtectForStorage(string plaintext)
+    {
+        if (string.IsNullOrEmpty(plaintext) || SecretProtection.IsProtected(plaintext))
+        {
+            return plaintext;
+        }
+
+        return _secretProtector.Protect(plaintext);
+    }
+
+    /// <summary>
+    /// The plaintext of a stored secret. A legacy plaintext row — written
+    /// before protection existed, or by a build that could not protect — is
+    /// returned unchanged, and while the protector is protecting it is
+    /// re-written in protected form right here, so the one-time migration
+    /// needs no startup step and no user action. The re-write is best-effort:
+    /// the read already has its answer, and a row that would not update is a
+    /// warning for the log, not a missing API key for the user.
+    /// </summary>
+    private async Task<string> RevealSecretAsync(string key, string stored)
+    {
+        if (SecretProtection.IsProtected(stored))
+        {
+            return _secretProtector.Unprotect(stored);
+        }
+
+        if (_secretProtector.IsProtecting && !string.IsNullOrEmpty(stored))
+        {
+            try
+            {
+                await WriteRowAsync(key, _secretProtector.Protect(stored));
+                _logger.LogInformation("Setting '{Key}' migrated to protected storage", key);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Setting '{Key}' could not be migrated to protected storage; it stays readable", key);
+            }
+        }
+
+        return stored;
+    }
+
     private async Task EnsureCacheInitializedAsync()
     {
-        if (_cacheInitialized)
+        // Volatile read: the flag is set under the lock below, and this
+        // unlocked fast path must observe that publication rather than a
+        // stale register.
+        if (Volatile.Read(ref _cacheInitialized))
             return;
 
         await _cacheLock.WaitAsync();
@@ -236,7 +372,7 @@ public class SettingsService : ISettingsService
                 _cache[setting.SettingKey] = setting.SettingValue;
             }
 
-            _cacheInitialized = true;
+            Volatile.Write(ref _cacheInitialized, true);
             _logger.LogInformation("Settings cache initialized with {Count} settings", _cache.Count);
         }
         finally

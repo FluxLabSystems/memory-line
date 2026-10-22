@@ -47,4 +47,17 @@ public sealed partial class ConnectionsPage : Page
             ViewModel.NavigateToEventCommand.Execute(eventId);
         }
     }
+
+    /// <summary>
+    /// Invokes AddSuggestedTagCommand for the suggestion whose "Add" button was
+    /// clicked (same x:Bind scoping reason as above; the button's Tag carries
+    /// the suggestion item itself).
+    /// </summary>
+    private void SuggestedTag_Add_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: TagSuggestionDto suggestion })
+        {
+            ViewModel.AddSuggestedTagCommand.Execute(suggestion);
+        }
+    }
 }

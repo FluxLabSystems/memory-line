@@ -4,10 +4,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using MemoryTimeline.Core.DTOs;
 using MemoryTimeline.Core.Services;
 using MemoryTimeline.Services;
 using MemoryTimeline.Sync;
 using MemoryTimeline.SyncContracts;
+using System.Collections.ObjectModel;
 using System.Reflection;
 using Windows.Storage.Pickers;
 using Windows.Storage;
@@ -28,6 +30,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly ILlmUsageTracker _llmUsageTracker;
     private readonly IBackupService _backupService;
     private readonly IMediaService _mediaService;
+    private readonly IAudioRecordingService _audioRecordingService;
     private readonly ISyncClient _syncClient;
     private readonly ISyncSettingsStore _syncSettingsStore;
     private readonly ISyncBackgroundWorker _syncBackgroundWorker;
@@ -60,7 +63,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private string _llmProvider = "Anthropic";
 
     [ObservableProperty]
-    private string _llmModel = "claude-3-5-sonnet-20241022";
+    private string _llmModel = SeededLlmModel;
 
     [ObservableProperty]
     private string _llmBaseUrl = string.Empty;
@@ -86,11 +89,29 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _embeddingApiKey = string.Empty;
 
-    [ObservableProperty]
-    private int _audioSampleRate = 16000;
+    // ---- Audio capture ----
 
+    /// <summary>
+    /// Input devices offered in the Microphone picker. Index 0 is always the
+    /// "System default" sentinel (empty DeviceId); the rest come from
+    /// IAudioRecordingService.GetAvailableDevicesAsync.
+    /// </summary>
+    public ObservableCollection<AudioDeviceDto> AudioInputDevices { get; } = new();
+
+    /// <summary>Selected microphone; persisted as audio_input_device_id on Save ("" = system default).</summary>
     [ObservableProperty]
-    private int _audioBitsPerSample = 16;
+    private AudioDeviceDto? _selectedAudioInputDevice;
+
+    /// <summary>Caption under the picker: how many devices were found, or why the saved one is not selected.</summary>
+    [ObservableProperty]
+    private string _audioDeviceStatus = string.Empty;
+
+    /// <summary>
+    /// The one recording format the app captures in. It is deliberately not a
+    /// setting: the local Whisper engine takes exactly 16 kHz, 16-bit, mono
+    /// PCM WAV, and QueueViewModel.StartRecordingAsync records in that format.
+    /// </summary>
+    public string RecordingFormatSummary => "16 kHz, 16-bit, mono WAV";
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -152,6 +173,18 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     public string AppVersion => Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
     public string BuildDate => File.GetLastWriteTime(Assembly.GetExecutingAssembly().Location).ToString("yyyy-MM-dd");
 
+    // Seeded defaults for "Reset to Defaults", mirrored from
+    // AppDbContext.SeedDefaultSettings (theme "light", default_zoom_level
+    // "month", llm_provider "anthropic", llm_model "claude-sonnet-4-20250514",
+    // llm_base_url "", embedding_provider "local", audio_input_device_id "").
+    // Core does not expose the seed values as constants, so keep these in step
+    // with that seed when it changes.
+    private const string SeededThemeDisplay = "Light";
+    private const string SeededZoomLevelDisplay = "Month";
+    private const string SeededLlmProviderDisplay = "Anthropic";
+    private const string SeededLlmModel = "claude-sonnet-4-20250514";
+    private const string SeededEmbeddingProviderDisplay = "Local (on-device)";
+
     // Available options
     public List<string> ThemeOptions { get; } = new() { "System", "Light", "Dark", "Solarized Dark" };
     public List<string> ZoomLevelOptions { get; } = new() { "Year", "Month", "Week", "Day" };
@@ -180,6 +213,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         ILlmUsageTracker llmUsageTracker,
         IBackupService backupService,
         IMediaService mediaService,
+        IAudioRecordingService audioRecordingService,
         ISyncClient syncClient,
         ISyncSettingsStore syncSettingsStore,
         ISyncBackgroundWorker syncBackgroundWorker,
@@ -193,6 +227,7 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         _llmUsageTracker = llmUsageTracker;
         _backupService = backupService;
         _mediaService = mediaService;
+        _audioRecordingService = audioRecordingService;
         _syncClient = syncClient;
         _syncSettingsStore = syncSettingsStore;
         _syncBackgroundWorker = syncBackgroundWorker;
@@ -250,11 +285,9 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
 
             UpdateLlmUsageSummary();
 
-            // Load audio settings
-            var sampleRate = await _settingsService.GetSettingAsync<int>("AudioSampleRate", 16000);
-            var bitsPerSample = await _settingsService.GetSettingAsync<int>("AudioBitsPerSample", 16);
-            AudioSampleRate = sampleRate;
-            AudioBitsPerSample = bitsPerSample;
+            // Microphone picker (the recording format itself is fixed; see
+            // RecordingFormatSummary).
+            await LoadAudioInputDevicesAsync();
 
             // Load API key (masked)
             var apiKey = await _settingsService.GetSettingAsync<string>(SettingKeys.AnthropicApiKey, string.Empty);
@@ -341,9 +374,10 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
             // "Re-embed all events" runs.
             await _settingsService.SetSettingAsync(SettingKeys.EmbeddingProvider, ToEmbeddingProviderKey(SelectedEmbeddingProvider));
 
-            // Save audio settings
-            await _settingsService.SetSettingAsync("AudioSampleRate", AudioSampleRate);
-            await _settingsService.SetSettingAsync("AudioBitsPerSample", AudioBitsPerSample);
+            // Save the microphone choice ("" = system default). Read by
+            // QueueViewModel.StartRecordingAsync on the next recording.
+            await _settingsService.SetSettingAsync(
+                SettingKeys.AudioInputDeviceId, SelectedAudioInputDevice?.DeviceId ?? string.Empty);
 
             // Save API key (only if changed)
             if (!string.IsNullOrEmpty(ApiKey) && ApiKey != "••••••••")
@@ -372,31 +406,92 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Resets every setting on this page to the database seed defaults (not
+    /// an arbitrary "Dark"/old-model set) and removes both stored API keys.
+    /// Save skips blank key fields on purpose (a blank box means "unchanged"),
+    /// so the keys are cleared explicitly before saving.
+    /// </summary>
     [RelayCommand]
     private async Task ResetSettingsAsync()
     {
         try
         {
-            // Reset to defaults
-            SelectedTheme = "Dark";
-            SelectedZoomLevel = "Month";
-            LlmProvider = "Anthropic";
-            LlmModel = "claude-3-5-sonnet-20241022";
+            SelectedTheme = SeededThemeDisplay;
+            SelectedZoomLevel = SeededZoomLevelDisplay;
+            LlmProvider = SeededLlmProviderDisplay;
+            LlmModel = SeededLlmModel;
             LlmBaseUrl = string.Empty;
-            SelectedEmbeddingProvider = "Local (on-device)";
-            AudioSampleRate = 16000;
-            AudioBitsPerSample = 16;
-            ApiKey = string.Empty;
-            EmbeddingApiKey = string.Empty;
+            SelectedEmbeddingProvider = SeededEmbeddingProviderDisplay;
+            SelectedAudioInputDevice = AudioInputDevices.FirstOrDefault();
+
+            await ClearStoredApiKeyAsync();
+            await ClearStoredEmbeddingApiKeyAsync();
 
             await SaveSettingsAsync();
-            StatusMessage = "Settings reset to defaults";
+            StatusMessage = "Settings reset to defaults (API keys removed)";
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error resetting settings");
-            StatusMessage = "Error resetting settings";
+            StatusMessage = $"Error resetting settings: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// "Clear key" next to the Anthropic key box: deletes the stored key.
+    /// Needed because Save treats an empty key field as "leave unchanged".
+    /// </summary>
+    [RelayCommand]
+    private async Task ClearApiKeyAsync()
+    {
+        try
+        {
+            await ClearStoredApiKeyAsync();
+            StatusMessage = "Anthropic API key removed";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing the Anthropic API key");
+            StatusMessage = $"Could not remove the API key: {ex.Message}";
+        }
+    }
+
+    /// <summary>"Clear key" next to the embedding key box: blanks the stored OpenAI key.</summary>
+    [RelayCommand]
+    private async Task ClearEmbeddingApiKeyAsync()
+    {
+        try
+        {
+            await ClearStoredEmbeddingApiKeyAsync();
+            StatusMessage = "Embedding API key removed";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing the embedding API key");
+            StatusMessage = $"Could not remove the embedding API key: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// The Anthropic key row ("ApiKey") is not seeded, so removing the key
+    /// means deleting the row - readers treat a missing row as "no key".
+    /// </summary>
+    private async Task ClearStoredApiKeyAsync()
+    {
+        await _settingsService.DeleteSettingAsync(SettingKeys.AnthropicApiKey);
+        ApiKey = string.Empty;
+    }
+
+    /// <summary>
+    /// embedding_api_key IS a seeded row (seed value ""), so it is blanked
+    /// rather than deleted to keep the seeded key set intact; readers treat
+    /// an empty value as "no key".
+    /// </summary>
+    private async Task ClearStoredEmbeddingApiKeyAsync()
+    {
+        await _settingsService.SetSettingAsync(SettingKeys.EmbeddingApiKey, string.Empty);
+        EmbeddingApiKey = string.Empty;
     }
 
     /// <summary>
@@ -456,6 +551,59 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private void CancelReEmbed()
     {
         _reEmbedCts?.Cancel();
+    }
+
+    /// <summary>
+    /// Re-enumerates audio input devices (e.g. after plugging in a headset),
+    /// keeping the current selection when that device is still present.
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshAudioInputDevicesAsync()
+    {
+        await LoadAudioInputDevicesAsync();
+    }
+
+    /// <summary>
+    /// Fills <see cref="AudioInputDevices"/> ("System default" first, then the
+    /// enumerated capture devices) and selects the device saved under
+    /// audio_input_device_id. A saved device that is no longer present falls
+    /// back to the system default and says so in the status caption, so Save
+    /// writes "" rather than a stale id. Enumeration failures are already
+    /// caught inside the recording service (empty list); nothing here throws.
+    /// </summary>
+    private async Task LoadAudioInputDevicesAsync()
+    {
+        var storedDeviceId = (await _settingsService.GetSettingAsync<string>(
+            SettingKeys.AudioInputDeviceId, string.Empty) ?? string.Empty).Trim();
+
+        // A refresh keeps an unsaved in-UI selection; the first load uses the stored one.
+        var wantedDeviceId = SelectedAudioInputDevice?.DeviceId ?? storedDeviceId;
+
+        var devices = (await _audioRecordingService.GetAvailableDevicesAsync()).ToList();
+
+        AudioInputDevices.Clear();
+        AudioInputDevices.Add(new AudioDeviceDto
+        {
+            DeviceId = string.Empty,
+            Name = "System default",
+            IsDefault = true,
+            IsEnabled = true
+        });
+        foreach (var device in devices.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            AudioInputDevices.Add(device);
+        }
+
+        var match = string.IsNullOrEmpty(wantedDeviceId)
+            ? null
+            : AudioInputDevices.FirstOrDefault(d => string.Equals(d.DeviceId, wantedDeviceId, StringComparison.OrdinalIgnoreCase));
+
+        SelectedAudioInputDevice = match ?? AudioInputDevices[0];
+
+        var countText = devices.Count == 1 ? "1 microphone found" : $"{devices.Count} microphones found";
+        AudioDeviceStatus = match == null && !string.IsNullOrEmpty(wantedDeviceId)
+            ? $"{countText}. The saved microphone is not connected; the system default will be used until you pick another one and save."
+            : countText;
     }
 
     /// <summary>

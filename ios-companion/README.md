@@ -19,7 +19,7 @@ Nothing to resolve on first open.
 2. Open `ios-companion/MemoryLineCompanion.xcodeproj`.
 3. Select the `MemoryLineCompanion` target → Signing & Capabilities → choose your
    team (a free personal team works). Xcode will register the bundle IDs and the
-   `group.com.memoryline.companion` App Group automatically. Do the same for the
+   `group.ca.fluxology.memoryline.ios` App Group automatically. Do the same for the
    `MemoryLineWidgets` target.
    - If your team can't use that exact group ID, change it consistently in both
      targets' capabilities AND in `Config/*.entitlements`, plus the
@@ -110,8 +110,9 @@ ios-companion/
 ├── Config/                            # Info.plists + entitlements (outside synced folders)
 ├── MemoryLineCompanion/               # app target (folder-synchronized)
 │   ├── App/                           # entry point, environment/DI, root view
-│   ├── Features/Capture|History|Settings|Sync/
-│   ├── Shared/Domain|Persistence|Networking|Security|Support/
+│   ├── Features/Capture|History|Settings|Sync|Timeline/
+│   ├── Shared/Domain|Persistence|Networking|Security|Support|Timeline/
+│   │                                  # compiled into the macOS app too (macos-native/README.md)
 │   ├── AppIntents/                    # Siri / Shortcuts / Action Button intents
 │   └── Assets.xcassets
 ├── MemoryLineWidgets/                 # widget extension target
@@ -120,7 +121,11 @@ ios-companion/
 
 ## Not in this phase
 
-Assistant, trips/detours, CarPlay screens (design phases 4–6). Per the resolved
-§22 decisions, CarPlay will be simulator-designed later — rendering on a real head
+Assistant, trips/detours, CarPlay screens (design phases 4–6) have no UI on the
+phone. The sync service implements the assistant endpoints (the macOS app has an Ask
+pane over them) and the trip/detour endpoints; the phone does not call either yet.
+Location is never attached to a capture (`locationContext` is sent as null); the
+opt-in snapshot design §14.4 describes is not built. Per the resolved §22 decisions,
+CarPlay will be simulator-designed later — rendering on a real head
 unit needs an Apple-granted entitlement even for sideloaded builds; Siri, the Lock
 Screen widget, and the Action Button carry the in-car experience meanwhile.

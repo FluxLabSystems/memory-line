@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MemoryTimeline.Core.DTOs;
+using MemoryTimeline.Core.Models;
 using MemoryTimeline.Data.Models;
 using MemoryTimeline.Data.Repositories;
 
@@ -11,6 +12,18 @@ namespace MemoryTimeline.Core.Services;
 /// <summary>
 /// Capture ingestion implementation. Registered as a SINGLETON: all dependencies
 /// are stateless over the DbContext factory.
+///
+/// <para><b>Normalization (design §7.2, §8.5).</b> A source that is not already
+/// 16 kHz mono 16-bit PCM WAV — an iPhone's AAC <c>.m4a</c>, an imported MP3, a
+/// 44.1 kHz WAV — is handed to the <see cref="IAudioNormalizer"/> before the
+/// rows are written. The original stays the <c>audio_original</c> artifact
+/// (hash, length and idempotency are all about the bytes the device
+/// produced); the WAV becomes an <c>audio_normalized</c> artifact written in
+/// the same SaveChanges, and the queue item transcribes it. Without a
+/// normalizer, or when it cannot convert, the item still enters the queue
+/// pointing at the original so the capture is visible and the transcription
+/// step reports the format problem — a capture is never dropped on the floor
+/// because of its container.</para>
 /// </summary>
 public class CaptureIngestionService : ICaptureIngestionService
 {
@@ -18,20 +31,33 @@ public class CaptureIngestionService : ICaptureIngestionService
     private readonly IRecordingQueueRepository _queueRepository;
     private readonly IArtifactResolver _artifactResolver;
     private readonly ICaptureStatusPublisher? _statusPublisher;
+    private readonly IAudioNormalizer? _audioNormalizer;
+    private readonly RecordingStoragePaths _storagePaths;
     private readonly ILogger<CaptureIngestionService> _logger;
 
+    /// <summary>
+    /// Creates the service. The trailing parameters are optional so every
+    /// existing construction keeps compiling: production injects the
+    /// registered status publisher and normalizer; tests pass what they
+    /// exercise. <paramref name="storagePaths"/> defaults to the production
+    /// layout (the container cannot build it, so it arrives as null there).
+    /// </summary>
     public CaptureIngestionService(
         ICaptureRepository captureRepository,
         IRecordingQueueRepository queueRepository,
         IArtifactResolver artifactResolver,
         ILogger<CaptureIngestionService> logger,
-        ICaptureStatusPublisher? statusPublisher = null)
+        ICaptureStatusPublisher? statusPublisher = null,
+        IAudioNormalizer? audioNormalizer = null,
+        RecordingStoragePaths? storagePaths = null)
     {
         _captureRepository = captureRepository;
         _queueRepository = queueRepository;
         _artifactResolver = artifactResolver;
         _logger = logger;
         _statusPublisher = statusPublisher;
+        _audioNormalizer = audioNormalizer;
+        _storagePaths = storagePaths ?? RecordingStoragePaths.Default;
     }
 
     public async Task<IngestionResult> IngestLocalRecordingAsync(
@@ -138,7 +164,7 @@ public class CaptureIngestionService : ICaptureIngestionService
             ReceivedAt = now,
         };
 
-        return await PersistAsync(capture, artifact, queueItem);
+        return await NormalizeAndPersistAsync(capture, artifact, queueItem, cancellationToken);
     }
 
     public async Task<IngestionResult> IngestRemoteCaptureAsync(
@@ -311,16 +337,177 @@ public class CaptureIngestionService : ICaptureIngestionService
             ReceivedAt = now,
         };
 
-        return await PersistAsync(captureEntity, artifact, queueItem);
+        return await NormalizeAndPersistAsync(captureEntity, artifact, queueItem, cancellationToken);
     }
 
     #region Private Methods
 
+    /// <summary>
+    /// Runs the normalization step, then the atomic write. A duplicate outcome
+    /// from the write (a race lost to another ingestion of the same capture)
+    /// means the normalized file just produced describes rows that were never
+    /// written, so it is removed rather than left for the cleanup sweep.
+    /// </summary>
+    private async Task<IngestionResult> NormalizeAndPersistAsync(
+        Capture capture,
+        CaptureArtifact original,
+        RecordingQueue queueItem,
+        CancellationToken cancellationToken)
+    {
+        var normalized = await TryNormalizeAsync(capture, original, queueItem, cancellationToken);
+
+        var artifacts = normalized == null
+            ? new[] { original }
+            : new[] { original, normalized };
+
+        var result = await PersistAsync(capture, artifacts, queueItem);
+
+        if (result.AlreadyIngested && normalized != null)
+        {
+            TryDeleteFile(normalized.StorageLocator);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Produces the <c>audio_normalized</c> artifact for a source the
+    /// transcription engine cannot read as-is, and points the queue item at it.
+    /// Returns null — leaving the queue item on the original — when the source
+    /// is already transcription-ready, when no normalizer is registered, or
+    /// when the normalizer cannot convert; the last two are logged, because the
+    /// transcription step will fail on that item and the log is where the
+    /// reason lives. Only cancellation propagates.
+    /// </summary>
+    private async Task<CaptureArtifact?> TryNormalizeAsync(
+        Capture capture,
+        CaptureArtifact original,
+        RecordingQueue queueItem,
+        CancellationToken cancellationToken)
+    {
+        var header = WavHeader.TryRead(original.StorageLocator);
+        if (header is { IsTranscriptionReady: true })
+        {
+            // The recorder's own output. Fill in a duration the caller did not
+            // know (imports and remote captures arrive without one).
+            queueItem.DurationSeconds ??= PositiveSeconds(header.Duration);
+            return null;
+        }
+
+        if (_audioNormalizer == null)
+        {
+            _logger.LogWarning(
+                "Capture {CaptureId} ({MediaType}) is not transcription-ready WAV and no audio normalizer is registered; transcription will reject it",
+                capture.CaptureId, original.MediaType);
+            return null;
+        }
+
+        var destination = _storagePaths.BuildNormalizedPath(capture.CaptureId, original.ArtifactId);
+
+        AudioNormalizationResult outcome;
+        try
+        {
+            outcome = await _audioNormalizer.NormalizeAsync(original.StorageLocator, destination, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryDeleteFile(destination);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The port's contract is "never throw for a format problem", but a
+            // head implementation that does must not fail the ingestion.
+            _logger.LogWarning(ex,
+                "Normalizing capture {CaptureId} threw; the queue item keeps the original file", capture.CaptureId);
+            TryDeleteFile(destination);
+            return null;
+        }
+
+        if (!outcome.Succeeded || string.IsNullOrEmpty(outcome.OutputPath) || !File.Exists(outcome.OutputPath))
+        {
+            _logger.LogWarning(
+                "Capture {CaptureId} ({MediaType}) could not be normalized for transcription: {Reason}",
+                capture.CaptureId, original.MediaType, outcome.Error ?? "no output was produced");
+            TryDeleteFile(destination);
+            return null;
+        }
+
+        string sha256;
+        long byteLength;
+        try
+        {
+            (sha256, byteLength) = await ComputeSha256Async(outcome.OutputPath, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Normalized audio for capture {CaptureId} could not be read back; the queue item keeps the original file",
+                capture.CaptureId);
+            TryDeleteFile(outcome.OutputPath);
+            return null;
+        }
+
+        var normalizedHeader = WavHeader.TryRead(outcome.OutputPath);
+        queueItem.AudioFilePath = outcome.OutputPath;
+        queueItem.DurationSeconds ??= normalizedHeader == null ? null : PositiveSeconds(normalizedHeader.Duration);
+
+        _logger.LogInformation(
+            "Normalized capture {CaptureId} ({MediaType}, {OriginalBytes} bytes) to 16 kHz WAV ({NormalizedBytes} bytes)",
+            capture.CaptureId, original.MediaType, original.ByteLength, byteLength);
+
+        return new CaptureArtifact
+        {
+            ArtifactId = Guid.NewGuid().ToString(),
+            CaptureId = capture.CaptureId,
+            ArtifactType = CaptureArtifactType.AudioNormalized,
+            StorageLocator = outcome.OutputPath,
+            MediaType = "audio/wav",
+            ByteLength = byteLength,
+            Sha256 = sha256,
+            CreatedAtUtc = DateTime.UtcNow,
+            // Produced here, for this machine's transcriber; it is never
+            // uploaded, so it is "local" whatever the original's state is.
+            UploadState = CaptureArtifactUploadState.Local,
+        };
+    }
+
+    private static double? PositiveSeconds(TimeSpan duration) =>
+        duration > TimeSpan.Zero ? duration.TotalSeconds : null;
+
+    private void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not delete {Path}; the recordings cleanup will sweep it", path);
+        }
+    }
+
     private async Task<IngestionResult> PersistAsync(
         Capture capture,
-        CaptureArtifact artifact,
+        IReadOnlyList<CaptureArtifact> artifacts,
         RecordingQueue queueItem)
     {
+        // The outbox describes the ORIGINAL artifact: that is the one the
+        // capturing device knows, and the one its hash and length refer to.
+        var artifact = artifacts[0];
+
         var outboxEntry = new SyncOutbox
         {
             EntityType = SyncEntityType.Capture,
@@ -344,7 +531,7 @@ public class CaptureIngestionService : ICaptureIngestionService
 
         try
         {
-            await _captureRepository.IngestAsync(capture, artifact, queueItem, outboxEntry);
+            await _captureRepository.IngestAsync(capture, artifacts, queueItem, outboxEntry);
         }
         catch (DbUpdateException ex)
         {

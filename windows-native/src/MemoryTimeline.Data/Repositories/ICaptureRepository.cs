@@ -33,6 +33,18 @@ public interface ICaptureRepository
         RecordingQueue queueItem,
         SyncOutbox outboxEntry);
 
+    /// <summary>
+    /// Same atomic write for a capture with several artifacts — the original
+    /// audio plus the normalized WAV ingestion produced from it. One
+    /// SaveChanges, so a normalized artifact can never exist without the
+    /// original it was made from, or the queue item that transcribes it.
+    /// </summary>
+    Task<RecordingQueue> IngestAsync(
+        Capture capture,
+        IReadOnlyList<CaptureArtifact> artifacts,
+        RecordingQueue queueItem,
+        SyncOutbox outboxEntry);
+
     Task UpdateStatusAsync(string captureId, string status);
 }
 
@@ -83,21 +95,28 @@ public class CaptureRepository : ICaptureRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<RecordingQueue> IngestAsync(
+    public Task<RecordingQueue> IngestAsync(
         Capture capture,
         CaptureArtifact artifact,
+        RecordingQueue queueItem,
+        SyncOutbox outboxEntry)
+        => IngestAsync(capture, new[] { artifact }, queueItem, outboxEntry);
+
+    public async Task<RecordingQueue> IngestAsync(
+        Capture capture,
+        IReadOnlyList<CaptureArtifact> artifacts,
         RecordingQueue queueItem,
         SyncOutbox outboxEntry)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
 
         context.Captures.Add(capture);
-        context.CaptureArtifacts.Add(artifact);
+        context.CaptureArtifacts.AddRange(artifacts);
         context.RecordingQueues.Add(queueItem);
         context.SyncOutboxEntries.Add(outboxEntry);
 
         // A single SaveChanges is one implicit transaction on SQLite: either all
-        // four rows land or none do. Do not split into multiple SaveChanges.
+        // rows land or none do. Do not split into multiple SaveChanges.
         await context.SaveChangesAsync();
 
         return queueItem;

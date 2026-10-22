@@ -129,6 +129,7 @@ public class MediaService : IMediaService
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly IThumbnailGenerator _thumbnailGenerator;
     private readonly ITimelineProjectionPublisher? _projectionPublisher;
+    private readonly IRecordingStorage? _recordingStorage;
     private readonly ILogger<MediaService> _logger;
 
     /// <summary>
@@ -136,9 +137,11 @@ public class MediaService : IMediaService
     /// default %LOCALAPPDATA%\MemoryTimeline\Media root - production leaves it
     /// null (the DI container cannot resolve a string, so the default kicks
     /// in); tests inject a temp directory.
-    /// <paramref name="projectionPublisher"/> is optional and trailing so every
-    /// existing construction keeps compiling: production picks up the registered
-    /// implementation, and the many tests that predate sync stay silent.
+    /// <paramref name="projectionPublisher"/> and <paramref name="recordingStorage"/>
+    /// are optional and trailing so every existing construction keeps compiling:
+    /// production picks up the registered implementations, and the many tests
+    /// that predate them stay silent. With a recording storage, Clear Cache
+    /// sweeps the recording trees as well as the media tree.
     /// </summary>
     public MediaService(
         IEventMediaRepository mediaRepository,
@@ -146,12 +149,14 @@ public class MediaService : IMediaService
         IThumbnailGenerator thumbnailGenerator,
         ILogger<MediaService> logger,
         string? mediaRootOverride = null,
-        ITimelineProjectionPublisher? projectionPublisher = null)
+        ITimelineProjectionPublisher? projectionPublisher = null,
+        IRecordingStorage? recordingStorage = null)
     {
         _mediaRepository = mediaRepository;
         _contextFactory = contextFactory;
         _thumbnailGenerator = thumbnailGenerator;
         _projectionPublisher = projectionPublisher;
+        _recordingStorage = recordingStorage;
         _logger = logger;
 
         MediaRoot = string.IsNullOrWhiteSpace(mediaRootOverride)
@@ -365,9 +370,7 @@ public class MediaService : IMediaService
         // the EXIF backfill above changed: the projection's map pin comes from
         // the event's linked locations, and the backfill may have just given one
         // coordinates. Locations are shared rows, so OTHER events linked to a
-        // backfilled location keep a stale pin - the same cross-entity fan-out
-        // the interface already records for a person's EventCount, and not a
-        // decision to take from inside a photo attach.
+        // backfilled location moved too; the backfill republishes those itself.
         // The duplicate-hash early return above wrote nothing and returns before
         // reaching this.
         if (publishProjection)
@@ -598,10 +601,27 @@ public class MediaService : IMediaService
     {
         var result = new MediaCleanupResult();
 
-        if (!System.IO.Directory.Exists(MediaRoot))
+        if (System.IO.Directory.Exists(MediaRoot))
         {
-            return result;
+            await SweepMediaTreeAsync(result, ct);
         }
+
+        // Recording files are orphaned by queue removals that predate the
+        // release-on-remove rule, by failed ingestions, and by downloads whose
+        // ingestion was deduplicated; the same Clear Cache action collects them.
+        if (_recordingStorage != null)
+        {
+            var recordings = await _recordingStorage.CleanupOrphansAsync(ct);
+            result.RecordingsDeleted = recordings.FilesDeleted;
+            result.FilesDeleted += recordings.FilesDeleted;
+            result.BytesFreed += recordings.BytesFreed;
+        }
+
+        return result;
+    }
+
+    private async Task SweepMediaTreeAsync(MediaCleanupResult result, CancellationToken ct)
+    {
 
         // Snapshot ORDER matters: materialize the FILE list first, the DB row
         // sets second. AttachAsync copies a file into the managed tree BEFORE
@@ -705,7 +725,6 @@ public class MediaService : IMediaService
         // delete, both of which already published. A file deleted here has no
         // event id to attribute it to anyway; publishing "everything" to be safe
         // would flood the outbox to say nothing.
-        return result;
     }
 
     /// <summary>
@@ -760,37 +779,63 @@ public class MediaService : IMediaService
     /// <see cref="IMediaService"/>) so tests can exercise the rule without a
     /// binary GPS-tagged image fixture; production reaches it only through
     /// <see cref="AttachAsync"/>.
+    ///
+    /// <para>A location is a shared row: every other event linked to one that
+    /// just gained coordinates now has a map pin a companion has not seen, so
+    /// those events are republished here (the attaching event is published by
+    /// the attach itself, after the media count has moved too). Best-effort,
+    /// like every projection publish - the coordinates are already saved.</para>
     /// </summary>
-    internal async Task BackfillEventLocationCoordinatesAsync(
+    /// <returns>The ids of the OTHER events whose projections were republished.</returns>
+    internal async Task<IReadOnlyList<string>> BackfillEventLocationCoordinatesAsync(
         string eventId,
         double latitude,
         double longitude,
         CancellationToken ct = default)
     {
-        await using var context = await _contextFactory.CreateDbContextAsync(ct);
-
-        var missingCoordinates = await context.Locations
-            .Where(l => l.EventLocations.Any(el => el.EventId == eventId))
-            .Where(l => l.Latitude == null || l.Longitude == null)
-            .ToListAsync(ct);
-
-        if (missingCoordinates.Count == 0)
+        List<string> otherLinkedEventIds;
+        await using (var context = await _contextFactory.CreateDbContextAsync(ct))
         {
-            return;
+            var missingCoordinates = await context.Locations
+                .Where(l => l.EventLocations.Any(el => el.EventId == eventId))
+                .Where(l => l.Latitude == null || l.Longitude == null)
+                .ToListAsync(ct);
+
+            if (missingCoordinates.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            foreach (var location in missingCoordinates)
+            {
+                location.Latitude = latitude;
+                location.Longitude = longitude;
+                location.GeocodedAt = null; // photo-sourced, not geocoded
+
+                _logger.LogInformation(
+                    "Backfilled coordinates ({Latitude}, {Longitude}) for location '{Name}' ({LocationId}) from photo EXIF GPS on event {EventId}.",
+                    latitude, longitude, location.Name, location.LocationId, eventId);
+            }
+
+            await context.SaveChangesAsync(ct);
+
+            var backfilledIds = missingCoordinates.Select(l => l.LocationId).ToList();
+            otherLinkedEventIds = await context.EventLocations
+                .AsNoTracking()
+                .Where(el => backfilledIds.Contains(el.LocationId) && el.EventId != eventId)
+                .Select(el => el.EventId)
+                .Distinct()
+                .ToListAsync(ct);
         }
 
-        foreach (var location in missingCoordinates)
+        // Fan out AFTER the context is disposed and the rows are committed: the
+        // publisher re-reads each event through its own connection.
+        foreach (var otherEventId in otherLinkedEventIds)
         {
-            location.Latitude = latitude;
-            location.Longitude = longitude;
-            location.GeocodedAt = null; // photo-sourced, not geocoded
-
-            _logger.LogInformation(
-                "Backfilled coordinates ({Latitude}, {Longitude}) for location '{Name}' ({LocationId}) from photo EXIF GPS on event {EventId}.",
-                latitude, longitude, location.Name, location.LocationId, eventId);
+            await PublishEventProjectionAsync(otherEventId);
         }
 
-        await context.SaveChangesAsync(ct);
+        return otherLinkedEventIds;
     }
 
     /// <summary>

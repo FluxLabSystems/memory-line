@@ -16,7 +16,7 @@ A native Windows 11 implementation of Memory Timeline, featuring local Whisper t
 
 This is the native Windows implementation of Memory Timeline: a **local-first** desktop app for recording, organizing, and rediscovering personal history. You speak a memory, the app transcribes it **locally with Whisper**, a **Claude** model extracts a structured event, you review and approve it, and it lands on an interactive timeline. Optional embeddings surface connections between related memories.
 
-It is designed to provide strong performance and to leverage Windows-specific features such as native touch/pen support (Windows Ink), toast notifications, JumpList, and Windows Timeline integration.
+It is designed to provide strong performance and to leverage Windows-specific features such as touch gestures on the timeline, toast notifications, and Jump List quick actions. (Windows Timeline / User Activities integration was removed in 2026-10: it had no callers, needs package identity, and Windows 11 dropped the Timeline UI. There is no Windows Ink code.)
 
 ### Performance targets
 
@@ -33,8 +33,8 @@ The table below lists **targets**, not measured/verified results — treat them 
 | Cold start | < 2 seconds |
 | Timeline FPS | 60 FPS |
 | Package size | ~30 MB |
-| Touch/Pen | Full Windows Ink |
-| Windows Integration | Full (JumpList, Timeline, Notifications) |
+| Touch | Timeline gestures (pinch-zoom, drag-pan); no Ink/annotation feature |
+| Windows Integration | Jump List + toast notifications (see [Windows 11 Integration](#windows-11-integration) for the unpackaged-app caveat) |
 
 ---
 
@@ -85,10 +85,10 @@ Every stage persists its state, so a failure is recoverable and visible in the U
 
 ### Windows 11 Integration
 - **Toast Notifications** - Processing-complete alerts.
-- **JumpList** - Quick access to recent events and common actions.
-- **Windows Timeline** - Events published to Windows Timeline with Adaptive Cards.
+- **Jump List** - Quick actions (New Event opens the add-event dialog, Start Recording starts capturing, View Timeline, Search) plus a "Recent Events" group that is updated whenever an event is created or opened. **Caveat:** the app is unpackaged (`WindowsPackageType=None`) and `Windows.UI.StartScreen.JumpList` requires package identity, so on an unpackaged install the Jump List calls can fail; `JumpListService` detects the first failure, logs it once, and stops trying for the rest of the session instead of crashing. Expect the feature only once an MSIX/identity build exists.
 - **Theme Support** - Light/Dark/System theme switching.
-- **Touch & Pen** - Gesture support with Windows Ink ready.
+- **Touch** - Pinch-zoom and drag-pan gestures on the timeline. No Windows Ink / pen annotation exists.
+- *(Removed 2026-10)* Windows Timeline (User Activities / Adaptive Cards) publishing — never called, needs package identity, and the Timeline UI is gone from Windows 11.
 
 ---
 
@@ -279,7 +279,7 @@ windows-native/
 │              ↕                            │
 │  ┌──────────────────────────────────┐    │
 │  │ Data Access Layer                │    │
-│  │ - EF Core 8 + SQLite (WAL)       │    │
+│  │ - EF Core 10 + SQLite (WAL)      │    │
 │  │ - IDbContextFactory per-operation│    │
 │  │ - Repositories + SchemaUpgrader  │    │
 │  └──────────────────────────────────┘    │
@@ -336,8 +336,9 @@ services.AddSingleton<ITimelineService, TimelineService>();
 services.AddSingleton<IAudioRecordingService, AudioRecordingService>();
 services.AddSingleton<IQueueService, QueueService>();
 
-// Local Whisper is the registered STT engine. The Windows SpeechRecognizer
-// stub cannot transcribe files (mic-only) and now fails fast instead.
+// Local Whisper is the registered (and only) STT engine. The old Windows
+// SpeechRecognizer stub was deleted: that API is mic-only and cannot
+// transcribe a file.
 services.AddSingleton<ISpeechToTextService, WhisperSpeechToTextService>();
 
 // LLM: a routing facade re-reads llm_provider on every call and delegates
@@ -461,8 +462,8 @@ through a structured, **multi-agent feature audit and fix pass**. Highlights:
 
 - **Made the voice pipeline real** — replaced a "speech recognition" path that transcribed the
   **live microphone** (not the recorded file) with local file-based **Whisper**
-  (`WhisperSpeechToTextService`); the old `WindowsSpeechRecognitionService` now fails fast without
-  opening the mic. Fixed the unpackaged storage-path crash, persisted transcripts, and made
+  (`WhisperSpeechToTextService`); the old `WindowsSpeechRecognitionService` was first turned into a
+  fail-fast stub and has since been deleted. Fixed the unpackaged storage-path crash, persisted transcripts, and made
   **approve** atomic (event + tags/people/locations in one transaction).
 - **Fixed DbContext concurrency** — moved from a single app-wide `AddDbContext` to per-operation
   contexts via `IDbContextFactory`, resolving intermittent "second operation on this context"
@@ -501,8 +502,9 @@ Tests cover timeline math, services, repository/integration behavior, and perfor
 
 `.github/workflows/windows-native-build.yml` builds the full solution **Release | x64** on
 `windows-latest`, driving the build with **Visual Studio MSBuild** (`microsoft/setup-msbuild`)
-because the WinUI PRI task cannot run under `dotnet build`. Tests run best-effort via
-`dotnet vstest`. Builds are currently **green** in CI.
+because the WinUI PRI task cannot run under `dotnet build`. The built test assembly then
+runs with `dotnet vstest`; **the build and the tests both gate the run**. Builds are
+currently **green** in CI.
 
 ---
 
@@ -637,7 +639,7 @@ See [`DEVELOPMENT-STATUS.md`](./DEVELOPMENT-STATUS.md) for detailed status and
 
 ## License
 
-MIT License — see the main repository `LICENSE` file.
+No license file has been published for this repository yet; see the root `README.md`.
 
 ---
 

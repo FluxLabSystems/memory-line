@@ -29,7 +29,10 @@ public class AssistantSessionRow
 
     public DateTime CreatedAtUtc { get; set; }
 
-    /// <summary>Last accepted turn, so idle sessions can be reaped later.</summary>
+    /// <summary>
+    /// Last accepted turn (creation time until one is accepted). The idle
+    /// window <c>AssistantSessionReaper</c> applies runs from here.
+    /// </summary>
     public DateTime LastTurnAtUtc { get; set; }
 
     /// <summary>Accepted turns so far; also the source of the next turn's sequence.</summary>

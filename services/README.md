@@ -26,9 +26,12 @@ Phase 3 added the **capture status handoff** and the **timeline projection
 feed** on top of that change log — no new endpoints, only new change types
 (see below).
 
-The assistant, trips, and detours endpoints exist in the API contract
-([`shared-contracts/openapi/memory-line-sync-v1.yaml`](../shared-contracts/openapi/memory-line-sync-v1.yaml))
-but are later phases — this service does not implement them yet.
+Phase 4 added the **assistant** endpoints (sessions and turns, routed to a
+responder over the same change log) and an idle-session reaper — see
+[Assistant](#assistant-design-19-phase-4). Phase 5's **trip and detour**
+endpoints are implemented as persistence and lifecycle — see
+[Trips and detours](#trips-and-detours-design-19-phase-5); detour
+*generation* needs a place provider the service does not ship with.
 
 ## Layout
 
@@ -36,7 +39,7 @@ but are later phases — this service does not implement them yet.
 |------|----------|
 | `MemoryTimeline.Services.sln` | Solution: the service, its tests, and the shared contracts library. |
 | `MemoryTimeline.SyncApi/` | The service — `Domain/` (EF entities), `Application/` (services, options, error codes), `Infrastructure/` (DbContext, artifact store, bootstrapper). |
-| `MemoryTimeline.SyncApi.Tests/` | xUnit tests, including `WebApplicationFactory`-based integration tests of the full HTTP surface. |
+| `MemoryTimeline.SyncApi.Tests/` | xUnit tests, including `WebApplicationFactory`-based integration tests of the full HTTP surface and the **contract-compatibility gate** (`ContractCompatibilityTests`), which fails the run when the OpenAPI document, the shared DTOs and the registered routes disagree (see `shared-contracts/README.md`). |
 | `../shared-contracts/dotnet/MemoryTimeline.SyncContracts/` | Wire DTOs shared with the Windows client (referenced by project, camelCase JSON). |
 
 ## Run locally
@@ -76,6 +79,14 @@ value has a working default, so an empty configuration runs.
 | `RefreshTokenGraceSeconds` | `SyncApi__RefreshTokenGraceSeconds` | `300` | How long the previous refresh token stays usable after a rotation, so a client that never received the rotation response can recover. `0` = strict rotation. |
 | `MaxPartSizeBytes` | `SyncApi__MaxPartSizeBytes` | `8388608` (8 MiB) | Maximum accepted bytes per uploaded artifact part. |
 | `TokenSigningKeyBase64` | `SyncApi__TokenSigningKeyBase64` | generated on first run, persisted to `{DataDir}/signing.key` | Base64 HMAC-SHA256 signing key, at least 32 bytes decoded. |
+| `ArtifactRetentionDays` | `SyncApi__ArtifactRetentionDays` | `14` | Days an artifact's bytes are kept after Windows acknowledges archival (a `capture_status` of `completed`) before the retention sweep purges them (design §22 decision 7). |
+| `ArtifactStorageBudgetBytes` | `SyncApi__ArtifactStorageBudgetBytes` | `0` (off) | Soft cap on bytes held by complete artifacts; over it, the sweep purges *acknowledged* artifacts oldest-first until back under. Unacknowledged artifacts are never purged for space. |
+| `RetentionSweepIntervalMinutes` | `SyncApi__RetentionSweepIntervalMinutes` | `360` | Minutes between retention sweeps; the first runs at startup. |
+| `TemporaryFileGraceMinutes` | `SyncApi__TemporaryFileGraceMinutes` | `60` | How long a `*.tmp` part/assembly file may go unwritten before the sweep treats it as crash-orphaned. |
+| `AssistantSessionIdleHours` | `SyncApi__AssistantSessionIdleHours` | `24` | Hours without an accepted turn after which an assistant session is reaped (the design doc names no figure). |
+| `AssistantReaperIntervalMinutes` | `SyncApi__AssistantReaperIntervalMinutes` | `60` | Minutes between idle-session reaps; the first runs at startup. |
+| `RouteContextRetentionDays` | `SyncApi__RouteContextRetentionDays` | `14` | Days a trip's route-context trail is kept (design §22 decision 9); each trip's newest snapshot survives. Dismissed/expired detour suggestions age out on the same clock. |
+| `DetourSuggestionLifetimeHours` | `SyncApi__DetourSuggestionLifetimeHours` | `6` | How long a generated detour suggestion stays actionable when the provider sets no expiry. |
 
 > **Note:** raising `SyncApi:MaxPartSizeBytes` above ~28.6 MB (Kestrel's
 > 30,000,000-byte default `MaxRequestBodySize`) additionally requires raising
@@ -98,8 +109,10 @@ docker run -d --name memory-line-sync \
   memory-line-sync
 ```
 
-- The container listens on port `8080` (the ASP.NET Core 8 container
-  default); map it to whatever host port you like (`-p 5210:8080`).
+- The container listens on port `8080` (the default of the official ASP.NET
+  Core 8+ images; the Dockerfile builds on the .NET 10 SDK/ASP.NET images to
+  match the projects' `net10.0` target); map it to whatever host port you like
+  (`-p 5210:8080`).
 - `/data` is the data directory (the image sets `SyncApi__DataDir=/data` and
   declares `VOLUME /data`) — **always mount a volume there** or the
   database, artifacts, signing key, and pairing code vanish with the
@@ -141,8 +154,8 @@ contract: [`shared-contracts/openapi/memory-line-sync-v1.yaml`](../shared-contra
 | POST | `/api/v1/captures` | Create capture metadata; idempotent by client-generated `captureId` (replay returns the existing capture). |
 | GET | `/api/v1/captures/{captureId}` | Fetch a capture with its artifact summaries. |
 | PATCH | `/api/v1/captures/{captureId}` | Update descriptive fields (captureType, titleHint, userNote, tripId); last writer wins. |
-| POST | `/api/v1/captures/{captureId}/complete` | Mark the capture fully uploaded (Phase 1: minimal handler, returns current state). |
-| POST | `/api/v1/captures/{captureId}/retry` | Re-run processing for a failed capture (Phase 1: minimal handler). |
+| POST | `/api/v1/captures/{captureId}/complete` | Mark the capture fully uploaded. Every declared artifact must be complete (409 `capture_artifacts_incomplete`, retryable, otherwise); a capture still `local_only`/`uploading` advances to `received` and publishes a capture change; one already `received` or beyond is returned unchanged. |
+| POST | `/api/v1/captures/{captureId}/retry` | Re-queue a `failed` capture: status back to `received`, revision bumped, capture change with the audio artifact republished for Windows. 409 `capture_not_failed` on any other status; 409 `artifact_purged` when retention has removed the audio. |
 | POST | `/api/v1/captures/{captureId}/artifacts/initiate` | Declare an artifact (type, expected byte length, SHA-256) → part size/count plan. |
 | PUT | `/api/v1/artifacts/{artifactId}/parts/{partNumber}` | Upload one part; re-uploading a part number replaces it. |
 | POST | `/api/v1/artifacts/{artifactId}/complete` | Assemble the parts; validates byte length, part count, and SHA-256 before accepting. |
@@ -306,6 +319,100 @@ without a second identifier.
   need no pull-side change and echo suppression treats them like everything
   else — a device receives its peers' projections and decisions, never its own.
 
+## Assistant (design §19 Phase 4)
+
+Five endpoints under `/api/v1/assistant` (contract v1.3): open and read a
+session, submit a turn, poll a turn, cancel a turn. **The service stores and
+routes; it never answers.** Windows is the brain — the archive, the retrieval
+index and the prompts live in `MemoryTimeline.Core` — so a submitted question
+is persisted as a `pending` turn and published as an `assistant_turn` change on
+the feed; whichever responder claims it pushes the answered turn back through
+`POST /sync/push`, and the asking device reads the answer either by polling
+`GET /assistant/turns/{turnId}` or off its own pull loop. Streaming rides the
+feed as ordered `assistant_turn_chunk` changes.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/assistant/sessions` | Open a conversation (preferred responder, optional surface/mode/trip). Only the opening device may use it. |
+| GET | `/api/v1/assistant/sessions/{sessionId}` | Read a session (another device's session is a plain 404). |
+| POST | `/api/v1/assistant/sessions/{sessionId}/turns` | Ask; idempotent on the client `turnId` (a replay returns the stored turn, answer included, with 200). |
+| GET | `/api/v1/assistant/turns/{turnId}` | Poll a turn; `result` is present once completed. |
+| POST | `/api/v1/assistant/turns/{turnId}/cancel` | Cancel; terminal and published so a responder mid-answer stops. A late answer for a cancelled turn is discarded. |
+
+- **Responder modes** (`windows` default, `provider`, `on_device`) are chosen
+  per turn; the service records which one actually answered and every result
+  carries a `grounding` value (`archive`, `client_context`, `none`).
+- **Idle sessions are reaped.** `AssistantSessionReaper` runs at startup and
+  every `AssistantReaperIntervalMinutes`: a session with no accepted turn for
+  `AssistantSessionIdleHours` is deleted with its turns, and any turn still
+  waiting on a responder is first marked `cancelled` and published with no
+  source device — so both the asker and a responder that wakes later see it,
+  and a late answer is dropped by the same terminal-state guard an explicit
+  cancel relies on. Questions and answers are personal memory content
+  (§14.5); a day-old conversation has no reason to stay on the service.
+- **What is not here: the Windows responder.** Nothing in this repository yet
+  claims an `assistant_turn` off the feed and answers it — `MemoryTimeline.Sync`
+  pulls and publishes capture status and projections, but has no assistant
+  responder. Until it exists, a turn asked from a phone or the Mac stays
+  `pending` and is eventually reaped. The Windows client's responder is
+  tracked separately.
+
+## Trips and detours (design §19 Phase 5)
+
+The eight trip/detour operations of the v1 contract are implemented, plus two
+additive reads (`GET /trips`, `GET /trips/{tripId}`, contract v1.4). Trips are
+plain owner-scoped REST resources — nothing here rides the change feed.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/trips` | Create a trip (server-minted ID; `name` required). |
+| GET | `/api/v1/trips` | List the owner's trips, newest first. |
+| GET | `/api/v1/trips/{tripId}` | Fetch a trip. |
+| PATCH | `/api/v1/trips/{tripId}` | Update fields (absent = unchanged, null = clear) and status through the state machine: `planned → active \| archived`, `active → paused \| completed \| archived`, `paused → active \| completed \| archived`, `completed → archived`; `archived` is terminal. Same status is a no-op; anything else is 409 `trip_invalid_transition`. Activating stamps `startedAtUtc`, completing stamps `endedAtUtc`, when unset. |
+| POST | `/api/v1/trips/{tripId}/route-context` | Store a route/location snapshot (201; a replayed `routeContextId` returns the stored one with 200). Coordinates are validated and never logged. |
+| POST | `/api/v1/trips/{tripId}/detours/generate` | Run the place provider against the newest snapshot; returns the new `proposed` suggestions. Places already on the trip (any state) are never proposed twice. |
+| GET | `/api/v1/trips/{tripId}/detours` | List suggestions, newest first; expiry is applied on read. |
+| POST | `/api/v1/detours/{suggestionId}/accept` · `/dismiss` · `/save` | Monotonic disposition: `proposed`/`heard`/`saved` → `accepted` or `dismissed` (both terminal); `save` from `proposed`/`heard`; `expired` is terminal. Same state is a no-op 200; a disallowed move is 409 `detour_invalid_transition`. |
+
+**What generates the suggestions: nothing, yet.** The detour agent (§10) needs
+a place provider — Google Places inside the free tier with an Apple failover per
+§22 decision 5 — and neither adapter exists. The service defines the seam
+(`IDetourSuggestionProvider`) and registers `NoDetourSuggestionProvider`, so
+`generate` answers an honest empty array rather than an invented place. A real
+adapter is a DI registration away; the lifecycle around it (persistence,
+expiry, exclusion of repeats, disposition) is built and tested against a fake.
+
+## Retention sweep (design §22 decisions 7 and 9)
+
+A background sweep (`RetentionSweepHostedService` → `ArtifactRetentionService`)
+runs at startup and every `RetentionSweepIntervalMinutes`:
+
+- **Artifact bytes are purged 14 days after Windows acknowledges archival**, or
+  sooner under storage pressure. "Acknowledged" means the capture's latest
+  Windows-authored `capture_status` is `completed`; the clock runs from the
+  moment the service received that status. Captures still `processing`,
+  `review_ready` or `failed` keep their audio indefinitely — Windows may need to
+  download it again, and a failed capture may be retried.
+- **Purge is a state, not a deletion.** The artifact row survives with
+  `state = purged` and its measured `byteLength`/`sha256`, so a late
+  `GET /artifacts/{id}/download` answers **410 `artifact_purged`** (never
+  retryable) instead of a retryable 500 a client would hammer forever. The row
+  is marked before the blob is deleted, so a crash between the two leaves a
+  blob the next sweep removes rather than a "complete" row with no bytes.
+- **Storage pressure** (`ArtifactStorageBudgetBytes` > 0): acknowledged
+  artifacts are purged oldest-acknowledgement-first until the store is under
+  budget; the sweep logs a warning if what remains over budget belongs to
+  captures Windows has not acknowledged, because those are never purged.
+- **Crash-orphaned temporary files** — the per-request `*.tmp` files part
+  uploads and assemblies write through — are deleted once they have gone
+  unwritten for `TemporaryFileGraceMinutes`. In-process failures already clean
+  up after themselves; this covers a process that died mid-write.
+- **Route-context trails** (§22 decision 9) are deleted after
+  `RouteContextRetentionDays`, keeping each trip's newest snapshot so a long
+  trip still has a position for detour generation; dismissed and expired
+  detour suggestions age out on the same clock. Saved and accepted ones are
+  the user's choices and stay with the trip.
+
 ## Security notes (design §14)
 
 - **Auth model:** registration is gated by the owner pairing code; every
@@ -331,8 +438,11 @@ without a second identifier.
 {DataDir}/                 # SyncApi__DataDir, default ./data
 ├── sync.db                # SQLite: owners, devices, captures, capture_artifacts,
 │                          #   capture_status (latest Windows-authored status per capture),
+│                          #   assistant_sessions, assistant_turns (Phase 4),
+│                          #   trips, trip_route_contexts, detour_suggestions (Phase 5),
 │                          #   sync_changes (change log), push_receipts, idempotency_records
-├── artifacts/             # filesystem blob store (parts during upload, assembled artifacts after complete)
+├── artifacts/             # filesystem blob store (parts during upload, assembled artifacts after complete;
+│                          #   blobs of purged artifacts are gone, their rows stay with state=purged)
 ├── signing.key            # base64 HMAC token signing key (generated if not configured)
 └── pairing-code.txt       # current owner pairing code
 ```
@@ -347,9 +457,12 @@ deployment across a schema change, stop the service and delete `sync.db`
 `artifacts/` are content-addressed by ID and can be removed too). Proper
 migrations are planned before any stable release.
 
-> The Phase 3 `capture_status` table is the one exception so far: because
-> `EnsureCreated` leaves an existing database untouched, startup issues an
-> idempotent `CREATE TABLE IF NOT EXISTS` for it. Upgrading a Phase 1/2
-> deployment to Phase 3 therefore does **not** require deleting `sync.db`. That
-> is a stopgap, not a migration system — the next schema change still needs
-> real migrations.
+> Every table added after Phase 1 — `capture_status` (Phase 3), the assistant
+> tables (Phase 4) and the trip/detour tables (Phase 5) — is created by an
+> idempotent `CREATE TABLE IF NOT EXISTS` at startup, because `EnsureCreated`
+> leaves an existing database untouched. Upgrading an older deployment across
+> those phases therefore does **not** require deleting `sync.db`. That is still
+> a stopgap, not a migration system: it can add tables, not alter existing
+> ones, so the first change to an existing table's columns needs real
+> migrations. The column lists in `SyncApiBootstrapper` deliberately duplicate
+> the `SyncDbContext` mappings and must be kept in step.

@@ -1,3 +1,4 @@
+using MemoryTimeline.Core.Services;
 using MemoryTimeline.SyncContracts;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +24,7 @@ public class SyncBackgroundWorker : ISyncBackgroundWorker
     private readonly ILocalOutboxPublisher _outboxPublisher;
     private readonly ISyncCursorStore _cursorStore;
     private readonly ISyncSettingsStore _settingsStore;
+    private readonly ITimelineProjectionPublisher? _projectionPublisher;
     private readonly ILogger<SyncBackgroundWorker> _logger;
 
     private readonly SemaphoreSlim _cycleGuard = new(1, 1);
@@ -31,19 +33,26 @@ public class SyncBackgroundWorker : ISyncBackgroundWorker
     private Task? _loopTask;
     private DateTime? _lastSuccessAtUtc;
 
+    /// <summary>
+    /// Creates the worker. <paramref name="projectionPublisher"/> is optional
+    /// and trailing so existing constructions keep compiling; without it an
+    /// owed backfill stays owed (and logged) rather than failing the cycle.
+    /// </summary>
     public SyncBackgroundWorker(
         ISyncClient syncClient,
         IRemoteChangeApplier changeApplier,
         ILocalOutboxPublisher outboxPublisher,
         ISyncCursorStore cursorStore,
         ISyncSettingsStore settingsStore,
-        ILogger<SyncBackgroundWorker> logger)
+        ILogger<SyncBackgroundWorker> logger,
+        ITimelineProjectionPublisher? projectionPublisher = null)
     {
         _syncClient = syncClient;
         _changeApplier = changeApplier;
         _outboxPublisher = outboxPublisher;
         _cursorStore = cursorStore;
         _settingsStore = settingsStore;
+        _projectionPublisher = projectionPublisher;
         _logger = logger;
     }
 
@@ -181,6 +190,7 @@ public class SyncBackgroundWorker : ISyncBackgroundWorker
         var applied = 0;
         var failedPermanent = 0;
         var published = 0;
+        var backfilled = 0;
         var retryableStop = false;
         string? error = null;
         long cursor = 0;
@@ -251,6 +261,10 @@ public class SyncBackgroundWorker : ISyncBackgroundWorker
                 _logger.LogWarning(ex, "Sync ack at cursor {Cursor} failed; the local cursor is authoritative", cursor);
             }
 
+            // An owed backfill (new registration, restored archive) is queued
+            // BEFORE the drain, so its rows ride this same cycle's push.
+            backfilled = await RunOwedBackfillAsync(cancellationToken);
+
             published = await _outboxPublisher.PublishPendingAsync(cancellationToken);
 
             if (retryableStop)
@@ -287,9 +301,51 @@ public class SyncBackgroundWorker : ISyncBackgroundWorker
             ChangesApplied = applied,
             ChangesFailedPermanent = failedPermanent,
             OutboxPublished = published,
+            ProjectionsBackfilled = backfilled,
             Cursor = cursor,
             Error = error,
         };
+    }
+
+    /// <summary>
+    /// Runs the full projection backfill when one is owed and clears the flag
+    /// only once it has completed, so a run that fails or is cancelled midway
+    /// is simply retried next cycle (each row it did queue is deduplicated
+    /// against the outbox, so the retry costs nothing twice). A failure is
+    /// logged and does not fail the cycle: the drain that follows still pushes
+    /// whatever was queued.
+    /// </summary>
+    private async Task<int> RunOwedBackfillAsync(CancellationToken cancellationToken)
+    {
+        if (!await _settingsStore.IsProjectionBackfillPendingAsync())
+        {
+            return 0;
+        }
+
+        if (_projectionPublisher == null)
+        {
+            _logger.LogWarning(
+                "A timeline projection backfill is owed but no projection publisher is registered; companions will not receive the existing archive");
+            return 0;
+        }
+
+        try
+        {
+            _logger.LogInformation("Running the owed timeline projection backfill");
+            var result = await _projectionPublisher.PublishAllAsync(
+                TimelineProjectionBackfillMode.Everything, cancellationToken);
+            await _settingsStore.SetProjectionBackfillPendingAsync(false);
+            return result.Published;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Timeline projection backfill failed; it stays owed and is retried next cycle");
+            return 0;
+        }
     }
 
     private async Task<bool> IsReadyAsync()

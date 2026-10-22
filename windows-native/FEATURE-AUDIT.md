@@ -11,6 +11,25 @@ from code) or **PROBABLE** (depends on runtime state we can't observe).
 event shows **"search error"**, (3) the timeline **Refresh** button doesn't
 bring up the new event.
 
+> ### Status (2026-10-21)
+> This document is the **original audit**, kept as written for its root-cause analysis.
+> Almost everything it asked for has since landed; the per-section `Status` notes below
+> say what. In short:
+>
+> | Area | State |
+> |------|-------|
+> | Bugs 1 / 2 / 3 | ✅ fixed (category case + in-dialog errors; `IDbContextFactory` per-operation contexts + debounced search; Ctrl+R refreshes in place) |
+> | Part 1 foundation | ✅ `AddDbContextFactory` everywhere, Singleton services; `SchemaUpgrader` replaced raw `EnsureCreated` (a real migration baseline is still a follow-up) |
+> | 2.3 Search | ✅ `Tag.Name` → `TagName`, suggestions bound, sort default aligned, honest error messages, Save Search dialog wired |
+> | 2.4 Audio pipeline | ✅ storage path fixed, local Whisper STT (the mic-only stub was deleted 2026-10), transcript persisted, atomic approve, Resume/Cancel, API-key pre-flight, LLM config re-read per call, per-item progress events; the dead `OnnxWhisperService` and `AnthropicClaudeService` were removed |
+> | 2.5 RAG / Connections | ✅ OpenAI key UI (plus local ONNX default), Connections navigation with the event id, mapped embedding columns, persisted cross-references; cross-references are **heuristic** (not LLM-powered) |
+> | 2.6 Analytics | ✅ export implemented |
+> | 2.7 Settings | ✅ `SettingKeys` constants (writer and reader), display-case normalization, live config re-read; Reset to Defaults and key removal fixed 2026-10 |
+> | 2.8 Export / Import | ✅ `Include` fix; import options honored |
+> | 2.9 Shell / Windows integration | ✅ unified `INotificationService`, `AddQuickActionsAsync` at launch, activation handling, `await _host.StopAsync()`; **2026-10:** `MainViewModel` + nav badges implemented, Jump List recent events + real quick actions wired, Windows Timeline service removed as dead code |
+>
+> Still open from the plan: regenerating the EF migration baseline (see `HARDENING-FOLLOWUPS.md`).
+
 ---
 
 ## Part 0 — Root causes of the three reported bugs
@@ -65,6 +84,8 @@ Frame instead of refreshing, which no-ops when window dimensions are unchanged
 ---
 
 ## Part 1 — The foundation defect underneath everything (CONFIRMED by all 5 agents)
+
+> **Status:** ✅ resolved — `App.xaml.cs` registers `AddDbContextFactory<AppDbContext>()`, every repository/service opens a context per operation and is a Singleton, and the shared-context `Task.Run` is gone. `EnsureCreated` was replaced by `SchemaUpgrader.EnsureSchemaAsync`; the migration baseline itself is still to be regenerated.
 
 ### One shared, never-disposed `AppDbContext` for the entire app
 - `App.xaml.cs:80` registers `AddDbContext<AppDbContext>()` (**Scoped**), but
@@ -127,6 +148,8 @@ bridge EnsureCreated-born DBs (insert baseline history row, then migrate).
 ## Part 2 — Per-feature audit
 
 ### 2.1 Event creation / editing  — BROKEN (Bug 1)
+
+> **Status:** ✅ fixed — lowercase/case-insensitive category validation, dialog deferral with an in-dialog InfoBar, embedding generation rescoped, timeline navigates to the new event's date (`EventCreatedMessage`).
 **Should be:** dialog Save takes `args.GetDeferral()`, awaits the VM call, and
 on failure cancels the close and shows the error in-dialog; validation shares
 one source of truth with the UI (bind the ComboBox to
@@ -145,6 +168,8 @@ the same way if a stored category isn't in the combo list.
 create, navigate the viewport to the event's date if it isn't visible.
 
 ### 2.2 Timeline render / refresh — SOUND, with traps
+
+> **Status:** ✅ fixed — refresh errors surface in the timeline InfoBar, Ctrl+R invokes `RefreshCommand` in place, and `EventCreated/Updated/Deleted` messages keep the singleton ViewModel current.
 Render pipeline and refresh are correct. **Must do:** surface refresh errors
 visibly; make Ctrl+R invoke `RefreshCommand` instead of re-navigating; add an
 event-created message (`WeakReferenceMessenger`) so approve/create flows
@@ -153,6 +178,8 @@ approved event only appears after a pan/zoom/resize —
 `TimelineControl.xaml.cs:86-90`, `TimelineViewModel.cs:699-724`).
 
 ### 2.3 Search — BROKEN error path + degraded features (Bug 2)
+
+> **Status:** ✅ fixed — context factory + debounced/cancellable autocomplete, `Tag.Name` → `TagName`, suggestions bound to the AutoSuggestBox, sort default aligned, `Search error: {message}`.
 **Should be:** context-per-operation; debounced (~300 ms) input with a
 `CancellationToken` per search that cancels the previous one; only mapped
 columns in predicates; errors surfaced with the message.
@@ -174,6 +201,8 @@ per-keystroke autocomplete; (2) `Tag.Name` → `TagName`; (3) wire or remove the
 suggestions UI; (4) `StatusMessage = $"Search error: {ex.Message}"`.
 
 ### 2.4 Audio pipeline (record → STT → LLM → review) — NOT FUNCTIONAL END-TO-END
+
+> **Status:** ✅ fixed — storage path under `%LOCALAPPDATA%`, local file-based Whisper STT (the live-mic stub was reduced to fail-fast and then deleted in 2026-10), transcripts persisted on the queue row, API-key pre-flight as a non-retryable `ConfigurationException`, atomic metadata-complete approve, `EventCreatedMessage` refresh, state re-attached from `GetRecordingState()`, Resume/Cancel buttons, `ProcessingProgressChanged` consumed, `AnthropicClaudeService` removed, LLM config re-read per call (`RoutingLlmService`). 2026-10 added a live input-level meter, a microphone picker, and audio file import.
 Four breaks in series (all CONFIRMED):
 1. **Recording cannot start in the checked-in configuration.**
    `WindowsPackageType=None` (unpackaged) + `ApplicationData.Current`
@@ -215,6 +244,8 @@ event-created message → timeline refresh; seed VM state from
 `GetRecordingState()` on page load; add Resume/Cancel buttons.
 
 ### 2.5 RAG / Connections — CANNOT WORK (four independent blockers, all CONFIRMED)
+
+> **Status:** ✅ fixed — OpenAI key field in Settings (and a local ONNX provider as the keyless default), "View connections" navigation carries the event id, queries use the mapped embedding column, cross-references are persisted via the repository and labelled as **heuristic** (no LLM call), provider/dimension set on save, zero-embedding CTA state. 2026-10: tag suggestions can be applied with one click.
 1. **No settings writer exists for `OpenAIApiKey`** — the embedding service
    reads `"OpenAIApiKey"`/`"OpenAIEmbeddingModel"` (`OpenAIEmbeddingService.cs:57-58`)
    but the Settings UI only writes a generic `"ApiKey"` (consumed by Anthropic)
@@ -238,6 +269,8 @@ or label results "heuristic" and drop the wasted call; set
 `EmbeddingProvider`/`Dimension` when saving; add a zero-embedding CTA state.
 
 ### 2.6 Analytics — WORKS
+
+> **Status:** ✅ the export button is implemented (no longer a "coming soon" stub); per-section errors surface.
 All queries are EF Core 8 / SQLite-translatable and every empty-DB edge
 (Max/Min/First/divide) is guarded. Residual: shared-context concurrency can
 blank sections silently (per-section catches swallow errors); the Export button
@@ -245,6 +278,8 @@ is a "coming soon" stub; `StartDate` fetched 5× per load. Fix opportunistically
 after the DbContext factory.
 
 ### 2.7 Settings — SAVES DON'T TAKE EFFECT (CONFIRMED)
+
+> **Status:** ✅ fixed — `SettingKeys` constants used by writers and readers, display casing normalized at the ViewModel boundary, the LLM client re-reads its configuration per call. 2026-10: Reset to Defaults uses the seeded values and keys can be removed ("Clear key"); the decorative audio boxes became a fixed-format note plus a microphone picker.
 Writer/reader key mismatch: `SettingsViewModel` saves PascalCase
 (`"DefaultZoomLevel"`, `"LlmProvider"`, `"LlmModel"` — lines 158-171) while
 `SettingsService` and all consumers read snake_case (`"default_zoom_level"`
@@ -257,6 +292,8 @@ display casing at the VM boundary; make `AnthropicLlmService` re-read config on
 settings change. Theme is the only setting that fully works.
 
 ### 2.8 Export / Import — EXPORT BROKEN AT RUNTIME (CONFIRMED)
+
+> **Status:** ✅ fixed — `.Include(e => e.EventTags).ThenInclude(et => et.Tag)`; import's `CreateBackup`/`SkipDuplicates`/`UpdateExisting` options are honored.
 `ExportService.cs:206, 283` do `.Include(e => e.Tags)` — but `Event.Tags` is
 `[NotMapped]` → `InvalidOperationException` on the first query → **every
 JSON/CSV/Markdown/full export fails**. Correct form:
@@ -265,6 +302,8 @@ JSON/CSV/Markdown/full export fails**. Correct form:
 read). File-picker window-handle initialization is done correctly.
 
 ### 2.9 App shell / Windows integration — DEAD WIRING (CONFIRMED)
+
+> **Status:** ✅ fixed — one `INotificationService`, called from queue completion; `AddQuickActionsAsync()` in `OnLaunched`; activation arguments handled (cold start and redirected); `await _host.StopAsync()` before `Dispose()`. **2026-10:** `MainViewModel` implemented with Queue/Review `InfoBadge` counts; Jump List "Recent Events" fed from the messenger and the quick actions perform their actions; the Windows Timeline service was removed rather than wired (no callers, needs package identity, Timeline UI gone from Windows 11). The `AddTransient<Page>` registrations were removed as dead code.
 - `MainViewModel` is an empty TODO stub; the nav `InfoBadge`s have no value
   source (dead UI).
 - `NavigationService` → `Frame.Navigate(type)` instantiates pages via

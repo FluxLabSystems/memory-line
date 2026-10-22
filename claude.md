@@ -19,10 +19,12 @@ this repo. Read it before editing. For the product-level overview, see the root
   needed; own Linux CI workflow `sync-api-build.yml`) and the **Windows sync client
   library** `windows-native/src/MemoryTimeline.Sync` — the iOS roadtrip companion sync
   layer. See [Sync service (iOS companion)](#sync-service-ios-companion).
-- **You cannot build this repo in the cloud sandbox** — there is no .NET SDK, and the
-  WinUI 3 app cannot be built with `dotnet build` anyway (see [Build & run reality](#build--run-reality)).
-  Changes are validated by **CI on a Windows runner**, not by a local build. Reason
-  carefully and keep changes correct-by-construction.
+- **You cannot build the app in the cloud sandbox.** The WinUI 3 head cannot be built with
+  `dotnet build` at all (see [Build & run reality](#build--run-reality)), and a sandbox may
+  have no .NET SDK. When one is present (e.g. `/root/.dotnet`), only the plain-`net10.0`
+  projects — Core, Data, Sync, Portability.Tests, the sync service — can be built or tested
+  with it. Head changes are validated by **CI on a Windows runner**, not by a local build.
+  Reason carefully and keep changes correct-by-construction.
 
 ---
 
@@ -30,7 +32,7 @@ this repo. Read it before editing. For the product-level overview, see the root
 
 ### Solution layout (clean architecture)
 
-The solution is `windows-native/src/MemoryTimeline.sln`, six projects:
+The solution is `windows-native/src/MemoryTimeline.sln`, six projects, plus one plain-`net10.0` test project that deliberately sits outside it:
 
 | Project | Role |
 |---------|------|
@@ -40,6 +42,7 @@ The solution is `windows-native/src/MemoryTimeline.sln`, six projects:
 | **MemoryTimeline.Tests** | xUnit unit, integration, and performance tests. |
 | **MemoryTimeline.Sync** | Sync client library (no UI) — `SyncApiClient` (pairing, push/pull/ack), artifact download, `SyncBackgroundWorker` loop, `LocalOutboxPublisher`, `RemoteChangeApplier`, settings/cursor stores. |
 | **MemoryTimeline.SyncContracts** | Shared wire DTOs; lives at `shared-contracts/dotnet/` and is referenced into both this solution and `services/MemoryTimeline.Services.sln`. CamelCase JSON per the OpenAPI contract. |
+| **MemoryTimeline.Portability.Tests** | Plain `net10.0` xUnit tests, **not in the .sln**: they prove the archive stack (Core → Data, Sync) *runs* off Windows rather than merely compiling there. Executed with `dotnet test` by the macOS workflow; `MemoryTimeline.Tests` is `net10.0-windows` and can only run on a Windows runner. |
 
 Dependency direction: `MemoryTimeline` → `Core` → `Data`; `Sync` sits beside them
 (`Sync` → `Core`/`Data`/`SyncContracts`). Keep it that way; don't make
@@ -66,8 +69,10 @@ await using var ctx = await _contextFactory.CreateDbContextAsync();
 - Because repositories/services are **stateless over the factory**, they are registered
   **Singleton**. Follow that when adding a new repository or service.
 - Startup uses `SchemaUpgrader.EnsureSchemaAsync` (EnsureCreated + idempotent DDL
-  repairs for schema drift on older DBs) — a deliberate stopgap until real EF migrations
-  are regenerated. Don't swap it for raw `EnsureCreated`.
+  repairs for schema drift on older DBs). A baseline EF migration now exists under
+  `MemoryTimeline.Data/Migrations` (generated with `dotnet ef` through
+  `AppDbContextDesignTimeFactory`), but nothing calls `Migrate()` yet; keep
+  `SchemaUpgrader` as the runtime path and don't swap it for raw `EnsureCreated`.
 
 ### MVVM & UI conventions
 
@@ -100,8 +105,8 @@ await using var ctx = await _contextFactory.CreateDbContextAsync();
 
 | Capability | Implementation | Notes |
 |------------|----------------|-------|
-| **Speech-to-text** | **Local Whisper** via `WhisperSpeechToTextService` (Whisper.net, ggml `base` model) | File-based, fully offline after a one-time ~140 MB model download to `%LOCALAPPDATA%\MemoryTimeline\Models\`. The recorded WAV is transcribed on-device — **not** the old Windows `SpeechRecognizer`, which is mic-only and can't transcribe a file. |
-| **LLM** (extraction, Ask, narratives, recall wording) | **Anthropic Claude** (`AnthropicLlmService`) **or** any **OpenAI-compatible endpoint** (`OpenAiCompatibleLlmService` — Ollama, LM Studio, vLLM) | `RoutingLlmService` is the registered `ILlmService`; it re-reads `llm_provider` on **every call**, so switching providers applies live. `ILlmUsageTracker` counts per-session calls/tokens for the Settings UI. |
+| **Speech-to-text** | **Local Whisper** via `WhisperSpeechToTextService` (Whisper.net; the ggml model and language come from `whisper_model` / `whisper_language`, default `base` / `auto`) | File-based, fully offline after a one-time model download to `%LOCALAPPDATA%\MemoryTimeline\Models\` (~140 MB for `base`). Non-WAV captures (an iPhone `.m4a`) are normalized to 16 kHz mono WAV at ingestion through the `IAudioNormalizer` port (`WindowsAudioNormalizer`, MediaTranscoder) before transcription. Transcription happens on-device — **not** the old Windows `SpeechRecognizer`, which is mic-only and can't transcribe a file. |
+| **LLM** (extraction, Ask, narratives, recall wording) | **Anthropic Claude** (`AnthropicLlmService`) **or** any **OpenAI-compatible endpoint** (`OpenAiCompatibleLlmService` — Ollama, LM Studio, vLLM) | `RoutingLlmService` is the registered `ILlmService`; it re-reads `llm_provider` on **every call**, so switching providers applies live. `ILlmUsageTracker` counts per-session calls/tokens for the Settings UI. Transient network, timeout, 429 and 5xx failures are retried with bounded jittered back-off (`HttpRetryPolicy`, Polly). |
 | **Embeddings (RAG / Ask)** | **Local ONNX** `all-MiniLM-L6-v2` (`OnnxEmbeddingService`, 384-dim, CPU execution provider) **or** **OpenAI** (`OpenAIEmbeddingService`, `AddHttpClient`) | `RoutingEmbeddingService` routes on `embedding_provider` (seeded default: `local`), so Connections/Ask semantic retrieval works with **no API key**. A dimension guard (`EmbeddingDimensionMismatchException`) blocks mixing 384/1536-dim vectors; Settings offers a re-embed flow. Local model (~90 MB + vocab) downloads once to `%LOCALAPPDATA%\MemoryTimeline\Models\all-MiniLM-L6-v2\`. |
 | **Geocoding** | Optional **Nominatim** via `NominatimGeocodingService` (`AddHttpClient`) | **Opt-in and OFF by default** (`geocoding_enabled`). When off, location coordinates come only from photo EXIF or manual pin drops — no place name leaves the machine. |
 
@@ -164,11 +169,13 @@ Critical for an assistant — get this wrong and you'll suggest broken commands:
   earlier note here claimed .NET 10 was incompatible with the WindowsAppSDK PRI task —
   that is not the case; CI builds it green via VS msbuild.)
 - **CI is the validation gate.** `.github/workflows/windows-native-build.yml` builds
-  **Release | x64** on **windows-latest** (VS 2026 / MSBuild 18) via VS `msbuild` (`/t:Restore,Build`) and runs
-  tests best-effort. Compile success is the gate.
-- **No .NET SDK exists in the cloud dev sandbox.** You cannot build or run locally here —
-  rely on CI to validate. Make changes that are correct by inspection; don't assume you
-  can "just run it".
+  **Release | x64** on **windows-latest** (VS 2026 / MSBuild 18) via VS `msbuild` (`/t:Restore,Build`) and then
+  runs the built `MemoryTimeline.Tests.dll` with `dotnet vstest`. **Both gate the run**: a
+  compile error, a failing test, or a missing test assembly fails the workflow.
+- **The cloud dev sandbox cannot build or run the app.** Even with a .NET SDK present you
+  can only build the plain-`net10.0` projects (`dotnet build windows-native/src/MemoryTimeline.Core/MemoryTimeline.Core.csproj`
+  is a useful smoke check after touching Core/Data/Sync); the head is CI-only. Make head
+  changes that are correct by inspection; don't assume you can "just run it".
 
 For local dev on a real Windows machine: open the solution in VS 2026 and press F5, or
 `msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64`.
@@ -258,10 +265,13 @@ hash), `event_revisions` (append-only edit history), `recall_prompts` (guided-re
 questions, deduped forever).
 RAG: `event_embeddings` (with per-row `embedding_dimension`), `cross_references`.
 UX: `drafts`, `saved_searches`.
-System: `app_settings` — 33 seeded keys; **seed parity is three-way** (the
-`AppDbContext.SeedDefaultSettings` HasData seed, the `SchemaUpgrader` INSERT OR IGNORE
-backfill, and the `SettingKeys` constants must stay in sync — keep all three when adding
-a seeded setting).
+System: `app_settings`. **The rule:** a setting that has a seeded default must appear in
+all three places — the `AppDbContext.SeedDefaultSettings` HasData seed (fresh databases),
+the `SchemaUpgrader` INSERT OR IGNORE backfill (upgraded databases), and the `SettingKeys`
+constants. `SettingKeys` is the authoritative list of keys; its comments say which keys are
+deliberately **not** seeded (`last_toast_date`, `last_backup_at`, the sync tokens, ...),
+and the seed/backfill pair must agree with each other for everything else. When you add a
+seeded setting, change all three in the same commit.
 Identity: the unique name indexes on `people`/`tags`/`locations` are **COLLATE NOCASE**;
 `SchemaUpgrader` defensively merges pre-existing case-variant duplicates (backfilling the
 keeper's empty contact columns) before rebuilding each index.
@@ -277,9 +287,11 @@ DB file: `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
   provider (which can itself be a local OpenAI-compatible endpoint).
 - **Geocoding is opt-in and off by default**; when enabled, only the location's name is
   sent to Nominatim. Media/EXIF processing is entirely local.
-- **API keys today live in the `app_settings` table** (not Windows Credential Manager —
-  that's stale). **Encrypting keys at rest with DPAPI (`ProtectedData`) is a tracked
-  follow-up**, not yet implemented. Don't describe key storage as encrypted; don't log keys.
+- **API keys and sync tokens live in the `app_settings` table** (not Windows Credential
+  Manager — that's stale), **stored DPAPI-protected** through the `ISecretProtector` port
+  (`DpapiSecretProtector`: `ProtectedData`, CurrentUser scope, `dpapi:v1:` prefix; legacy
+  plaintext rows are re-written protected on first read). A backup restored under another
+  Windows account reads those secrets as empty and they must be re-entered. Don't log keys.
 - Use parameterized EF Core queries (default with LINQ) — no string-built SQL.
 
 ---
@@ -290,7 +302,7 @@ DB file: `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
 |-----|--------------|
 | [`windows-native/README.md`](./windows-native/README.md) | Windows Native overview, setup, tech stack. |
 | [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT.md) | Feature-by-feature audit + root-cause analysis of the bugs the rework fixed. |
-| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Deferred hardening items (DPAPI, EF migrations, etc.). |
+| [`windows-native/HARDENING-FOLLOWUPS.md`](./windows-native/HARDENING-FOLLOWUPS.md) | Hardening items and their status (DPAPI and the EF baseline are done; the migration switch-over and others remain). |
 | [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md) | Phase-level status and next steps. |
 | Root [`README.md`](./README.md) | Product overview + "Recent engineering work" summary. |
 
@@ -377,6 +389,6 @@ whether it should is an open question, not an oversight.
 
 ---
 
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-10-21
 **Primary target:** Windows Native (.NET 10 / WinUI 3) — `windows-native/`
 **In progress:** macOS (SwiftUI) — `macos-native/`

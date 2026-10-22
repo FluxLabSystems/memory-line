@@ -91,7 +91,82 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
     }
 
     /// <inheritdoc />
-    public async Task PublishEventAsync(string eventId, CancellationToken cancellationToken = default)
+    public Task PublishEventAsync(string eventId, CancellationToken cancellationToken = default) =>
+        PublishEventCoreAsync(eventId, force: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task PublishEraAsync(string eraId, CancellationToken cancellationToken = default) =>
+        PublishEraCoreAsync(eraId, force: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task PublishPersonAsync(string personId, CancellationToken cancellationToken = default) =>
+        PublishPersonCoreAsync(personId, force: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task PublishPendingEventAsync(string pendingEventId, CancellationToken cancellationToken = default) =>
+        PublishPendingEventCoreAsync(pendingEventId, force: false, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<TimelineProjectionBackfillResult> PublishAllAsync(
+        TimelineProjectionBackfillMode mode, CancellationToken cancellationToken = default)
+    {
+        var force = mode == TimelineProjectionBackfillMode.Everything;
+        int eras = 0, events = 0, people = 0, pendingEvents = 0, unchanged = 0;
+
+        // Ids first, entities later, one at a time through the same code the
+        // single-entity publishes use. The lists are id snapshots, so an
+        // archive edited mid-run simply publishes again on its own change.
+        // Order is the interface's prefix rule: eras before the events that
+        // name them, events before the people whose counts they explain, the
+        // review queue last.
+        foreach (var era in await _eraRepository.GetAllAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Count(await PublishEraCoreAsync(era.EraId, force, cancellationToken), ref eras, ref unchanged);
+        }
+
+        foreach (var evt in await _eventRepository.GetAllAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Count(await PublishEventCoreAsync(evt.EventId, force, cancellationToken), ref events, ref unchanged);
+        }
+
+        foreach (var person in await _personRepository.GetAllAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Count(await PublishPersonCoreAsync(person.PersonId, force, cancellationToken), ref people, ref unchanged);
+        }
+
+        // Only what is still awaiting review: an approved or rejected pending
+        // event was tombstoned when it was decided, and that tombstone is the
+        // last word on it.
+        foreach (var pending in await _pendingEventRepository.GetByStatusAsync(PendingStatus.PendingReview))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Count(await PublishPendingEventCoreAsync(pending.PendingId, force, cancellationToken),
+                ref pendingEvents, ref unchanged);
+        }
+
+        var result = new TimelineProjectionBackfillResult(eras, events, people, pendingEvents, unchanged);
+        _logger.LogInformation(
+            "Timeline projection backfill ({Mode}) queued {Published} projections ({Eras} eras, {Events} events, {People} people, {PendingEvents} pending events); {Unchanged} unchanged",
+            mode, result.Published, eras, events, people, pendingEvents, unchanged);
+        return result;
+
+        static void Count(bool published, ref int publishedCount, ref int unchangedCount)
+        {
+            if (published)
+            {
+                publishedCount++;
+            }
+            else
+            {
+                unchangedCount++;
+            }
+        }
+    }
+
+    private async Task<bool> PublishEventCoreAsync(string eventId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -102,15 +177,14 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         if (entity == null)
         {
             _logger.LogDebug("Event {EventId} no longer exists; nothing is projected", eventId);
-            return;
+            return false;
         }
 
         var payload = await BuildEventPayloadAsync(entity, cancellationToken);
-        await PublishUpsertAsync(SyncEntityType.Event, eventId, payload, payload.UpdatedAtUtc);
+        return await PublishUpsertAsync(SyncEntityType.Event, eventId, payload, payload.UpdatedAtUtc, force);
     }
 
-    /// <inheritdoc />
-    public async Task PublishEraAsync(string eraId, CancellationToken cancellationToken = default)
+    private async Task<bool> PublishEraCoreAsync(string eraId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eraId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -119,15 +193,14 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         if (entity == null)
         {
             _logger.LogDebug("Era {EraId} no longer exists; nothing is projected", eraId);
-            return;
+            return false;
         }
 
         var payload = BuildEraPayload(entity);
-        await PublishUpsertAsync(SyncEntityType.Era, eraId, payload, payload.UpdatedAtUtc);
+        return await PublishUpsertAsync(SyncEntityType.Era, eraId, payload, payload.UpdatedAtUtc, force);
     }
 
-    /// <inheritdoc />
-    public async Task PublishPersonAsync(string personId, CancellationToken cancellationToken = default)
+    private async Task<bool> PublishPersonCoreAsync(string personId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(personId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -136,15 +209,15 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         if (entity == null)
         {
             _logger.LogDebug("Person {PersonId} no longer exists; nothing is projected", personId);
-            return;
+            return false;
         }
 
         var payload = await BuildPersonPayloadAsync(entity);
-        await PublishUpsertAsync(SyncEntityType.Person, personId, payload, payload.UpdatedAtUtc);
+        return await PublishUpsertAsync(SyncEntityType.Person, personId, payload, payload.UpdatedAtUtc, force);
     }
 
-    /// <inheritdoc />
-    public async Task PublishPendingEventAsync(string pendingEventId, CancellationToken cancellationToken = default)
+    private async Task<bool> PublishPendingEventCoreAsync(
+        string pendingEventId, bool force, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pendingEventId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -154,11 +227,12 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         {
             _logger.LogDebug(
                 "Pending event {PendingEventId} no longer exists; nothing is projected", pendingEventId);
-            return;
+            return false;
         }
 
         var payload = BuildPendingEventPayload(entity);
-        await PublishUpsertAsync(SyncEntityType.PendingEvent, pendingEventId, payload, payload.UpdatedAtUtc);
+        return await PublishUpsertAsync(
+            SyncEntityType.PendingEvent, pendingEventId, payload, payload.UpdatedAtUtc, force);
     }
 
     /// <inheritdoc />
@@ -444,21 +518,26 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
 
     /// <summary>
     /// Writes one upsert row, unless the projection is indistinguishable from
-    /// the last one published for the same entity.
+    /// the last one published for the same entity. With <paramref name="force"/>
+    /// (a backfill for a new registration or a restored archive) only a row
+    /// that is still UNDELIVERED counts as "already published": a delivered
+    /// row describes a server or an archive state that no longer applies, so
+    /// it is sent again. Returns whether a row was written.
     /// </summary>
-    private async Task PublishUpsertAsync<TPayload>(
-        string entityType, string entityId, TPayload payload, DateTime updatedAtUtc)
+    private async Task<bool> PublishUpsertAsync<TPayload>(
+        string entityType, string entityId, TPayload payload, DateTime updatedAtUtc, bool force = false)
     {
         var payloadJson = JsonSerializer.Serialize(payload, SyncJson.Options);
 
         var latest = await _outboxRepository.GetLatestForEntityAsync(entityType, entityId);
         if (latest != null &&
             string.Equals(latest.Operation, SyncOutboxOperation.Upsert, StringComparison.OrdinalIgnoreCase) &&
+            (!force || latest.DeliveredAt == null) &&
             IsUnchanged(latest.PayloadJson, payloadJson))
         {
             _logger.LogDebug(
                 "{EntityType} {EntityId} projection is unchanged; not republishing", entityType, entityId);
-            return;
+            return false;
         }
 
         await _outboxRepository.AddAsync(new SyncOutbox
@@ -471,6 +550,7 @@ public class TimelineProjectionPublisher : ITimelineProjectionPublisher
         });
 
         _logger.LogInformation("Published {EntityType} projection for {EntityId}", entityType, entityId);
+        return true;
     }
 
     /// <summary>

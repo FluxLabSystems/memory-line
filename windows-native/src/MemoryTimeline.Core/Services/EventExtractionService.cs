@@ -412,21 +412,29 @@ public class EventExtractionService : IEventExtractionService
                 await PublishCaptureStatusAsync(pendingEvent.QueueId ?? string.Empty);
             }
 
-            // Kick off embedding generation in the background; it must never
-            // affect the approve flow and logs its own errors.
+            // Kick off embedding generation in the background, unless the user
+            // turned automatic embedding off (auto_generate_embeddings); it must
+            // never affect the approve flow and logs its own errors.
             var approvedEventId = realEvent.EventId;
-            _ = Task.Run(async () =>
+            if (await _eventService.IsAutoEmbeddingEnabledAsync())
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    await _eventService.GenerateEmbeddingAsync(approvedEventId);
-                }
-                catch (Exception embedEx)
-                {
-                    _logger.LogError(embedEx,
-                        "Background embedding generation failed for approved event {EventId}", approvedEventId);
-                }
-            });
+                    try
+                    {
+                        await _eventService.GenerateEmbeddingAsync(approvedEventId);
+                    }
+                    catch (Exception embedEx)
+                    {
+                        _logger.LogError(embedEx,
+                            "Background embedding generation failed for approved event {EventId}", approvedEventId);
+                    }
+                });
+            }
+            else
+            {
+                _logger.LogDebug("Automatic embedding is disabled; approved event {EventId} is not embedded", approvedEventId);
+            }
 
             return realEvent;
         }

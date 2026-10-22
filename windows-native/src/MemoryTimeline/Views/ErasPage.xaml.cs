@@ -33,6 +33,13 @@ public sealed partial class ErasPage : Page
     private Milestone? _milestoneToDelete;
 
     /// <summary>
+    /// Milestone under the pointer when its context flyout opened (set by
+    /// RightTapped, which fires for right-click and press-and-hold before the
+    /// ContextFlyout shows); consumed by the Edit/Delete flyout items.
+    /// </summary>
+    private Milestone? _contextMilestone;
+
+    /// <summary>
     /// Era draft id received via the <c>"draft:&lt;draftId&gt;"</c> navigation
     /// parameter; consumed (and cleared) once the page has loaded its data.
     /// </summary>
@@ -96,6 +103,7 @@ public sealed partial class ErasPage : Page
     private void PrepareEraDialogFromViewModel()
     {
         EraDialog.Title = "Resume Era Draft";
+        EraDialogErrorBar.IsOpen = false;
         EraNameBox.Text = ViewModel.EditName;
         EraSubtitleBox.Text = ViewModel.EditSubtitle;
         EraStartDatePicker.Date = new DateTimeOffset(ViewModel.EditStartDate);
@@ -215,6 +223,7 @@ public sealed partial class ErasPage : Page
         if (string.IsNullOrWhiteSpace(EraNameBox.Text))
         {
             args.Cancel = true;
+            ShowEraDialogError("Era name is required.");
             return;
         }
 
@@ -223,12 +232,25 @@ public sealed partial class ErasPage : Page
         var deferral = args.GetDeferral();
         try
         {
-            await ViewModel.SaveEraAsync();
+            // A failed save keeps the dialog open with the reason inline; the
+            // dialog used to close over a save that never happened.
+            var saved = await ViewModel.TrySaveEraAsync();
+            if (!saved)
+            {
+                args.Cancel = true;
+                ShowEraDialogError(ViewModel.StatusMessage);
+            }
         }
         finally
         {
             deferral.Complete();
         }
+    }
+
+    private void ShowEraDialogError(string? message)
+    {
+        EraDialogErrorBar.Message = string.IsNullOrWhiteSpace(message) ? "The era could not be saved." : message;
+        EraDialogErrorBar.IsOpen = true;
     }
 
     /// <summary>
@@ -300,6 +322,7 @@ public sealed partial class ErasPage : Page
     private void PrepareEraDialogForAdd()
     {
         EraDialog.Title = "Add Era";
+        EraDialogErrorBar.IsOpen = false;
         EraNameBox.Text = string.Empty;
         EraSubtitleBox.Text = string.Empty;
         EraStartDatePicker.Date = DateTimeOffset.Now;
@@ -326,6 +349,7 @@ public sealed partial class ErasPage : Page
     private void PrepareEraDialogForEdit(Era era)
     {
         EraDialog.Title = "Edit Era";
+        EraDialogErrorBar.IsOpen = false;
         EraNameBox.Text = era.Name;
         EraSubtitleBox.Text = era.Subtitle ?? string.Empty;
         EraStartDatePicker.Date = new DateTimeOffset(era.StartDate);
@@ -425,6 +449,60 @@ public sealed partial class ErasPage : Page
     }
 
     /// <summary>
+    /// Captures the marker under the pointer for the context flyout (fires
+    /// for right-click and for press-and-hold on touch/pen).
+    /// </summary>
+    private void MilestoneMarker_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is MilestoneMarkerDto marker)
+        {
+            _contextMilestone = ViewModel.Milestones.FirstOrDefault(m => m.MilestoneId == marker.MilestoneId);
+        }
+    }
+
+    /// <summary>
+    /// Double-click edits the milestone (mirrors EraBar_DoubleTapped).
+    /// </summary>
+    private async void MilestoneMarker_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is MilestoneMarkerDto marker)
+        {
+            var milestone = ViewModel.Milestones.FirstOrDefault(m => m.MilestoneId == marker.MilestoneId);
+            if (milestone != null)
+            {
+                await OpenEditMilestoneDialogAsync(milestone);
+            }
+        }
+    }
+
+    private async void EditMilestoneMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_contextMilestone != null)
+        {
+            await OpenEditMilestoneDialogAsync(_contextMilestone);
+        }
+    }
+
+    private async void DeleteMilestoneMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_contextMilestone != null)
+        {
+            _milestoneToDelete = _contextMilestone;
+            await DeleteMilestoneConfirmDialog.ShowAsync();
+        }
+    }
+
+    /// <summary>
+    /// Opens the milestone dialog in edit mode for the given milestone.
+    /// </summary>
+    private async Task OpenEditMilestoneDialogAsync(Milestone milestone)
+    {
+        ViewModel.PrepareEditMilestone(milestone);
+        PrepareMilestoneDialogForEdit(milestone);
+        await MilestoneDialog.ShowAsync();
+    }
+
+    /// <summary>
     /// Saves the milestone when the dialog's primary button is clicked.
     /// </summary>
     private async void MilestoneDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -432,6 +510,7 @@ public sealed partial class ErasPage : Page
         if (string.IsNullOrWhiteSpace(MilestoneNameBox.Text))
         {
             args.Cancel = true;
+            ShowMilestoneDialogError("Milestone name is required.");
             return;
         }
 
@@ -458,12 +537,24 @@ public sealed partial class ErasPage : Page
         var deferral = args.GetDeferral();
         try
         {
-            await ViewModel.SaveMilestoneAsync();
+            // Keep the dialog open with the reason inline when the save fails.
+            var saved = await ViewModel.TrySaveMilestoneAsync();
+            if (!saved)
+            {
+                args.Cancel = true;
+                ShowMilestoneDialogError(ViewModel.StatusMessage);
+            }
         }
         finally
         {
             deferral.Complete();
         }
+    }
+
+    private void ShowMilestoneDialogError(string? message)
+    {
+        MilestoneDialogErrorBar.Message = string.IsNullOrWhiteSpace(message) ? "The milestone could not be saved." : message;
+        MilestoneDialogErrorBar.IsOpen = true;
     }
 
     /// <summary>
@@ -492,11 +583,43 @@ public sealed partial class ErasPage : Page
     private void PrepareMilestoneDialogForAdd()
     {
         MilestoneDialog.Title = "Add Milestone";
+        MilestoneDialogErrorBar.IsOpen = false;
         MilestoneNameBox.Text = string.Empty;
         MilestoneDatePicker.Date = DateTimeOffset.Now;
         MilestoneTypeComboBox.SelectedIndex = 0;
         MilestoneLinkedEraComboBox.SelectedItem = null;
         MilestoneDescriptionBox.Text = string.Empty;
+    }
+
+    /// <summary>
+    /// Prepares the dialog for editing an existing milestone (the ViewModel's
+    /// PrepareEditMilestone has already loaded the edit fields; the controls
+    /// are filled from the entity the same way PrepareEraDialogForEdit does).
+    /// </summary>
+    private void PrepareMilestoneDialogForEdit(Milestone milestone)
+    {
+        MilestoneDialog.Title = "Edit Milestone";
+        MilestoneDialogErrorBar.IsOpen = false;
+        MilestoneNameBox.Text = milestone.Name;
+        MilestoneDatePicker.Date = new DateTimeOffset(milestone.Date);
+        MilestoneDescriptionBox.Text = milestone.Description ?? string.Empty;
+
+        // Type: match the ComboBoxItem whose Tag is the enum name
+        // (MilestoneDialog_PrimaryButtonClick parses it back the same way).
+        var typeTag = milestone.Type.ToString();
+        MilestoneTypeComboBox.SelectedIndex = 0;
+        for (var i = 0; i < MilestoneTypeComboBox.Items.Count; i++)
+        {
+            if (MilestoneTypeComboBox.Items[i] is ComboBoxItem item && item.Tag is string tag && tag == typeTag)
+            {
+                MilestoneTypeComboBox.SelectedIndex = i;
+                break;
+            }
+        }
+
+        MilestoneLinkedEraComboBox.SelectedItem = milestone.LinkedEraId == null
+            ? null
+            : ViewModel.Eras.FirstOrDefault(era => era.EraId == milestone.LinkedEraId);
     }
 
     #endregion

@@ -1,8 +1,10 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using MemoryTimeline.Core.DTOs;
+using MemoryTimeline.Core.Models;
 using MemoryTimeline.Core.Services;
 using MemoryTimeline.Data.Models;
 using MemoryTimeline.Services;
@@ -17,9 +19,11 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 {
     private readonly IQueueService _queueService;
     private readonly ICaptureIngestionService _captureIngestionService;
+    private readonly IAudioImportService _audioImportService;
     private readonly IAudioRecordingService _recordingService;
     private readonly IAudioPlaybackService _playbackService;
     private readonly IRecallPromptService _recallPromptService;
+    private readonly ISettingsService _settingsService;
     private readonly ILogger<QueueViewModel> _logger;
 
     /// <summary>
@@ -61,6 +65,14 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private double _recordingDuration;
 
+    /// <summary>
+    /// Live microphone level, 0..100, for the Queue page's meter. Fed by
+    /// IAudioRecordingService.AudioLevelChanged (~20 Hz, dB-scaled peak) while
+    /// recording; reset to 0 whenever capturing stops or pauses.
+    /// </summary>
+    [ObservableProperty]
+    private double _audioLevel;
+
     [ObservableProperty]
     private string _statusText = "Ready";
 
@@ -75,6 +87,20 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private int _failedCount;
+
+    /// <summary>True while "Import audio" is copying/queuing files; disables the button.</summary>
+    [ObservableProperty]
+    private bool _isImporting;
+
+    /// <summary>
+    /// File-picker filter for "Import audio". The Whisper engine needs 16 kHz
+    /// 16-bit mono WAV; non-WAV input is normalized by the ingestion pipeline
+    /// (IAudioNormalizer) before transcription, so compressed formats are
+    /// accepted here. Anything the import service still rejects comes back as
+    /// a per-file "Unsupported format" entry in the outcome.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ImportableAudioExtensions =
+        new[] { ".wav", ".m4a", ".mp3", ".aac", ".ogg", ".flac" };
 
     // Computed properties for UI bindings
     public bool CanStartRecording => !IsRecording && !IsPaused;
@@ -122,16 +148,20 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     public QueueViewModel(
         IQueueService queueService,
         ICaptureIngestionService captureIngestionService,
+        IAudioImportService audioImportService,
         IAudioRecordingService recordingService,
         IAudioPlaybackService playbackService,
         IRecallPromptService recallPromptService,
+        ISettingsService settingsService,
         ILogger<QueueViewModel> logger)
     {
         _queueService = queueService;
         _captureIngestionService = captureIngestionService;
+        _audioImportService = audioImportService;
         _recordingService = recordingService;
         _playbackService = playbackService;
         _recallPromptService = recallPromptService;
+        _settingsService = settingsService;
         _logger = logger;
 
         // Capture the UI dispatcher while we are still on the UI thread.
@@ -143,6 +173,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         _queueService.QueueItemStatusChanged += OnQueueItemStatusChanged;
         _queueService.ProcessingProgressChanged += OnProcessingProgressChanged;
         _recordingService.RecordingStateChanged += OnRecordingStateChanged;
+        _recordingService.AudioLevelChanged += OnAudioLevelChanged;
         _playbackService.PlaybackStateChanged += OnPlaybackStateChanged;
         _playbackService.PositionChanged += OnPlaybackPositionChanged;
     }
@@ -229,17 +260,38 @@ public partial class QueueViewModel : ObservableObject, IDisposable
     {
         try
         {
+            // The configured microphone (Settings -> Audio Recording); null =
+            // system default. The format is fixed at what Whisper consumes.
+            var deviceId = await ReadConfiguredInputDeviceIdAsync();
             var settings = new AudioRecordingSettings
             {
                 SampleRate = 16000,
                 BitsPerSample = 16,
-                Channels = 1
+                Channels = 1,
+                DeviceId = deviceId
             };
 
-            await _recordingService.StartRecordingAsync(settings);
+            var usedFallbackDevice = false;
+            try
+            {
+                await _recordingService.StartRecordingAsync(settings);
+            }
+            catch (Exception ex) when (deviceId != null)
+            {
+                // The saved device is gone or busy (StartRecordingAsync cleaned
+                // up and stayed Idle): retry once on the system default rather
+                // than refusing to record at all, and say so.
+                _logger.LogWarning(ex, "Configured microphone {DeviceId} could not start; retrying with the system default", deviceId);
+                settings.DeviceId = null;
+                await _recordingService.StartRecordingAsync(settings);
+                usedFallbackDevice = true;
+            }
+
             IsRecording = true;
             IsPaused = false;
-            StatusText = "Recording...";
+            StatusText = usedFallbackDevice
+                ? "Recording... (the microphone chosen in Settings is unavailable; using the system default)"
+                : "Recording...";
 
             StartRecordingTimer();
 
@@ -312,6 +364,25 @@ public partial class QueueViewModel : ObservableObject, IDisposable
             // CancelRecording) so the NEXT successful plain recording is not
             // stamped as this prompt's answer.
             _answeringRecallPromptId = null;
+        }
+    }
+
+    /// <summary>
+    /// Reads audio_input_device_id; empty/whitespace (the seeded default and
+    /// the "System default" picker entry) means null = let MediaCapture pick
+    /// the Windows default input device.
+    /// </summary>
+    private async Task<string?> ReadConfiguredInputDeviceIdAsync()
+    {
+        try
+        {
+            var stored = await _settingsService.GetSettingAsync<string>(SettingKeys.AudioInputDeviceId, string.Empty);
+            return string.IsNullOrWhiteSpace(stored) ? null : stored.Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the configured microphone; using the system default");
+            return null;
         }
     }
 
@@ -418,6 +489,10 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 
             OnPropertyChanged(nameof(IsQueueEmpty));
             await UpdateStatusCountsAsync();
+
+            // Every queue mutation on this page ends in a refresh, so this is
+            // the one place the shell's Queue badge needs to hear about it.
+            WeakReferenceMessenger.Default.Send(new QueueChangedMessage());
         }
         catch (Exception ex)
         {
@@ -563,6 +638,93 @@ public partial class QueueViewModel : ObservableObject, IDisposable
             StatusText = "Error adding text to queue";
             return $"Could not add text to the queue: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// "Import audio…": routes each picked file through
+    /// <see cref="IAudioImportService.ImportFilesAsync"/>, which copies it into
+    /// the app's recordings folder and enqueues it via ICaptureIngestionService
+    /// (same capture/artifact identity and content-hash dedupe as an in-app
+    /// recording). Files enter the queue as pending; "Process All" transcribes
+    /// and extracts them with the queue's normal retry/config-error handling.
+    /// Returns a summary the page shows in its InfoBar, with one line per
+    /// skipped or failed file; never throws.
+    /// </summary>
+    public async Task<AudioImportOutcome> ImportAudioFilesAsync(IReadOnlyList<string> filePaths)
+    {
+        if (filePaths == null || filePaths.Count == 0)
+        {
+            return new AudioImportOutcome("No files selected", "Choose one or more audio files to import.", 0, 0);
+        }
+
+        if (IsImporting)
+        {
+            return new AudioImportOutcome("Import already running", "Wait for the current import to finish.", 0, 0);
+        }
+
+        try
+        {
+            IsImporting = true;
+            StatusText = filePaths.Count == 1
+                ? "Importing 1 audio file..."
+                : $"Importing {filePaths.Count} audio files...";
+
+            var options = new AudioImportOptions
+            {
+                // Queue as pending (like a stopped recording) instead of
+                // transcribing inline: the queue owns processing order, retries,
+                // and the non-retryable configuration-error path.
+                AutoProcess = false,
+                SupportedFormats = ImportableAudioExtensions.ToArray()
+            };
+
+            var result = await _audioImportService.ImportFilesAsync(filePaths, options);
+            await RefreshQueueAsync();
+
+            var outcome = BuildImportOutcome(result);
+            StatusText = outcome.Title;
+            _logger.LogInformation("Audio import finished: {Imported} imported, {Problems} skipped/failed",
+                outcome.ImportedCount, outcome.ProblemCount);
+            return outcome;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error importing audio files");
+            StatusText = "Error importing audio";
+            return new AudioImportOutcome("Import failed", ex.Message, 0, filePaths.Count);
+        }
+        finally
+        {
+            IsImporting = false;
+        }
+    }
+
+    /// <summary>
+    /// Pure summary of an import batch for the InfoBar: imported count in the
+    /// title, one "file: reason" line per skipped or failed file in the message.
+    /// </summary>
+    public static AudioImportOutcome BuildImportOutcome(AudioImportResult result)
+    {
+        var imported = result.SuccessfulImports;
+        var problems = result.Items
+            .Where(i => i.Status == AudioImportStatus.Failed || i.Status == AudioImportStatus.Skipped)
+            .Select(i => $"{i.FileName}: {i.ErrorMessage ?? i.Status.ToString().ToLowerInvariant()}")
+            .ToList();
+
+        var importedText = imported == 1
+            ? "1 audio file added to the queue"
+            : $"{imported} audio files added to the queue";
+
+        if (problems.Count == 0)
+        {
+            return new AudioImportOutcome(importedText, "Press Process All to transcribe and extract events.", imported, 0);
+        }
+
+        var title = imported == 0
+            ? (problems.Count == 1 ? "The audio file was not imported" : "No audio files were imported")
+            : $"{importedText}; {problems.Count} skipped or failed";
+
+        return new AudioImportOutcome(title, string.Join(Environment.NewLine, problems), imported, problems.Count);
     }
 
     #endregion
@@ -859,6 +1021,12 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsRecordingActive));
         OnPropertyChanged(nameof(IsIdle));
 
+        if (!IsRecording)
+        {
+            // No frames arrive while paused/stopped; do not leave a stale bar.
+            AudioLevel = 0;
+        }
+
         StopRecordingCommand.NotifyCanExecuteChanged();
         PauseRecordingCommand.NotifyCanExecuteChanged();
         ResumeRecordingCommand.NotifyCanExecuteChanged();
@@ -931,6 +1099,20 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         });
     }
 
+    private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)
+    {
+        // Raised on a MediaCapture worker thread at ~20 Hz; marshal before
+        // touching the bound property.
+        var level = Math.Clamp(e.Level, 0.0, 1.0) * 100.0;
+        RunOnUi(() =>
+        {
+            if (IsRecording)
+            {
+                AudioLevel = level;
+            }
+        });
+    }
+
     private void OnProcessingProgressChanged(object? sender, QueueProcessingProgressEventArgs e)
     {
         // Raised from the queue's background processing; marshal before touching
@@ -984,6 +1166,7 @@ public partial class QueueViewModel : ObservableObject, IDisposable
         _queueService.QueueItemStatusChanged -= OnQueueItemStatusChanged;
         _queueService.ProcessingProgressChanged -= OnProcessingProgressChanged;
         _recordingService.RecordingStateChanged -= OnRecordingStateChanged;
+        _recordingService.AudioLevelChanged -= OnAudioLevelChanged;
         _playbackService.PlaybackStateChanged -= OnPlaybackStateChanged;
         _playbackService.PositionChanged -= OnPlaybackPositionChanged;
 
@@ -992,4 +1175,17 @@ public partial class QueueViewModel : ObservableObject, IDisposable
 
         GC.SuppressFinalize(this);
     }
+}
+
+/// <summary>
+/// Outcome of an "Import audio" batch, shaped for the Queue page's InfoBar.
+/// </summary>
+/// <param name="Title">One-line summary (also shown in the status bar).</param>
+/// <param name="Message">Per-file skip/failure reasons, or the next step when everything imported.</param>
+/// <param name="ImportedCount">Files that entered the queue.</param>
+/// <param name="ProblemCount">Files skipped (unsupported, duplicate, too large) or failed.</param>
+public sealed record AudioImportOutcome(string Title, string Message, int ImportedCount, int ProblemCount)
+{
+    /// <summary>True when at least one file was skipped or failed.</summary>
+    public bool HasProblems => ProblemCount > 0;
 }

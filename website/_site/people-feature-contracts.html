@@ -135,7 +135,7 @@
   <p class="doc-lede">The cross-agent interface contract for the People hub: file ownership map, entity columns, DTOs, service signatures, extraction changes, UI conventions, and DI registrations.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>2,718</b> words</span>
+    <span class="doc-meta-item"><b>2,733</b> words</span>
     <span class="doc-meta-item"><b>12</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/people-feature-contracts.md" target="_blank" rel="noopener noreferrer">
       docs/design/people-feature-contracts.md ↗
@@ -498,8 +498,9 @@ stays the flat name list.</li>
 <li>Constructor gains <code>IPersonService personService</code> (registered by integrator).</li>
 <li><code>BuildExtractionContextAsync</code>: populate <code>context.KnownPeople</code> with up to 100
 person display names via <code>IPersonService.GetAllPersonsAsync(PersonSortOption.MostEvents)</code>
-(best-effort; keep the existing catch-and-continue shape). Resolve the
-existing TODO.</li>
+(best-effort; keep the existing catch-and-continue shape). <strong>Done</strong> — the
+TODO that used to sit here is resolved; <code>EventExtractionService</code> now calls
+<code>GetAllPersonsAsync(PersonSortOption.MostEvents)</code> for the known-people list.</li>
 <li><code>GetPersonSuggestionsAsync</code>: deserialize <code>ExtractedData</code>; source names from
 <code>PeopleDetails</code> (fallback <code>People</code>); for each distinct name run
 <code>IPersonService.FindBestMatchAsync</code>:<ul>
@@ -658,7 +659,7 @@ updates (never <code>Update()</code> on detached graphs with junctions).</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

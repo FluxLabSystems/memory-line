@@ -78,7 +78,7 @@ public class AdvancedSearchService : IAdvancedSearchService
             results.TotalCount = await query.CountAsync();
 
             // Apply sorting
-            query = ApplySorting(query, filter.SortBy);
+            query = ApplySorting(query, filter);
 
             // Apply pagination
             var skip = (filter.PageNumber - 1) * filter.PageSize;
@@ -105,18 +105,32 @@ public class AdvancedSearchService : IAdvancedSearchService
         return results;
     }
 
+    /// <summary>
+    /// The ONE search-term predicate, shared by the result query and every
+    /// facet query. Title, description, transcript and the free-text location
+    /// all match; the facets used to search only title and description, so a
+    /// term that matched a transcript alone counted events in the list that no
+    /// facet acknowledged, and the two disagreed on screen.
+    /// </summary>
+    private static IQueryable<Event> ApplySearchTerm(IQueryable<Event> query, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return query;
+        }
+
+        var term = searchTerm.ToLower();
+        return query.Where(e =>
+            e.Title.ToLower().Contains(term) ||
+            (e.Description != null && e.Description.ToLower().Contains(term)) ||
+            (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term)) ||
+            (e.Location != null && e.Location.ToLower().Contains(term)));
+    }
+
     private IQueryable<Event> ApplyFilters(IQueryable<Event> query, SearchFilter filter)
     {
         // Text search
-        if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
-        {
-            var term = filter.SearchTerm.ToLower();
-            query = query.Where(e =>
-                e.Title.ToLower().Contains(term) ||
-                (e.Description != null && e.Description.ToLower().Contains(term)) ||
-                (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term)) ||
-                (e.Location != null && e.Location.ToLower().Contains(term)));
-        }
+        query = ApplySearchTerm(query, filter.SearchTerm);
 
         // Category filter
         if (filter.Categories.Any())
@@ -185,9 +199,9 @@ public class AdvancedSearchService : IAdvancedSearchService
         return query;
     }
 
-    private IQueryable<Event> ApplySorting(IQueryable<Event> query, string sortBy)
+    private static IQueryable<Event> ApplySorting(IQueryable<Event> query, SearchFilter filter)
     {
-        return sortBy switch
+        return filter.SortBy switch
         {
             SearchSortOptions.DateDesc => query.OrderByDescending(e => e.StartDate),
             SearchSortOptions.DateAsc => query.OrderBy(e => e.StartDate),
@@ -195,9 +209,36 @@ public class AdvancedSearchService : IAdvancedSearchService
             SearchSortOptions.TitleDesc => query.OrderByDescending(e => e.Title),
             SearchSortOptions.CreatedDesc => query.OrderByDescending(e => e.CreatedAt),
             SearchSortOptions.CreatedAsc => query.OrderBy(e => e.CreatedAt),
-            SearchSortOptions.Relevance => query.OrderByDescending(e => e.StartDate), // Default for now
+            SearchSortOptions.Relevance => ApplyRelevanceOrder(query, filter.SearchTerm),
             _ => query.OrderByDescending(e => e.StartDate)
         };
+    }
+
+    /// <summary>
+    /// Relevance: where the term matches, then recency. An exact title match
+    /// outranks a title that merely contains the term, which outranks a match
+    /// in the description or the free-text location, which outranks one buried
+    /// in the transcript; ties fall back to the newest first. Without a term
+    /// there is nothing to be relevant to, and the order is simply by date.
+    /// The score is a sum of conditionals, which EF translates to CASE
+    /// expressions and evaluates in the database.
+    /// </summary>
+    private static IQueryable<Event> ApplyRelevanceOrder(IQueryable<Event> query, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return query.OrderByDescending(e => e.StartDate);
+        }
+
+        var term = searchTerm.ToLower();
+        return query
+            .OrderByDescending(e =>
+                (e.Title.ToLower() == term ? 8 : 0)
+                + (e.Title.ToLower().Contains(term) ? 4 : 0)
+                + (e.Description != null && e.Description.ToLower().Contains(term) ? 2 : 0)
+                + (e.Location != null && e.Location.ToLower().Contains(term) ? 2 : 0)
+                + (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term) ? 1 : 0))
+            .ThenByDescending(e => e.StartDate);
     }
 
     public async Task<SearchFacets> GetFacetsAsync(SearchFilter? baseFilter = null)
@@ -208,16 +249,12 @@ public class AdvancedSearchService : IAdvancedSearchService
 
         var baseQuery = dbContext.Events.AsNoTracking().AsQueryable();
 
-        // Apply base filter if provided (excluding the facet being calculated)
+        // Apply base filter if provided (excluding the facet being calculated).
+        // The search term uses the SAME predicate as the result list, so every
+        // facet counts exactly the events the list shows.
         if (baseFilter != null)
         {
-            if (!string.IsNullOrWhiteSpace(baseFilter.SearchTerm))
-            {
-                var term = baseFilter.SearchTerm.ToLower();
-                baseQuery = baseQuery.Where(e =>
-                    e.Title.ToLower().Contains(term) ||
-                    (e.Description != null && e.Description.ToLower().Contains(term)));
-            }
+            baseQuery = ApplySearchTerm(baseQuery, baseFilter.SearchTerm);
             if (baseFilter.StartDate.HasValue)
                 baseQuery = baseQuery.Where(e => e.StartDate >= baseFilter.StartDate.Value);
             if (baseFilter.EndDate.HasValue)

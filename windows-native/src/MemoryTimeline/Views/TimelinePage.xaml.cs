@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using MemoryTimeline.Core.Services;
 using MemoryTimeline.ViewModels;
 
 namespace MemoryTimeline.Views;
@@ -11,6 +10,12 @@ namespace MemoryTimeline.Views;
 /// </summary>
 public sealed partial class TimelinePage : Page
 {
+    /// <summary>
+    /// Navigation parameter sent by the Jump List "New Event" quick action
+    /// (App.HandleActivationAction): opens the blank add-event dialog.
+    /// </summary>
+    public const string NewEventParameter = "new-event";
+
     public TimelineViewModel ViewModel { get; }
 
     public TimelinePage()
@@ -38,35 +43,32 @@ public sealed partial class TimelinePage : Page
             var draftId = parameter.Substring("draft:".Length).Trim();
             if (!string.IsNullOrEmpty(draftId))
             {
-                OpenEventDraftWhenReady(draftId);
+                OpenEventDialogWhenReady(() => TimelineControl.ShowEventDialogFromDraftAsync(draftId));
             }
             return;
         }
 
-        // "View on timeline" navigations pass an event id; move the viewport to it.
-        var eventId = parameter;
-        try
+        // Jump List "New Event": open the blank add-event dialog dated today.
+        if (string.Equals(parameter, NewEventParameter, StringComparison.OrdinalIgnoreCase))
         {
-            var eventService = App.Current.Services.GetRequiredService<IEventService>();
-            var targetEvent = await eventService.GetEventByIdAsync(eventId);
-            if (targetEvent != null && ViewModel.GoToDateCommand.CanExecute(targetEvent.StartDate))
-            {
-                ViewModel.GoToDateCommand.Execute(targetEvent.StartDate);
-            }
+            OpenEventDialogWhenReady(() => TimelineControl.ShowNewEventDialogAsync());
+            return;
         }
-        catch
-        {
-            // Navigation focus is best-effort; the timeline still renders normally.
-        }
+
+        // "View on timeline" navigations (Search, Ask, Connections, Map, Home,
+        // People, toast and Jump List "event:" deep links) pass an event id;
+        // the ViewModel moves the viewport to it, reports a missing event in
+        // its status line, and announces the event as opened (Jump List).
+        await ViewModel.NavigateToEventAsync(parameter);
     }
 
     /// <summary>
-    /// Opens the create-event dialog prefilled from the given draft once the
-    /// timeline control is loaded (a ContentDialog needs a live XamlRoot), then
-    /// defers the actual show through the DispatcherQueue so the layout pass
-    /// has completed.
+    /// Runs a dialog-opening action once the timeline control is loaded (a
+    /// ContentDialog needs a live XamlRoot), deferring the actual show through
+    /// the DispatcherQueue so the layout pass has completed. Used for draft
+    /// resume and the Jump List "New Event" action.
     /// </summary>
-    private void OpenEventDraftWhenReady(string draftId)
+    private void OpenEventDialogWhenReady(Func<Task> showDialogAsync)
     {
         void ShowDeferred()
         {
@@ -74,11 +76,13 @@ public sealed partial class TimelinePage : Page
             {
                 try
                 {
-                    await TimelineControl.ShowEventDialogFromDraftAsync(draftId);
+                    await showDialogAsync();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Draft resume is best-effort; the timeline still renders normally.
+                    // Opening the dialog is best-effort; the timeline still
+                    // renders normally. Say so instead of staying silent.
+                    ViewModel.StatusText = $"Could not open the event dialog: {ex.Message}";
                 }
             });
         }

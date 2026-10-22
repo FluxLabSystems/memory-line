@@ -9,7 +9,7 @@ companion, and the sync service. Source of truth:
 
 | File | Contract |
 |------|----------|
-| [`openapi/memory-line-sync-v1.yaml`](./openapi/memory-line-sync-v1.yaml) | Memory Line Sync API v1 (OpenAPI 3.0.3): devices, captures, artifacts, sync push/pull/ack, assistant, trips, detours. |
+| [`openapi/memory-line-sync-v1.yaml`](./openapi/memory-line-sync-v1.yaml) | Memory Line Sync API v1 (OpenAPI 3.0.3): devices, captures, artifacts, sync push/pull/ack (including the timeline projection payloads), assistant, trips, detours. |
 | [`json-schema/capture-envelope.v1.json`](./json-schema/capture-envelope.v1.json) | JSON Schema (draft 2020-12) for the remote capture ingestion envelope — the payload handed to Windows ingestion (`RemoteCaptureEnvelope` in `MemoryTimeline.Core`). |
 | [`json-schema/capture-status-payload.v1.json`](./json-schema/capture-status-payload.v1.json) | JSON Schema (draft 2020-12) for the `capture_status` change payload — the Windows-authored processing status the phone reads (`CaptureStatusChangePayload`). |
 | [`json-schema/assistant-turn-payload.v1.json`](./json-schema/assistant-turn-payload.v1.json) | JSON Schema (draft 2020-12) for the `assistant_turn` change payload — one voice-assistant turn as it rides the feed between the asking device and its responder (`AssistantTurnChangePayload`). |
@@ -36,13 +36,83 @@ and are used **verbatim** by both the sync service
 (`windows-native/src/MemoryTimeline.Sync`), serialized camelCase via
 System.Text.Json web defaults. The OpenAPI file **mirrors those shipped DTO
 wire shapes**, so a client generated from the YAML (e.g. Swift for the iOS
-companion) interoperates with the shipped service. A contract-compatibility CI
-gate that keeps the YAML and the DTOs from drifting is still planned (design
-doc migration plan, Epic A); until it exists, change the DTOs and the YAML
-together in the same commit. Hand-written types elsewhere (e.g.
-`RemoteCaptureEnvelope`) must likewise mirror these files exactly.
+companion) interoperates with the shipped service. Hand-written types
+elsewhere (e.g. `RemoteCaptureEnvelope`, the Swift DTOs) must likewise mirror
+these files exactly.
+
+## The contract-compatibility gate
+
+The drift between the YAML and the DTOs is now caught by a test, not by
+review: `ContractCompatibilityTests` in
+`services/MemoryTimeline.SyncApi.Tests` runs with the rest of the service's
+suite (and therefore in the `sync-api-build.yml` workflow on every pull
+request) and asserts, against the YAML copied into the test output:
+
+- every `SyncChangeEntityType` constant appears in the `entityType` enums of
+  both `SyncChange` and `SyncPushEntry`, and nothing unknown does;
+- every public DTO in `MemoryTimeline.SyncContracts` maps to a schema whose
+  property names equal the DTO's camelCased properties, in both directions —
+  a DTO without a schema, a schema property without a DTO property, or a new
+  DTO missing from the test's type→schema map all fail;
+- every path+method the document describes is routed by the running service
+  (it would 404 otherwise), and every route the service registers is
+  documented;
+- `info.version` is semver and this changelog carries a heading for its
+  major.minor.
+
+The rule is therefore mechanical: **change the DTOs and the YAML in the same
+commit**, add the changelog entry when `info.version` moves, and the gate
+proves the three stayed together.
 
 ## Changelog
+
+### v1.4 (2026-10-21) — the YAML catches up with the shipped service
+
+Purely additive. Nothing that existed was renamed, removed or made required
+in a request; the one tightening is on the trip/detour schemas that never had
+a client (see the last bullet).
+
+- **Three `entityType` values the DTOs already carried are now in both enums**:
+  `era`, `person` and `pending_event_decision`. They had shipped in
+  `SyncChangeEntityType` with the Phase 3 timeline projection and were being
+  served and accepted by the service while the YAML still listed eight
+  values.
+- **Six schemas for the timeline projection payloads**, mirroring
+  [`dotnet/MemoryTimeline.SyncContracts/TimelineProjectionContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/TimelineProjectionContracts.cs)
+  property for property: `EventProjectionPayload`, `EraProjectionPayload`,
+  `PersonProjectionPayload`, `PendingEventProjectionPayload`,
+  `PendingEventDecisionPayload` and `PendingEventCorrections`. The
+  `payloadJson` descriptions on `SyncChange` and `SyncPushEntry` name which
+  payload each entity type carries, and `SyncPushEntry.entityType` states the
+  authority rule the service enforces (only Windows publishes the four
+  projections; a decision is the one companion-authored write).
+- **`ArtifactSummary.state` gains `purged`** and
+  `GET /artifacts/{artifactId}/download` gains **410 `artifact_purged`**: the
+  service's retention sweep removes an artifact's bytes 14 days after Windows
+  acknowledges archival (design §22 decision 7), keeping the metadata row. A
+  client that only downloads `complete` artifacts needs no change.
+- **`POST /captures/{captureId}/complete` and `/retry` describe what they do
+  now** instead of "Phase 1 behavior": complete refuses with 409
+  `capture_artifacts_incomplete` (retryable) until every declared artifact
+  is complete, and advances a `local_only`/`uploading` capture to `received`;
+  retry re-queues a `failed` capture and refuses anything else with 409
+  `capture_not_failed` (a new response on that path) or 409 `artifact_purged`.
+- **Trips and detours are implemented**, so the eight operations that were
+  documented but unrouted now answer. Additively: `GET /trips` and
+  `GET /trips/{tripId}` (a trip nobody could read back was not usable), a
+  200 replay response on `POST /trips/{tripId}/route-context`, and
+  `createdAtUtc`/`updatedAtUtc` on `Trip`. The state machines the service
+  enforces are written into the operation descriptions, and the `Conflict`
+  and `NotFound` responses list the trip/detour codes.
+- **The trip/detour schemas now mirror shipped DTOs**
+  ([`TripContracts.cs`](./dotnet/MemoryTimeline.SyncContracts/TripContracts.cs)):
+  optional properties are marked `nullable: true`, because responses do not
+  strip nulls, and `RouteContext.routeContextId`/`tripId` are documented as
+  optional on write and present on read. These schemas had no client and
+  were a sketch; this is the v1.1 precedent again — the shipped DTOs are the
+  implemented truth.
+- **The contract-compatibility gate exists** (see above); the "still planned"
+  note is gone.
 
 ### v1.3 (2026-08-07) — assistant sessions and turns
 

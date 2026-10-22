@@ -1,8 +1,11 @@
 # macOS Port Plan
 
-**Status:** groundwork landed; app is a walking skeleton
+**Status:** phases 0–4 shipped (skeleton, Keychain + sync pull, upload, capture, timeline
+projection, review decisions); phase 5's Ask pane is a thin client over the service's assistant
+endpoints, answered by the Windows client's `AssistantTurnResponder` (narrative not started);
+phase 6 (packaging) not started
 **Target:** a native **SwiftUI** macOS app under [`macos-native/`](../../macos-native), sharing code with the iOS companion
-**Last updated:** 2026-08-07
+**Last updated:** 2026-10-21
 
 ---
 
@@ -36,11 +39,11 @@ Mac app inherits on day one. The cost is that the C# service layer does not come
 
 | Piece | Where | State |
 |---|---|---|
-| Shared Swift core | `ios-companion/MemoryLineCompanion/Shared/` | 11 of 13 files compile on macOS unchanged |
-| Sync service | `services/MemoryTimeline.SyncApi` | `net10.0`, runs on macOS/Linux |
-| Wire contracts | `shared-contracts/` | OpenAPI + JSON Schema + .NET DTOs, platform-neutral |
+| Shared Swift core | `ios-companion/MemoryLineCompanion/Shared/` | 15 of 17 files compile on macOS unchanged (two iOS-only files excluded) |
+| Sync service | `services/MemoryTimeline.SyncApi` | `net10.0`, runs on macOS/Linux; captures, sync, assistant, trips/detours |
+| Wire contracts | `shared-contracts/` | OpenAPI + JSON Schema + .NET DTOs, platform-neutral; a CI gate keeps the YAML and the DTOs together |
 | Business logic | `windows-native/src/MemoryTimeline.Core`, `.Data`, `.Sync` | retargeted to plain `net10.0` (see §3.3) |
-| macOS app | `macos-native/` | skeleton: pairing + capture library |
+| macOS app | `macos-native/` | pairing, capture + upload, timeline/eras/people/search projection, review verdicts, Ask client |
 
 ### 2.1 The shared Swift layer, file by file
 
@@ -60,6 +63,10 @@ Audited by imports. Everything in `Foundation` / `os` / `SQLite3` / `Security` /
 | `Support/AudioStorage.swift` | Foundation | ✅ shared |
 | `Support/CaptureStatusStore.swift` | Foundation | ✅ shared |
 | `Support/FileHasher.swift` | CryptoKit, Foundation | ✅ shared |
+| `Timeline/TimelineProjectionModels.swift` | Foundation | ✅ shared |
+| `Timeline/TimelineProjectionStore.swift` | Foundation, os | ✅ shared |
+| `Timeline/TimelineProjectionApplier.swift` | Foundation, os | ✅ shared |
+| `Timeline/TimelineProjectionColor.swift` | Foundation | ✅ shared |
 | `Support/ConfirmationFeedback.swift` | AVFAudio, **UIKit** | ❌ iOS-only, excluded |
 | `Support/WidgetStatusPublisher.swift` | Foundation, **WidgetKit** | ❌ iOS widget bridge, excluded |
 
@@ -149,10 +156,12 @@ needs new native code is the small set of platform seams Core already declares a
 interfaces (`ISpeechToTextService`, `IThumbnailGenerator`, `INotificationService`, file
 pickers) plus the SwiftUI presentation layer, which no option avoids.
 
-**What stays unproven:** hosting those assemblies inside a sandboxed `.app`. Running them
-under `dotnet test` on a CI Mac is not the same as launching them from a signed, sandboxed
-bundle. That is the one spike that must succeed before the rest of this plan is safe to
-build on — see §5.
+**What stays unproven, and why it stopped mattering:** hosting those assemblies inside a
+sandboxed `.app` was never attempted — running them under `dotnet test` on a CI Mac is not
+the same as launching them from a signed, sandboxed bundle. It is no longer on the critical
+path: phases 3–5 were solved by publishing results from Windows as projections and by
+routing Ask through the service's assistant contract (§5), so the Mac runs no C# today. The
+spike is the fallback only if a responder ever has to run *on* the Mac instead of on Windows.
 
 The rule is written up in [`claude.md`](../../claude.md) under "Keeping Core portable".
 
@@ -188,9 +197,14 @@ rather than a local choice are mirrored exactly and covered by tests — page un
 page replays, never ack a cursor that did not advance, and last-write-wins on the
 Windows-authored `updatedAtUtc` when a page is redelivered.
 
-**Known gap:** the Mac applies `capture_status` changes but ignores `capture` and
-`capture_artifact` ones, so the Library shows status for captures it does not yet hold.
-Materialising capture rows from the feed (or recording its own) is Phase 2.
+**Upload side — also done.** `MacUploadCoordinator` drains pending uploads on a foreground
+loop and every finalised recording enters it immediately, mirroring the iOS pipeline minus
+`BGTaskScheduler`; the Library surfaces its state so a failed upload is never silent.
+
+**Deliberate boundary, formerly a gap:** the Mac applies `capture_status` and the projection
+but ignores `capture` and `capture_artifact` changes. Recordings made on the phone go to
+Windows for processing and never appear in this Mac's Library, which lists only what this
+Mac recorded; the status it shows is for its own captures.
 
 ### 4.3 Storage locations
 
@@ -218,11 +232,11 @@ Each phase is shippable and leaves the app in a usable state.
 |---|---|---|
 | **0 — Skeleton** ✅ | Xcode project, composition root, pairing, capture library | in the tree |
 | **1 — Keychain + sync pull** ✅ | §3.2 fixed; `MacSyncCoordinator` pulls/applies/acks the change feed on a foreground timer | in the tree |
-| **1b — Upload** | Drain pending uploads | nothing to upload until Phase 2 gives the Mac a recorder; deferred deliberately |
-| **2 — Capture** ✅ | macOS recorder, input device selection, menu-bar quick capture | §4.1 |
+| **1b — Upload** ✅ | Drain pending uploads | `MacUploadCoordinator`, a foreground loop; every finalised recording enters it at once |
+| **2 — Capture** ✅ | macOS recorder, input device selection, menu-bar quick capture, File ▸ New Recording (⌘N), `memoryline://record` | §4.1 |
 | **3 — Timeline** ✅ | Read-only timeline, eras, people, review queue, fed by the projection feed | see "how phase 3 was actually solved" below |
 | **4 — Review decisions** ✅ | Approve/reject a pending event *from* the Mac | queued to disk, pushed as `pending_event_decision`, pruned when Windows confirms |
-| **5 — Ask & narrative** | Retrieval + LLM answers with citations | Phase 4 assistant contract exists; no responder is built on either side |
+| **5 — Ask & narrative** ◐ | Retrieval + LLM answers with citations | Ask: a thin client (`MacAskCoordinator`, `AskView`) submits turns to the service's assistant endpoints and polls for the answer, saying plainly while the PC has not picked it up; the Windows client answers through `MemoryTimeline.Sync`'s `AssistantTurnResponder` (Ask over the archive, citations included). Narrative: not started |
 | **6 — Packaging** | Notarisation, Sparkle or App Store, hardened runtime | entitlements already set |
 
 ### The decision that gated phases 3–5 — resolved, by a fourth option
@@ -255,11 +269,13 @@ Why this beats all three of the originals, for this product:
   `PendingEventDecisionPayload` — is narrow enough to defend: a verdict is one idempotent
   bit with no field values to merge, so accepting it does not make the system multi-writer.
 
-What this does *not* solve: Ask (Phase 5) is genuinely computation, not a projection, and
-the original 2-vs-3 question stands for it. The Phase 4 assistant contract
-(`AssistantContracts.cs`) already frames the answer as "Windows is the brain, with an
-option to link an LLM provider or pre-process on device" — that is option 2 in a different
-suit, and it remains undecided in the sense that no responder is implemented.
+What this does *not* solve: Ask (Phase 5) is genuinely computation, not a projection. The
+Phase 4 assistant contract (`AssistantContracts.cs`) frames the answer as "Windows is the
+brain, with an option to link an LLM provider or pre-process on device" — option 2 in a
+different suit — and that is the route taken: the Mac's Ask pane is a client of the
+service's assistant endpoints and nothing else. The service stores, routes and reaps idle
+sessions; the Windows client's `AssistantTurnResponder` claims an `assistant_turn` off the
+feed, answers it from the archive through `IMemoryQueryService` and pushes the answer back.
 
 **Consequence for the Mac's UI: it is a reader.** Timeline, Review and People render a copy
 and offer no editing. That is the design, not a shortfall, and the screens say so rather
@@ -323,8 +339,10 @@ that renders a platform label — worth doing before the Mac ships, not worth do
   removes the worst of this risk — the precision-honest string is formatted once, on
   Windows, and every client renders it verbatim.
 - **An `EraService` in Core.** Eras are the only projected entity with no Core service, so
-  their publish calls live in `ErasViewModel` and `ImportService` writes eras that nothing
-  publishes. This is also why eras have no write-path test: nothing in this repo loads a
+  their publish calls live in `ErasViewModel`; `ImportService` now publishes the eras it
+  creates through `PublishImportedProjectionsAsync`, alongside imported events, which closed
+  the gap where imported eras never reached a companion. What remains is that era publishing
+  has no single owner, and eras still have no write-path test: nothing in this repo loads a
   ViewModel into the test host. See a4bb149.
 - **May the phone author review verdicts?** The Mac may (§5 phase 4), because that was asked
   and answered. The contract admits a decision from any companion, and the Mac's
@@ -335,8 +353,10 @@ that renders a platform label — worth doing before the Mac ships, not worth do
 
 - ~~Does the Mac record at all?~~ Yes — Phase 2 shipped a recorder, input-device selection
   and menu-bar quick capture.
-- ~~How does the C# business logic reach the Mac?~~ It does not; Windows publishes results
-  as projections instead. See "the decision that gated phases 3–5" in §5.
+- ~~How does the C# business logic reach the Mac?~~ It does not run there; Windows publishes
+  results as projections, and Ask goes through the service's assistant contract. Hosting the
+  C# assemblies inside the `.app` was never tried and remains the fallback only if a
+  responder ever has to run on the Mac (§3.3). See "the decision that gated phases 3–5" in §5.
 - ~~There is no iOS CI.~~ There is now — `.github/workflows/ios-companion-build.yml`. It
   needed a committed shared scheme first: Xcode writes schemes per-user under `xcuserdata/`,
   which is not in git, so `xcodebuild -scheme` had nothing to resolve and CI could not have

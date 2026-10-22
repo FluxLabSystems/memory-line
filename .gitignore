@@ -7,6 +7,7 @@ node_modules/
 *.db-wal
 
 # IDE
+.vs/
 .vscode/
 .idea/
 *.swp
@@ -18,6 +19,8 @@ Thumbs.db
 
 # Logs
 npm-debug.log*
+# Runtime logs the WinUI app writes next to its sources during local debugging
+windows-native/src/MemoryTimeline/log/
 
 # Environment
 .env

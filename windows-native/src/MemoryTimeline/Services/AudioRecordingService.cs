@@ -1,16 +1,41 @@
 using Microsoft.Extensions.Logging;
 using MemoryTimeline.Core.DTOs;
 using MemoryTimeline.Core.Services;
+using Windows.Media;
 using Windows.Media.Capture;
+using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
 using Windows.Storage;
 using Windows.Devices.Enumeration;
+using WinRT;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace MemoryTimeline.Services;
 
 /// <summary>
+/// COM access to the bytes behind an <c>IMemoryBufferReference</c> (the
+/// documented way to read <c>AudioFrame</c> samples from C#). Resolved with
+/// CsWinRT's <c>As&lt;T&gt;()</c> on the projected reference object.
+/// </summary>
+[ComImport]
+[Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMemoryBufferByteAccess
+{
+    void GetBuffer(out IntPtr buffer, out uint capacity);
+}
+
+/// <summary>
 /// Windows-specific audio recording service implementation using MediaCapture API.
+/// <para>
+/// While recording, a <see cref="MediaFrameReader"/> on the capture's audio
+/// frame source samples the microphone at ~20 Hz and raises
+/// <see cref="AudioLevelChanged"/> with a dB-scaled peak (see
+/// <see cref="AudioLevelMeter"/>) for the Queue page's level meter. The meter
+/// is strictly best-effort: if the frame reader cannot be created or started
+/// the recording proceeds without it, with one warning in the log.
+/// </para>
 /// </summary>
 public class AudioRecordingService : IAudioRecordingService, IDisposable
 {
@@ -21,6 +46,15 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
     private readonly Stopwatch _recordingTimer = new();
     private AudioRecordingSettings? _currentSettings;
     private bool _disposed;
+
+    // Level meter: frame reader over the capture's audio source, throttled to
+    // ~20 Hz. Scratch buffers are reused across frames under _levelLock.
+    private static readonly long LevelIntervalTicks = Stopwatch.Frequency / 20;
+    private readonly object _levelLock = new();
+    private MediaFrameReader? _levelFrameReader;
+    private long _lastLevelTimestamp;
+    private float[] _floatScratch = Array.Empty<float>();
+    private short[] _shortScratch = Array.Empty<short>();
 
     public event EventHandler<AudioRecordingStateChangedEventArgs>? RecordingStateChanged;
     public event EventHandler<AudioLevelChangedEventArgs>? AudioLevelChanged;
@@ -85,7 +119,10 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
             _mediaCapture = new MediaCapture();
             var captureSettings = new MediaCaptureInitializationSettings
             {
-                StreamingCaptureMode = StreamingCaptureMode.Audio
+                StreamingCaptureMode = StreamingCaptureMode.Audio,
+                // CPU frames so the level-meter frame reader can read samples
+                // directly (the documented MediaFrameReader audio setup).
+                MemoryPreference = MediaCaptureMemoryPreference.Cpu
             };
 
             // Use specific device if provided
@@ -111,6 +148,9 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
             _recordingTimer.Restart();
             SetRecordingState(AudioRecordingState.Recording);
 
+            // Best-effort level meter; never fails the recording.
+            await StartLevelMeteringAsync();
+
             _logger.LogInformation("Recording started successfully to file: {FileName}", fileName);
             return _recordingFile.Path;
         }
@@ -135,6 +175,10 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
         try
         {
             SetRecordingState(AudioRecordingState.Stopping);
+
+            // Stop the level reader before the record sink so the pipeline
+            // tears down in the order it was built.
+            await StopLevelMeteringAsync();
 
             // Stop recording
             if (_mediaCapture != null)
@@ -247,6 +291,8 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
         {
             _logger.LogInformation("Cancelling recording");
 
+            await StopLevelMeteringAsync();
+
             // Stop recording if active
             if (_recordingState == AudioRecordingState.Recording || _recordingState == AudioRecordingState.Paused)
             {
@@ -340,6 +386,10 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
 
     private async Task CleanupMediaCaptureAsync()
     {
+        // Idempotent: already stopped on the normal stop/cancel paths, but the
+        // failure paths reach here directly.
+        await StopLevelMeteringAsync();
+
         if (_mediaCapture != null)
         {
             try
@@ -362,6 +412,194 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
 
     #endregion
 
+    #region Level Meter
+
+    /// <summary>
+    /// Creates and starts a frame reader on the capture's audio frame source.
+    /// Any failure (no audio frame source, API unavailable, start refused)
+    /// is logged once per recording and leaves the recording untouched.
+    /// </summary>
+    private async Task StartLevelMeteringAsync()
+    {
+        if (_mediaCapture == null || _levelFrameReader != null)
+        {
+            return;
+        }
+
+        try
+        {
+            MediaFrameSource? audioSource = null;
+            foreach (var source in _mediaCapture.FrameSources.Values)
+            {
+                if (source.Info.SourceKind == MediaFrameSourceKind.Audio)
+                {
+                    audioSource = source;
+                    break;
+                }
+            }
+
+            if (audioSource == null)
+            {
+                _logger.LogInformation("No audio frame source on this capture; level meter disabled for this recording");
+                return;
+            }
+
+            var reader = await _mediaCapture.CreateFrameReaderAsync(audioSource);
+            // Realtime: TryAcquireLatestFrame always yields the newest frame and
+            // dropped frames are fine - the meter only needs a recent peak.
+            reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
+            reader.FrameArrived += OnLevelFrameArrived;
+
+            var status = await reader.StartAsync();
+            if (status != MediaFrameReaderStartStatus.Success)
+            {
+                reader.FrameArrived -= OnLevelFrameArrived;
+                reader.Dispose();
+                _logger.LogWarning("Audio level meter could not start ({Status}); recording continues without it", status);
+                return;
+            }
+
+            _lastLevelTimestamp = 0;
+            _levelFrameReader = reader;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Audio level meter unavailable; recording continues without it");
+        }
+    }
+
+    /// <summary>Stops and disposes the level frame reader; safe to call repeatedly.</summary>
+    private async Task StopLevelMeteringAsync()
+    {
+        var reader = _levelFrameReader;
+        _levelFrameReader = null;
+        if (reader == null)
+        {
+            return;
+        }
+
+        try
+        {
+            reader.FrameArrived -= OnLevelFrameArrived;
+            await reader.StopAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error stopping the audio level reader");
+        }
+        finally
+        {
+            try
+            {
+                reader.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disposing the audio level reader");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires on a MediaCapture worker thread for every audio frame. Samples at
+    /// most every 50 ms, only while actually recording (paused sessions show an
+    /// empty meter), and never throws: a bad frame is simply skipped.
+    /// </summary>
+    private void OnLevelFrameArrived(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
+    {
+        if (_recordingState != AudioRecordingState.Recording || AudioLevelChanged == null)
+        {
+            return;
+        }
+
+        var now = Stopwatch.GetTimestamp();
+        if (now - _lastLevelTimestamp < LevelIntervalTicks)
+        {
+            return;
+        }
+        _lastLevelTimestamp = now;
+
+        try
+        {
+            using var frameReference = sender.TryAcquireLatestFrame();
+            var audioMediaFrame = frameReference?.AudioMediaFrame;
+            if (audioMediaFrame == null)
+            {
+                return;
+            }
+
+            double peak;
+            lock (_levelLock)
+            {
+                peak = ReadPeak(audioMediaFrame);
+            }
+
+            if (peak < 0)
+            {
+                return;
+            }
+
+            AudioLevelChanged?.Invoke(this, new AudioLevelChangedEventArgs
+            {
+                Level = AudioLevelMeter.ToMeterLevel(peak)
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Audio level sample dropped");
+        }
+    }
+
+    /// <summary>
+    /// Reads the frame's samples (32-bit float or 16-bit PCM; anything else
+    /// returns -1) and returns the linear peak 0..1. Caller holds _levelLock.
+    /// </summary>
+    private double ReadPeak(AudioMediaFrame audioMediaFrame)
+    {
+        var encoding = audioMediaFrame.AudioEncodingProperties;
+
+        using var audioFrame = audioMediaFrame.GetAudioFrame();
+        using var buffer = audioFrame.LockBuffer(AudioBufferAccessMode.Read);
+        using var reference = buffer.CreateReference();
+
+        reference.As<IMemoryBufferByteAccess>().GetBuffer(out var dataPointer, out var capacityInBytes);
+        if (dataPointer == IntPtr.Zero || capacityInBytes == 0)
+        {
+            return -1;
+        }
+
+        // Length is the valid payload; Capacity is the allocation.
+        var byteLength = (int)Math.Min(buffer.Length, capacityInBytes);
+
+        if (string.Equals(encoding.Subtype, "Float", StringComparison.OrdinalIgnoreCase) && encoding.BitsPerSample == 32)
+        {
+            var count = byteLength / sizeof(float);
+            if (_floatScratch.Length < count)
+            {
+                _floatScratch = new float[count];
+            }
+
+            Marshal.Copy(dataPointer, _floatScratch, 0, count);
+            return AudioLevelMeter.PeakFromFloat32(new ReadOnlySpan<float>(_floatScratch, 0, count));
+        }
+
+        if (string.Equals(encoding.Subtype, "PCM", StringComparison.OrdinalIgnoreCase) && encoding.BitsPerSample == 16)
+        {
+            var count = byteLength / sizeof(short);
+            if (_shortScratch.Length < count)
+            {
+                _shortScratch = new short[count];
+            }
+
+            Marshal.Copy(dataPointer, _shortScratch, 0, count);
+            return AudioLevelMeter.PeakFromPcm16(new ReadOnlySpan<short>(_shortScratch, 0, count));
+        }
+
+        return -1;
+    }
+
+    #endregion
+
     public void Dispose()
     {
         if (_disposed)
@@ -375,6 +613,21 @@ public class AudioRecordingService : IAudioRecordingService, IDisposable
         // stops any in-progress capture and frees the underlying hardware. We cannot
         // await StopRecordAsync from a synchronous Dispose, so rely on Dispose to
         // release the device deterministically.
+        try
+        {
+            var reader = _levelFrameReader;
+            _levelFrameReader = null;
+            if (reader != null)
+            {
+                reader.FrameArrived -= OnLevelFrameArrived;
+                reader.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error disposing the audio level reader during Dispose");
+        }
+
         try
         {
             _mediaCapture?.Dispose();

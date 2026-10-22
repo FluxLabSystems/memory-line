@@ -490,15 +490,17 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AppSetting>().HasData(
             new AppSetting { SettingKey = "theme", SettingValue = "light", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "default_zoom_level", SettingValue = "month", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "audio_quality", SettingValue = "high", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "llm_provider", SettingValue = "anthropic", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "llm_model", SettingValue = "claude-sonnet-4-20250514", UpdatedAt = SeedTimestamp },
+            // Consumed by the LLM services (extraction output budget; sampling
+            // temperature for every call) and by RagService (similar-event
+            // retrieval floor). Rows that no reader ever consulted — audio_quality,
+            // stt_engine/stt_config (the engine is always local Whisper),
+            // rag_auto_run_enabled/rag_schedule (no scheduler exists),
+            // send_transcripts_only, require_confirmation — are no longer seeded;
+            // existing rows are never deleted, merely ignored.
             new AppSetting { SettingKey = "llm_max_tokens", SettingValue = "4000", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "llm_temperature", SettingValue = "0.3", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "stt_engine", SettingValue = "windows", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "stt_config", SettingValue = "{}", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "rag_auto_run_enabled", SettingValue = "false", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "rag_schedule", SettingValue = "weekly", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "rag_similarity_threshold", SettingValue = "0.75", UpdatedAt = SeedTimestamp },
             // F11: embedding_model corrected from the never-implemented
             // 'onnx-text-embedding' placeholder to the real local model.
@@ -514,11 +516,16 @@ public class AppDbContext : DbContext
             // and the optional local ONNX model directory override.
             new AppSetting { SettingKey = "llm_base_url", SettingValue = "", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "local_model_path", SettingValue = "", UpdatedAt = SeedTimestamp },
+            // Read by EventService/EventExtractionService before the background
+            // embedding of a created or approved event.
             new AppSetting { SettingKey = "auto_generate_embeddings", SettingValue = "true", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "send_transcripts_only", SettingValue = "true", UpdatedAt = SeedTimestamp },
-            new AppSetting { SettingKey = "require_confirmation", SettingValue = "true", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "ask_top_k", SettingValue = "12", UpdatedAt = SeedTimestamp },
             new AppSetting { SettingKey = "ask_include_transcripts", SettingValue = "false", UpdatedAt = SeedTimestamp },
+            // Recording & transcription (2026-10): the capture microphone and
+            // the Whisper model/language the transcriber reads on every run.
+            new AppSetting { SettingKey = "audio_input_device_id", SettingValue = "", UpdatedAt = SeedTimestamp },
+            new AppSetting { SettingKey = "whisper_model", SettingValue = "base", UpdatedAt = SeedTimestamp },
+            new AppSetting { SettingKey = "whisper_language", SettingValue = "auto", UpdatedAt = SeedTimestamp },
             // Home / resurfacing (2026-08). last_toast_date is deliberately not
             // seeded: an absent row means "the daily toast has never been shown".
             new AppSetting { SettingKey = "home_is_default_page", SettingValue = "true", UpdatedAt = SeedTimestamp },

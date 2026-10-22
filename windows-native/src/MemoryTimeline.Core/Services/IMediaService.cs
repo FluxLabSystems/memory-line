@@ -75,14 +75,17 @@ public interface IMediaService
     void DeleteFiles(IEnumerable<EventMedia> media);
 
     /// <summary>
-    /// Maintenance scan of the managed media tree (Settings "Clear Cache"):
-    /// deletes thumbnails with no referencing event_media row, managed media
-    /// files with no row, and *.tmp leftovers, reporting the files deleted
-    /// and the ACTUAL bytes freed. Files referenced by the database are never
-    /// touched, and files created within the last few minutes are skipped (an
-    /// in-flight attach copies its file before committing the row) - they are
-    /// swept on a later run if truly orphaned. Per-file deletion failures are
-    /// logged and skipped; the scan itself throws only on database failure.
+    /// Maintenance scan (Settings "Clear Cache"): deletes thumbnails with no
+    /// referencing event_media row, managed media files with no row, *.tmp
+    /// leftovers, and — through <see cref="IRecordingStorage"/> when one is
+    /// registered — recording files under the recording trees that no queue
+    /// item, pending event, event or capture artifact references, reporting
+    /// the files deleted and the ACTUAL bytes freed. Files referenced by the
+    /// database are never touched, and files created within the last few
+    /// minutes are skipped (an in-flight attach or ingestion writes its file
+    /// before committing the row) - they are swept on a later run if truly
+    /// orphaned. Per-file deletion failures are logged and skipped; the scan
+    /// itself throws only on database failure.
     /// </summary>
     Task<MediaCleanupResult> CleanupOrphansAsync(CancellationToken ct = default);
 }
@@ -104,6 +107,9 @@ public class MediaCleanupResult
 
     /// <summary>*.tmp leftovers deleted.</summary>
     public int TempFilesDeleted { get; set; }
+
+    /// <summary>Orphaned recording files deleted under the recording trees (included in <see cref="FilesDeleted"/>).</summary>
+    public int RecordingsDeleted { get; set; }
 }
 
 /// <summary>

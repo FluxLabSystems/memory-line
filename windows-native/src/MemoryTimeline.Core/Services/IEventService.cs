@@ -12,6 +12,12 @@ namespace MemoryTimeline.Core.Services;
 /// </summary>
 public interface IEventService
 {
+    /// <summary>
+    /// Whether created and approved events are embedded in the background
+    /// (<c>auto_generate_embeddings</c>). Explicit re-embedding ignores it.
+    /// </summary>
+    Task<bool> IsAutoEmbeddingEnabledAsync();
+
     // CRUD operations
     Task<Event> CreateEventAsync(Event eventData);
     Task<Event?> GetEventByIdAsync(string eventId);
@@ -79,9 +85,16 @@ public class EventService : IEventService
     private readonly IMediaService? _mediaService;
     private readonly EventRevisionWriter? _revisionWriter;
     private readonly ITimelineProjectionPublisher? _projectionPublisher;
+    private readonly ISettingsService? _settingsService;
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
     private readonly ILogger<EventService> _logger;
 
+    /// <summary>
+    /// Creates the service. The trailing optional parameters are resolved by
+    /// DI when registered and left null otherwise; <paramref name="settingsService"/>
+    /// gates the automatic background embedding on <c>auto_generate_embeddings</c>
+    /// (absent service or row: embeddings are generated, the seeded default).
+    /// </summary>
     public EventService(
         IEventRepository eventRepository,
         IDbContextFactory<AppDbContext> contextFactory,
@@ -89,7 +102,8 @@ public class EventService : IEventService
         IEmbeddingService? embeddingService = null,
         IMediaService? mediaService = null,
         EventRevisionWriter? revisionWriter = null,
-        ITimelineProjectionPublisher? projectionPublisher = null)
+        ITimelineProjectionPublisher? projectionPublisher = null,
+        ISettingsService? settingsService = null)
     {
         _eventRepository = eventRepository;
         _contextFactory = contextFactory;
@@ -98,6 +112,22 @@ public class EventService : IEventService
         _mediaService = mediaService;
         _revisionWriter = revisionWriter;
         _projectionPublisher = projectionPublisher;
+        _settingsService = settingsService;
+    }
+
+    /// <summary>
+    /// Whether events should be embedded automatically on creation and
+    /// approval (<c>auto_generate_embeddings</c>, seeded true). Explicit
+    /// requests — the Connections backfill, "Re-embed all events" — ignore it.
+    /// </summary>
+    public async Task<bool> IsAutoEmbeddingEnabledAsync()
+    {
+        if (_settingsService == null)
+        {
+            return true;
+        }
+
+        return await _settingsService.GetSettingAsync(SettingKeys.AutoGenerateEmbeddings, true);
     }
 
     // CRUD operations
@@ -145,9 +175,17 @@ public class EventService : IEventService
             // association APIs below publish again once they attach.
             await PublishEventProjectionAsync(createdEvent.EventId);
 
-            // Generate embedding asynchronously (fire and forget).
-            // The background task creates its own DbContext from the factory.
-            _ = Task.Run(async () => await GenerateEmbeddingForEventInBackgroundAsync(createdEvent));
+            // Generate embedding asynchronously (fire and forget), unless the
+            // user turned automatic embedding off. The background task creates
+            // its own DbContext from the factory.
+            if (await IsAutoEmbeddingEnabledAsync())
+            {
+                _ = Task.Run(async () => await GenerateEmbeddingForEventInBackgroundAsync(createdEvent));
+            }
+            else
+            {
+                _logger.LogDebug("Automatic embedding is disabled; event {EventId} is not embedded", createdEvent.EventId);
+            }
 
             return createdEvent;
         }

@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Memory Timeline — documentation</title>
-<meta name="description" content="Documentation for the Memory Timeline Windows Native app — a local-first .NET 8 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.">
+<meta name="description" content="Documentation for the Memory Timeline Windows Native app — a local-first .NET 10 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.">
 <meta property="og:title" content="Memory Timeline — documentation">
-<meta property="og:description" content="Documentation for the Memory Timeline Windows Native app — a local-first .NET 8 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.">
+<meta property="og:description" content="Documentation for the Memory Timeline Windows Native app — a local-first .NET 10 / WinUI 3 desktop app that turns spoken and typed memories into a structured, searchable, interactive personal timeline.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%231d1b18%22%2F%3E%3Cpath%20d%3D%22M4%2021h24%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%2F%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2221%22%20r%3D%223.1%22%20fill%3D%22%23e0873f%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2214%22%20r%3D%223.6%22%20fill%3D%22%23f0b46e%22%2F%3E%3Ccircle%20cx%3D%2225%22%20cy%3D%2218%22%20r%3D%222.6%22%20fill%3D%22%236ec2b8%22%2F%3E%3Cpath%20d%3D%22M9%2021%2017%2014%2025%2018%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.2%22%20fill%3D%22none%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.8%22%2F%3E%3C%2Fsvg%3E">
 <link rel="stylesheet" href="assets/styles.css">
@@ -167,7 +167,7 @@
       <div class="stat-label">documents</div>
       <div class="stat-hint">READMEs, guides, audits and design notes</div>
     </div><div class="stat">
-      <div class="stat-value">40k</div>
+      <div class="stat-value">45k</div>
       <div class="stat-label">words</div>
       <div class="stat-hint">all rendered and searchable here</div>
     </div><div class="stat">
@@ -175,9 +175,9 @@
       <div class="stat-label">features shipped</div>
       <div class="stat-hint">the F1–F12 wave, August 2026</div>
     </div><div class="stat">
-      <div class="stat-value">4</div>
+      <div class="stat-value">6</div>
       <div class="stat-label">projects</div>
-      <div class="stat-hint">App · Core · Data · Tests</div>
+      <div class="stat-hint">App · Core · Data · Tests · Sync · SyncContracts</div>
     </div>
   </section>
 
@@ -186,7 +186,7 @@
       <h2>What it is</h2>
     </div>
     <div class="lede">
-      <p>Memory Timeline is a <strong>local-first</strong> desktop app for recording, organizing, and rediscovering your personal history. Speak a memory — or paste and type one — and the app transcribes it on-device with Whisper, has an LLM extract a structured event, and lets you review it onto an interactive timeline.</p><p>Your data lives in a local SQLite database. Embeddings run locally by default, so nothing leaves your machine except the specific text you choose to send to the providers you configure — and geocoding is off unless you opt in.</p><p>This site documents the <strong>Windows Native</strong> app — the primary, actively developed product, built on .NET 8 and WinUI 3.</p>
+      <p>Memory Timeline is a <strong>local-first</strong> desktop app for recording, organizing, and rediscovering your personal history. Speak a memory — or paste and type one — and the app transcribes it on-device with Whisper, has an LLM extract a structured event, and lets you review it onto an interactive timeline.</p><p>Your data lives in a local SQLite database. Embeddings run locally by default, so nothing leaves your machine except the specific text you choose to send to the providers you configure — and geocoding is off unless you opt in.</p><p>This site documents the <strong>Windows Native</strong> app — the primary, actively developed product, built on .NET 10 and WinUI 3.</p>
     </div>
   </section>
 
@@ -294,7 +294,7 @@
   <section class="section" id="architecture">
     <div class="section-head">
       <h2>Architecture</h2>
-      <p class="section-lead">Clean, layered separation across four projects, with a message bus between features.</p>
+      <p class="section-lead">Clean, layered separation across six projects, with a message bus between features. Core, Data and Sync target plain net10.0 so a non-Windows head can run them; only the WinUI head and its tests are Windows-only.</p>
     </div>
     <div class="layer-stack">
       <div class="layer" style="--layer-index:0">
@@ -308,11 +308,19 @@
     </div><div class="layer" style="--layer-index:2">
       <div class="layer-name"><code>MemoryTimeline.Data</code></div>
       <div class="layer-role">Data access</div>
-      <div class="layer-detail">EF Core 8 DbContext over SQLite in WAL mode, entity models, repositories, and the SchemaUpgrader that repairs schema drift at startup.</div>
+      <div class="layer-detail">EF Core 10 DbContext over SQLite in WAL mode, entity models, repositories, and the SchemaUpgrader that repairs schema drift at startup.</div>
     </div><div class="layer" style="--layer-index:3">
       <div class="layer-name"><code>MemoryTimeline.Tests</code></div>
       <div class="layer-role">Verification</div>
       <div class="layer-detail">xUnit unit, integration and performance tests.</div>
+    </div><div class="layer" style="--layer-index:4">
+      <div class="layer-name"><code>MemoryTimeline.Sync</code></div>
+      <div class="layer-role">Sync client (no UI)</div>
+      <div class="layer-detail">Pairing, push/pull/ack against the self-hosted sync service, artifact download, the background sync worker, outbox publishing and remote-change ingestion for the iOS and macOS companions.</div>
+    </div><div class="layer" style="--layer-index:5">
+      <div class="layer-name"><code>MemoryTimeline.SyncContracts</code></div>
+      <div class="layer-role">Wire contracts</div>
+      <div class="layer-detail">Shared DTOs from <code>shared-contracts/dotnet/</code>, referenced into this solution and the service. A separate <code>MemoryTimeline.Portability.Tests</code> project, outside the solution, runs the archive stack on the macOS CI job to prove Core, Data and Sync stay platform-neutral.</div>
     </div>
     </div>
     <h3 class="subhead">Decisions worth knowing</h3>
@@ -341,7 +349,7 @@
       <table class="stack-table">
         <thead><tr><th>Layer</th><th>Technology</th></tr></thead>
         <tbody>
-          <tr><td>UI</td><td>WinUI 3 + XAML, <code>x:Bind</code> compiled bindings</td></tr><tr><td>MVVM</td><td>CommunityToolkit.Mvvm — <code>ObservableObject</code>, <code>[RelayCommand]</code>, <code>WeakReferenceMessenger</code></td></tr><tr><td>Runtime</td><td>.NET 8 (<code>net8.0-windows10.0.22621.0</code>)</td></tr><tr><td>Data</td><td>SQLite via EF Core 8, WAL mode, <code>IDbContextFactory</code> per-operation contexts</td></tr><tr><td>Audio</td><td><code>Windows.Media.Capture</code> and <code>Windows.Media.Playback</code></td></tr><tr><td>Speech-to-text</td><td>Whisper.net (ggml <code>base</code> model, local and offline)</td></tr><tr><td>LLM</td><td>Anthropic Claude, or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM), routed per call</td></tr><tr><td>Embeddings</td><td>Local ONNX <code>all-MiniLM-L6-v2</code> (384-dim, the default) or OpenAI embeddings</td></tr><tr><td>Media metadata</td><td>MetadataExtractor (EXIF taken-date and GPS) + Windows thumbnails</td></tr><tr><td>Geocoding</td><td>Optional Nominatim — opt-in, off by default</td></tr>
+          <tr><td>UI</td><td>WinUI 3 + XAML, <code>x:Bind</code> compiled bindings</td></tr><tr><td>MVVM</td><td>CommunityToolkit.Mvvm — <code>ObservableObject</code>, <code>[RelayCommand]</code>, <code>WeakReferenceMessenger</code></td></tr><tr><td>Runtime</td><td>.NET 10 (<code>net10.0-windows10.0.26100.0</code> for the WinUI head and its tests; Core, Data and Sync target plain <code>net10.0</code>)</td></tr><tr><td>Data</td><td>SQLite via EF Core 10, WAL mode, <code>IDbContextFactory</code> per-operation contexts</td></tr><tr><td>Audio</td><td><code>Windows.Media.Capture</code> and <code>Windows.Media.Playback</code></td></tr><tr><td>Speech-to-text</td><td>Whisper.net (ggml <code>base</code> model, local and offline)</td></tr><tr><td>LLM</td><td>Anthropic Claude, or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM), routed per call</td></tr><tr><td>Embeddings</td><td>Local ONNX <code>all-MiniLM-L6-v2</code> (384-dim, the default) or OpenAI embeddings</td></tr><tr><td>Media metadata</td><td>MetadataExtractor (EXIF taken-date and GPS) + Windows thumbnails</td></tr><tr><td>Geocoding</td><td>Optional Nominatim — opt-in, off by default</td></tr>
         </tbody>
       </table>
     </div>
@@ -350,7 +358,7 @@
   <section class="section" id="find-your-way">
     <div class="section-head">
       <h2>Find your way</h2>
-      <p class="section-lead">5 routes through 13 documents and roughly 39,835 words on the Windows Native app.</p>
+      <p class="section-lead">5 routes through 13 documents and roughly 44,505 words on the Windows Native app.</p>
     </div>
     <div class="path-grid">
       <article class="path-card">
@@ -384,9 +392,9 @@
     </article><article class="path-card">
       <div class="path-icon" aria-hidden="true">📐</div>
       <h3>Design &amp; history</h3>
-      <p>The plan that produced the native app, and the contracts written before the code.</p>
+      <p>The design notes written before the code, and the history of how the native app got here.</p>
       <ul class="path-links">
-        <li><a href="people-feature-contracts.html">People feature contracts</a></li><li><a href="development-history.html">Development history</a></li>
+        <li><a href="macos-port-plan.html">macOS port plan</a></li><li><a href="people-feature-contracts.html">People feature contracts</a></li><li><a href="development-history.html">Development history</a></li>
       </ul>
     </article>
     </div>
@@ -456,16 +464,16 @@
         <a class="doc-card" href="overview.html">
             <h4>Project overview</h4>
             <p>The repository README: what Memory Timeline is, the memory pipeline, the full feature list, tech stack, architecture, setup, configuration, and privacy model.</p>
-            <span class="doc-card-meta">14 min read →</span>
+            <span class="doc-card-meta">15 min read →</span>
           </a><a class="doc-card" href="developer-guide.html">
             <h4>Developer orientation guide</h4>
             <p>The condensed contributor briefing: solution layout, the per-operation DbContext rule, MVVM conventions, settings keys, build reality, and how to add a feature.</p>
-            <span class="doc-card-meta">12 min read →</span>
+            <span class="doc-card-meta">14 min read →</span>
           </a>
       </div>
     </div><div class="doc-section">
       <h3>Windows Native app</h3>
-      <p class="doc-section-blurb">The primary, actively developed product: .NET 8 + WinUI 3.</p>
+      <p class="doc-section-blurb">The primary, actively developed product: .NET 10 + WinUI 3.</p>
       <div class="doc-card-grid">
         <a class="doc-card" href="windows-native.html">
             <h4>Windows Native app</h4>
@@ -492,7 +500,7 @@
         <a class="doc-card" href="development-status.html">
             <h4>Development status</h4>
             <p>Phase-by-phase status, the 2026-08 F1–F12 feature wave with per-feature detail and deferred items, known limitations, and success criteria.</p>
-            <span class="doc-card-meta">26 min read →</span>
+            <span class="doc-card-meta">32 min read →</span>
           </a><a class="doc-card" href="development-history.html">
             <h4>Development history</h4>
             <p>Consolidated phase completion reports (Phase 0 through Phase 6) with deliverables, statistics, and architecture achievements.</p>
@@ -506,15 +514,15 @@
         <a class="doc-card" href="feature-audit.html">
             <h4>Feature audit (2026-07)</h4>
             <p>Root causes of three reported bugs, the shared-DbContext foundation defect underneath them, a per-feature audit, and the dependency-ordered master fix plan.</p>
-            <span class="doc-card-meta">10 min read →</span>
+            <span class="doc-card-meta">13 min read →</span>
           </a><a class="doc-card" href="hardening-followups.html">
             <h4>Hardening follow-ups</h4>
             <p>Deferred hardening items ranked high / medium / low — captive DbContext scopes, fire-and-forget embeddings, and migration snapshot drift.</p>
-            <span class="doc-card-meta">3 min read →</span>
+            <span class="doc-card-meta">4 min read →</span>
           </a><a class="doc-card" href="repo-audit-2026-07.html">
             <h4>Exhaustive repo audit</h4>
             <p>A bug hunt and feature crawl across the repository: 18 adversarially verified findings, 45 unverified medium/low findings, and ranked improvement opportunities.</p>
-            <span class="doc-card-meta">47 min read →</span>
+            <span class="doc-card-meta">50 min read →</span>
           </a>
       </div>
     </div><div class="doc-section">
@@ -524,7 +532,7 @@
         <a class="doc-card" href="macos-port-plan.html">
             <h4>macOS port plan</h4>
             <p>Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.</p>
-            <span class="doc-card-meta">9 min read →</span>
+            <span class="doc-card-meta">14 min read →</span>
           </a><a class="doc-card" href="people-feature-contracts.html">
             <h4>People feature contracts</h4>
             <p>The cross-agent interface contract for the People hub: file ownership map, entity columns, DTOs, service signatures, extraction changes, UI conventions, and DI registrations.</p>
@@ -538,7 +546,7 @@
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

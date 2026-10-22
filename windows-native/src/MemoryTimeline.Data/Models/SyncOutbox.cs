@@ -93,4 +93,12 @@ public static class SyncEntityType
     /// to follow instead of rendering as a dangling id.
     /// </summary>
     public const string Person = "person";
+
+    /// <summary>
+    /// An assistant turn Windows has answered (Phase 4); must match
+    /// SyncChangeEntityType.AssistantTurn in the shared contracts. The one
+    /// entity type that flows both ways over the feed: the service publishes
+    /// the question toward Windows, and this row carries the answer back.
+    /// </summary>
+    public const string AssistantTurn = "assistant_turn";
 }

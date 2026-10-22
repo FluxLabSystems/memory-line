@@ -699,15 +699,27 @@ public partial class ErasViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Saves the current era (create or update).
+    /// Saves the current era (create or update). Command form of
+    /// <see cref="TrySaveEraAsync"/> for bindings that do not need the result.
     /// </summary>
     [RelayCommand]
     public async Task SaveEraAsync()
     {
+        await TrySaveEraAsync();
+    }
+
+    /// <summary>
+    /// Saves the current era (create or update) and reports whether it
+    /// succeeded. On failure <see cref="StatusMessage"/> carries the reason
+    /// (validation, missing row, or the exception message) so the era dialog
+    /// can stay open and show it inline instead of closing over a lost edit.
+    /// </summary>
+    public async Task<bool> TrySaveEraAsync()
+    {
         if (string.IsNullOrWhiteSpace(EditName))
         {
             StatusMessage = "Era name is required";
-            return;
+            return false;
         }
 
         try
@@ -741,7 +753,7 @@ public partial class ErasViewModel : ObservableObject
                 if (existingEra == null)
                 {
                     StatusMessage = "Era not found";
-                    return;
+                    return false;
                 }
 
                 existingEra.Name = EditName.Trim();
@@ -776,11 +788,13 @@ public partial class ErasViewModel : ObservableObject
             await LoadErasAsync();
             CalculateViewport();
             GenerateGanttLayout();
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving era");
-            StatusMessage = "Error saving era";
+            StatusMessage = $"Error saving era: {ex.Message}";
+            return false;
         }
         finally
         {
@@ -1088,15 +1102,26 @@ public partial class ErasViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Saves the current milestone (create or update).
+    /// Saves the current milestone (create or update). Command form of
+    /// <see cref="TrySaveMilestoneAsync"/> for bindings that do not need the result.
     /// </summary>
     [RelayCommand]
     public async Task SaveMilestoneAsync()
     {
+        await TrySaveMilestoneAsync();
+    }
+
+    /// <summary>
+    /// Saves the current milestone (create or update) and reports whether it
+    /// succeeded; on failure <see cref="StatusMessage"/> carries the reason so
+    /// the milestone dialog can stay open and show it inline.
+    /// </summary>
+    public async Task<bool> TrySaveMilestoneAsync()
+    {
         if (string.IsNullOrWhiteSpace(EditMilestoneName))
         {
             StatusMessage = "Milestone name is required";
-            return;
+            return false;
         }
 
         try
@@ -1125,7 +1150,7 @@ public partial class ErasViewModel : ObservableObject
                 if (existingMilestone == null)
                 {
                     StatusMessage = "Milestone not found";
-                    return;
+                    return false;
                 }
 
                 existingMilestone.Name = EditMilestoneName.Trim();
@@ -1143,11 +1168,13 @@ public partial class ErasViewModel : ObservableObject
 
             await LoadMilestonesAsync();
             GenerateGanttLayout();
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving milestone");
-            StatusMessage = "Error saving milestone";
+            StatusMessage = $"Error saving milestone: {ex.Message}";
+            return false;
         }
         finally
         {
@@ -1182,7 +1209,7 @@ public partial class ErasViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting milestone: {MilestoneId}", milestone.MilestoneId);
-            StatusMessage = "Error deleting milestone";
+            StatusMessage = $"Error deleting milestone: {ex.Message}";
         }
         finally
         {

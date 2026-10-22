@@ -145,13 +145,13 @@
   <p class="doc-lede">The main reference for the WinUI 3 app: pipeline, features, quick start, project structure, clean-architecture layers, DI composition, database schema, configuration, and troubleshooting.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,243</b> words</span>
+    <span class="doc-meta-item"><b>3,366</b> words</span>
     <span class="doc-meta-item"><b>15</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/README.md" target="_blank" rel="noopener noreferrer">
       windows-native/README.md ↗
     </a>
   </div>
-  <div class="tags"><span class="tag">WinUI 3</span><span class="tag">.NET 8</span><span class="tag">architecture</span><span class="tag">setup</span></div>
+  <div class="tags"><span class="tag">WinUI 3</span><span class="tag">.NET 10</span><span class="tag">architecture</span><span class="tag">setup</span></div>
 </header>
 <div class="doc-grid">
   <article class="prose">
@@ -163,7 +163,7 @@
 <hr>
 <h2 id="overview" class="anchored">Overview<a class="heading-anchor" href="#overview" aria-label="Link to this section">#</a></h2>
 <p>This is the native Windows implementation of Memory Timeline: a <strong>local-first</strong> desktop app for recording, organizing, and rediscovering personal history. You speak a memory, the app transcribes it <strong>locally with Whisper</strong>, a <strong>Claude</strong> model extracts a structured event, you review and approve it, and it lands on an interactive timeline. Optional embeddings surface connections between related memories.</p>
-<p>It is designed to provide strong performance and to leverage Windows-specific features such as native touch/pen support (Windows Ink), toast notifications, JumpList, and Windows Timeline integration.</p>
+<p>It is designed to provide strong performance and to leverage Windows-specific features such as touch gestures on the timeline, toast notifications, and Jump List quick actions. (Windows Timeline / User Activities integration was removed in 2026-10: it had no callers, needs package identity, and Windows 11 dropped the Timeline UI. There is no Windows Ink code.)</p>
 <h3 id="performance-targets" class="anchored">Performance targets<a class="heading-anchor" href="#performance-targets" aria-label="Link to this section">#</a></h3>
 <p>Building on the OS&#39;s own UI stack rather than a bundled web runtime is what buys low
 memory use, fast cold start, smooth timeline rendering, a small package, and first-class
@@ -194,12 +194,12 @@ Windows integration.</p>
 <td>~30 MB</td>
 </tr>
 <tr>
-<td>Touch/Pen</td>
-<td>Full Windows Ink</td>
+<td>Touch</td>
+<td>Timeline gestures (pinch-zoom, drag-pan); no Ink/annotation feature</td>
 </tr>
 <tr>
 <td>Windows Integration</td>
-<td>Full (JumpList, Timeline, Notifications)</td>
+<td>Jump List + toast notifications (see <a href="#windows-11-integration">Windows 11 Integration</a> for the unpackaged-app caveat)</td>
 </tr>
 </tbody></table></div>
 <hr>
@@ -246,10 +246,10 @@ Windows integration.</p>
 <h3 id="windows-11-integration" class="anchored">Windows 11 Integration<a class="heading-anchor" href="#windows-11-integration" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Toast Notifications</strong> - Processing-complete alerts.</li>
-<li><strong>JumpList</strong> - Quick access to recent events and common actions.</li>
-<li><strong>Windows Timeline</strong> - Events published to Windows Timeline with Adaptive Cards.</li>
+<li><strong>Jump List</strong> - Quick actions (New Event opens the add-event dialog, Start Recording starts capturing, View Timeline, Search) plus a &quot;Recent Events&quot; group that is updated whenever an event is created or opened. <strong>Caveat:</strong> the app is unpackaged (<code>WindowsPackageType=None</code>) and <code>Windows.UI.StartScreen.JumpList</code> requires package identity, so on an unpackaged install the Jump List calls can fail; <code>JumpListService</code> detects the first failure, logs it once, and stops trying for the rest of the session instead of crashing. Expect the feature only once an MSIX/identity build exists.</li>
 <li><strong>Theme Support</strong> - Light/Dark/System theme switching.</li>
-<li><strong>Touch &amp; Pen</strong> - Gesture support with Windows Ink ready.</li>
+<li><strong>Touch</strong> - Pinch-zoom and drag-pan gestures on the timeline. No Windows Ink / pen annotation exists.</li>
+<li><em>(Removed 2026-10)</em> Windows Timeline (User Activities / Adaptive Cards) publishing — never called, needs package identity, and the Timeline UI is gone from Windows 11.</li>
 </ul>
 <hr>
 <h2 id="quick-start" class="anchored">Quick Start<a class="heading-anchor" href="#quick-start" aria-label="Link to this section">#</a></h2>
@@ -260,7 +260,7 @@ Windows integration.</p>
 <li>Check version: <code>winver</code> in the Run dialog.</li>
 </ul>
 </li>
-<li><p><strong>Visual Studio</strong> — 2026 (18.0+) is the supported option, 2022 (17.14) works with a caveat.</p>
+<li><p><strong>Visual Studio 2026 (18.0+)</strong> — required; VS 2022 can no longer build this repo.</p>
 <ul>
 <li>Download: <a href="https://visualstudio.microsoft.com/" target="_blank" rel="noopener noreferrer" class="external-link">https://visualstudio.microsoft.com/</a></li>
 <li>Required workloads:<ul>
@@ -269,16 +269,14 @@ Windows integration.</p>
 </ul>
 </li>
 <li>The projects target <code>net10.0</code>, and Microsoft supports targeting .NET 10 only in Visual
-Studio 18.0+. VS 2022 17.14 emits an &quot;unsupported target&quot; <strong>warning</strong> rather than an error
-and does build, but it is off the supported path — prefer VS 2026 if you have the choice.</li>
+Studio 18.0+. The pinned SDK band (below) also requires MSBuild 18.</li>
 </ul>
 </li>
-<li><p><strong>The .NET 10 SDK, <code>10.0.1xx</code> feature band</strong> — pinned by <code>windows-native/src/global.json</code>
-(<code>&quot;version&quot;: &quot;10.0.100&quot;</code>, <code>&quot;rollForward&quot;: &quot;latestPatch&quot;</code>).</p>
+<li><p><strong>The .NET 10 SDK, 10.0.3xx or newer</strong> — pinned by <code>windows-native/src/global.json</code>
+(<code>&quot;version&quot;: &quot;10.0.300&quot;</code>, <code>&quot;rollForward&quot;: &quot;latestFeature&quot;</code>).</p>
 <ul>
-<li>The band is not arbitrary: <code>10.0.1xx</code> declares MSBuild 17.14 as its minimum, which is what
-keeps VS 2022 able to build. SDK bands <code>10.0.2xx</code> and later require MSBuild 18, i.e. VS 2026.
-Once the toolchain is fully on VS 2026, this pin can be raised.</li>
+<li>SDK bands <code>10.0.2xx</code> and later require MSBuild 18, i.e. VS 2026, so the repo no longer
+builds in VS 2022. Visual Studio 2026 ships a satisfying SDK.</li>
 <li>.NET 10 is required, not optional: .NET 8 and .NET 9 both reach end of support on
 2026-11-10, and the Windows SDK projection ref pack the build now uses is compiled against
 a newer runtime than net8.0 can consume (it fails with <code>CS1705</code> assembly-version conflicts).</li>
@@ -312,7 +310,7 @@ cd memory-line/windows-native/src
 <span class="tok-comment"># Full app build (Visual Studio MSBuild), Release | x64:</span>
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64
 
-<span class="tok-comment"># Or open MemoryTimeline.sln in Visual Studio 2022 and press F5 (debug) / Ctrl+F5 (run).</span></code></pre></div>
+<span class="tok-comment"># Or open MemoryTimeline.sln in Visual Studio 2026 and press F5 (debug) / Ctrl+F5 (run).</span></code></pre></div>
 <h3 id="first-run" class="anchored">First Run<a class="heading-anchor" href="#first-run" aria-label="Link to this section">#</a></h3>
 <ul>
 <li>The app creates its SQLite database at <code>%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db</code> (WAL mode).</li>
@@ -424,7 +422,7 @@ Regenerating a proper EF migration baseline is a tracked follow-up.</p>
 │              ↕                            │
 │  ┌──────────────────────────────────┐    │
 │  │ Data Access Layer                │    │
-│  │ - EF Core 8 + SQLite (WAL)       │    │
+│  │ - EF Core 10 + SQLite (WAL)      │    │
 │  │ - IDbContextFactory per-operation│    │
 │  │ - Repositories + SchemaUpgrader  │    │
 │  └──────────────────────────────────┘    │
@@ -475,8 +473,9 @@ services.<span class="tok-type">AddSingleton&lt;ITimelineService, TimelineServic
 services.<span class="tok-type">AddSingleton&lt;IAudioRecordingService, AudioRecordingService&gt;</span>();
 services.<span class="tok-type">AddSingleton&lt;IQueueService, QueueService&gt;</span>();
 
-<span class="tok-comment">// Local Whisper is the registered STT engine. The Windows SpeechRecognizer</span>
-<span class="tok-comment">// stub cannot transcribe files (mic-only) and now fails fast instead.</span>
+<span class="tok-comment">// Local Whisper is the registered (and only) STT engine. The old Windows</span>
+<span class="tok-comment">// SpeechRecognizer stub was deleted: that API is mic-only and cannot</span>
+<span class="tok-comment">// transcribe a file.</span>
 services.<span class="tok-type">AddSingleton&lt;ISpeechToTextService, WhisperSpeechToTextService&gt;</span>();
 
 <span class="tok-comment">// LLM: a routing facade re-reads llm_provider on every call and delegates</span>
@@ -581,8 +580,8 @@ through a structured, <strong>multi-agent feature audit and fix pass</strong>. H
 <ul>
 <li><strong>Made the voice pipeline real</strong> — replaced a &quot;speech recognition&quot; path that transcribed the
 <strong>live microphone</strong> (not the recorded file) with local file-based <strong>Whisper</strong>
-(<code>WhisperSpeechToTextService</code>); the old <code>WindowsSpeechRecognitionService</code> now fails fast without
-opening the mic. Fixed the unpackaged storage-path crash, persisted transcripts, and made
+(<code>WhisperSpeechToTextService</code>); the old <code>WindowsSpeechRecognitionService</code> was first turned into a
+fail-fast stub and has since been deleted. Fixed the unpackaged storage-path crash, persisted transcripts, and made
 <strong>approve</strong> atomic (event + tags/people/locations in one transaction).</li>
 <li><strong>Fixed DbContext concurrency</strong> — moved from a single app-wide <code>AddDbContext</code> to per-operation
 contexts via <code>IDbContextFactory</code>, resolving intermittent &quot;second operation on this context&quot;
@@ -612,8 +611,9 @@ stale EF Migrations baseline was deleted.</li>
 <h3 id="continuous-integration" class="anchored">Continuous Integration<a class="heading-anchor" href="#continuous-integration" aria-label="Link to this section">#</a></h3>
 <p><code>.github/workflows/windows-native-build.yml</code> builds the full solution <strong>Release | x64</strong> on
 <code>windows-latest</code>, driving the build with <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>)
-because the WinUI PRI task cannot run under <code>dotnet build</code>. Tests run best-effort via
-<code>dotnet vstest</code>. Builds are currently <strong>green</strong> in CI.</p>
+because the WinUI PRI task cannot run under <code>dotnet build</code>. The built test assembly then
+runs with <code>dotnet vstest</code>; <strong>the build and the tests both gate the run</strong>. Builds are
+currently <strong>green</strong> in CI.</p>
 <hr>
 <h2 id="deployment" class="anchored">Deployment<a class="heading-anchor" href="#deployment" aria-label="Link to this section">#</a></h2>
 <h3 id="msix-package" class="anchored">MSIX Package<a class="heading-anchor" href="#msix-package" aria-label="Link to this section">#</a></h3>
@@ -720,14 +720,14 @@ LLM token streaming, PDF narrative export, and more; see the deferred list in
 </ul>
 <p><strong>&quot;Windows App SDK not found&quot;</strong></p>
 <ul>
-<li>Install the <strong>Windows App SDK</strong> workload, or update Visual Studio to 17.8+.</li>
+<li>Install the <strong>Windows App SDK</strong> workload, or update Visual Studio to 18.0+.</li>
 </ul>
 <p><strong>&quot;SDK version not found&quot; / wrong SDK selected</strong></p>
 <ul>
-<li>The build is pinned to the <strong>.NET 10 SDK, <code>10.0.1xx</code> band</strong> (<code>global.json</code>, <code>10.0.100</code>,
-<code>rollForward: latestPatch</code>). Install it from <a href="https://dotnet.microsoft.com/download/dotnet/10.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/10.0</a>
-— a <code>10.0.2xx</code> or newer SDK will <em>not</em> satisfy this pin, which is intentional: those bands
-require MSBuild 18 (Visual Studio 2026), while <code>10.0.1xx</code> still works in Visual Studio 2022.</li>
+<li>The build is pinned to the <strong>.NET 10 SDK, 10.0.3xx or newer</strong> (<code>global.json</code>, <code>10.0.300</code>,
+<code>rollForward: latestFeature</code>). Install it from <a href="https://dotnet.microsoft.com/download/dotnet/10.0" target="_blank" rel="noopener noreferrer" class="external-link">https://dotnet.microsoft.com/download/dotnet/10.0</a>
+— a <code>10.0.1xx</code>/<code>10.0.2xx</code> SDK will <em>not</em> satisfy this pin. These newer bands require MSBuild 18
+(Visual Studio 2026), so Visual Studio 2022 can no longer build the repo.</li>
 </ul>
 <h3 id="runtime-errors" class="anchored">Runtime Errors<a class="heading-anchor" href="#runtime-errors" aria-label="Link to this section">#</a></h3>
 <p><strong>&quot;Database file not found&quot;</strong></p>
@@ -795,7 +795,7 @@ than swallowing them.</li>
 </ul>
 <hr>
 <h2 id="license" class="anchored">License<a class="heading-anchor" href="#license" aria-label="Link to this section">#</a></h2>
-<p>MIT License — see the main repository <code>LICENSE</code> file.</p>
+<p>No license file has been published for this repository yet; see the root <code>README.md</code>.</p>
 <hr>
 <p><strong>Last Updated:</strong> 2026-08-06<br><strong>Status:</strong> Active development (Windows Native is the primary product)  </p>
 
@@ -861,7 +861,7 @@ than swallowing them.</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

@@ -48,7 +48,7 @@ Every hop persists its state, so a failure at any stage is recoverable and visib
 
 ### Home & rediscovery
 - **Home page** — the default landing page: **On This Day** anniversary cards (precision-aware — only memories with a real day anchor appear on a specific day), a recall-prompt card, recent activity, and a first-run empty state that walks a new archive through capture.
-- **Daily toast** — an optional once-a-day notification when today has an anniversary; clicking it (and JumpList/Windows Timeline entries) deep-links straight to the event.
+- **Daily toast** — an optional once-a-day notification when today has an anniversary; clicking it (and a Jump List recent-event entry) deep-links straight to the event.
 - **Guided recall prompts** — the app mines the archive for gaps (empty stretches, people with no events, era edges, thin one-line events, anniversary anchors) and asks specific questions on the Home and Queue pages. A dismissed or answered question is **never asked again**; answers can be typed or spoken and flow into the normal extraction queue.
 
 ### Timeline
@@ -59,7 +59,8 @@ Every hop persists its state, so a failure at any stage is recoverable and visib
 - Newly created or approved events refresh onto the timeline automatically (via an in-app messenger), and the view jumps to an event's date if it lands outside the current window.
 
 ### Capture → events
-- **Recording** with pause/resume/cancel using Windows `MediaCapture`; recordings are written under `%LOCALAPPDATA%\MemoryTimeline\AudioRecordings`.
+- **Recording** with pause/resume/cancel using Windows `MediaCapture`, a live input-level meter, and a microphone picker in Settings; recordings are written under `%LOCALAPPDATA%\MemoryTimeline\AudioRecordings`.
+- **Import audio** — bring existing recordings (WAV, plus M4A/MP3/AAC/OGG/FLAC) into the same queue from the Queue page's *Import Audio…* button.
 - **Text & paste capture** — Ctrl+Shift+V (or the Queue-page button) captures typed or pasted text through the same queue; transcripts are persisted and reused across retries.
 - **Local speech-to-text** via **Whisper** ([Whisper.net](https://github.com/sandrohanea/whisper.net)) — file-based, fully **offline** after a one-time model download. The recorded WAV is transcribed on-device; no audio is sent to the cloud.
 - **LLM event extraction** producing structured events with dates *and their precision*, tags, people (alias-aware), and locations, held in a **review queue** with approve / edit / reject.
@@ -83,13 +84,12 @@ Every hop persists its state, so a failure at any stage is recoverable and visib
 - **Backup & restore** — one-click `.mtbak` backup archives (consistent online SQLite backup, optionally including media), **restore with a preview and explicit confirmation**, and optional scheduled daily/weekly backups.
 - **Revision history** — every event edit is recorded append-only; a history dialog shows what changed and when.
 - **Export / Import** — JSON, CSV, and Markdown export; JSON import with duplicate handling and an optional pre-import database backup.
-- **Settings** — API keys, **pluggable AI providers** (Claude or an OpenAI-compatible endpoint such as Ollama/LM Studio; local or OpenAI embeddings with a guarded re-embed flow), a per-session LLM usage counter, backup schedule, a real Clear Cache, default zoom, and theme — all persisted locally and applied without a restart.
+- **Settings** — API keys, **pluggable AI providers** (Claude or an OpenAI-compatible endpoint such as Ollama/LM Studio; local or OpenAI embeddings with a guarded re-embed flow), a per-session LLM usage counter, backup schedule, a real Clear Cache, microphone selection, default zoom (applied when the timeline first loads), and theme — all persisted locally and applied without a restart.
 
 ### Windows 11 integration
 - Toast **notifications** (e.g. "processing complete").
-- **JumpList** quick actions and recent events.
-- **Windows Timeline** activity publishing (Adaptive Cards).
-- Light / Dark / System **theming**; touch and pen friendly.
+- **Jump List** quick actions (new event, start recording, timeline, search) and a recent-events group that fills as you open events. Note: the app ships **unpackaged**, and the `Windows.UI.StartScreen.JumpList` API needs package identity, so the Jump List may be absent on an unpackaged install — the app detects the failure and logs it once rather than crashing.
+- Light / Dark / System **theming**; touch-friendly timeline gestures (pinch-zoom, drag-pan). There is no Windows Ink / pen-annotation feature, and the former Windows Timeline (User Activities) integration was removed — it had no callers and Windows 11 dropped the Timeline UI.
 
 ---
 
@@ -129,6 +129,9 @@ MemoryTimeline.Data       Data access  — EF Core DbContext, entity models, rep
 MemoryTimeline.Sync       Sync client  — pairing, push/pull/ack, outbox publisher,          [net10.0]
                                          capture-status publisher, background worker
 MemoryTimeline.Tests      xUnit unit, integration, and performance tests            [net10.0-windows]
+MemoryTimeline.Portability.Tests
+                          xUnit proof that Core/Data/Sync *run* off Windows; plain    [net10.0]
+                          dotnet CLI, executed by the macOS workflow (not in the .sln)
 ```
 
 Key architectural decisions (recently reworked — see [Recent engineering](#recent-engineering-work)):
@@ -152,12 +155,12 @@ Key architectural decisions (recently reworked — see [Recent engineering](#rec
 git clone <repository-url>
 cd memory-line/windows-native/src
 
-# Open the solution in Visual Studio 2026 and press F5,
-# or build from the command line for x64 (the solution has no AnyCPU config):
-dotnet build MemoryTimeline.sln -c Debug -p:Platform=x64
+# Open the solution in Visual Studio 2026 and press F5, or build from a
+# Developer PowerShell for VS 2026 with VS msbuild (x64 only - no AnyCPU):
+msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64
 ```
 
-> **Note on `dotnet build` vs. Visual Studio:** WinUI 3 PRI resource generation uses a .NET Framework MSBuild task that loads under **Visual Studio's `msbuild.exe`** but not under the `dotnet` CLI's build engine. Build from **Visual Studio** (or `msbuild`) for a full app build; the CI pipeline does the same on a Windows runner.
+> **Do not use `dotnet build` / `dotnet run` for the app.** WinUI 3 PRI resource generation uses a .NET Framework MSBuild task that loads under **Visual Studio's `msbuild.exe`** but fails under the `dotnet` CLI's build engine (error MSB4062). Build from **Visual Studio** (or `msbuild`); the CI pipeline does the same on a Windows runner. Only the plain-`net10.0` projects (Core, Data, Sync, Portability.Tests, the sync service) build with the `dotnet` CLI.
 
 ### First run
 - The app creates its SQLite database at `%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db`.
@@ -235,7 +238,7 @@ Full details: [`windows-native/FEATURE-AUDIT.md`](./windows-native/FEATURE-AUDIT
 - **Regenerate EF Core migrations** to replace the `SchemaUpgrader` stopgap with a proper migration history.
 - **Deferred items from the 2026-08 wave** — photo-import wizard, map tile basemaps, timeline location chip, LLM token streaming, PDF narrative export, and others; see [`windows-native/DEVELOPMENT-STATUS.md`](./windows-native/DEVELOPMENT-STATUS.md).
 - **Whisper model options** (larger models for accuracy; language selection UI).
-- **Analytics export** and a few remaining UI polish items.
+- A few remaining UI polish items.
 - MSIX packaging and Microsoft Store submission (Phase 7).
 - **macOS app** — SwiftUI head under `macos-native/`; see [`docs/design/MACOS-PORT-PLAN.md`](./docs/design/MACOS-PORT-PLAN.md).
 
@@ -252,9 +255,12 @@ memory-line/
 │   │   ├── MemoryTimeline/          WinUI 3 app (Views, ViewModels, Controls, Services)
 │   │   ├── MemoryTimeline.Core/     Business logic & services
 │   │   ├── MemoryTimeline.Data/     EF Core context, models, repositories, SchemaUpgrader
-│   │   ├── MemoryTimeline.Tests/    xUnit tests
+│   │   ├── MemoryTimeline.Sync/     sync client (pairing, push/pull/ack, outbox, background worker)
+│   │   ├── MemoryTimeline.Tests/    xUnit tests (Windows runner, gates CI)
+│   │   ├── MemoryTimeline.Portability.Tests/  plain net10.0 tests run with the dotnet CLI (macOS workflow)
 │   │   ├── MemoryTimeline.sln
 │   │   └── global.json              pins the .NET SDK for the build
+│   ├── scripts/                     setup / verification PowerShell scripts
 │   ├── README.md                    Windows Native overview
 │   ├── FEATURE-AUDIT.md             feature-by-feature audit & root causes
 │   ├── HARDENING-FOLLOWUPS.md       deferred hardening items
@@ -279,10 +285,13 @@ memory-line/
 
 ```powershell
 cd windows-native/src
-dotnet test MemoryTimeline.sln -c Debug -p:Platform=x64
+# Build once with VS msbuild (dotnet test would rebuild the WinUI app with the dotnet engine and fail),
+msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64
+# then run the already-built test assembly (CI does exactly this; the tests gate the workflow):
+dotnet vstest MemoryTimeline.Tests\bin\x64\Debug\net10.0-windows10.0.26100.0\MemoryTimeline.Tests.dll
 ```
 
-Tests cover timeline math, services, repository/integration behavior, and performance. See [`windows-native/TESTING.md`](./windows-native/TESTING.md).
+Tests cover timeline math, services, repository/integration behavior, and performance. The plain-`net10.0` `MemoryTimeline.Portability.Tests` project runs with `dotnet test` on any OS. See [`windows-native/TESTING.md`](./windows-native/TESTING.md).
 
 ---
 
@@ -350,4 +359,4 @@ For Windows Native work: follow WinUI 3 guidelines, use CommunityToolkit.Mvvm, k
 
 ## License
 
-MIT License — see [`LICENSE`](./LICENSE).
+No license file has been published for this repository yet. Until one is added, the code is not under an open-source license; please ask the maintainers before reusing it.

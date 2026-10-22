@@ -3,6 +3,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using MemoryTimeline.ViewModels;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace MemoryTimeline.Views;
 
@@ -13,6 +15,12 @@ public sealed partial class QueuePage : Page
     /// still allowed - they are just slow/expensive to extract.
     /// </summary>
     private const int LongTextWarningThreshold = 20000;
+
+    /// <summary>
+    /// Navigation parameter sent by the Jump List "Start Recording" quick
+    /// action (App.HandleActivationAction): starts capturing on arrival.
+    /// </summary>
+    public const string StartRecordingParameter = "record";
 
     private bool _isPasteDialogOpen;
 
@@ -40,6 +48,10 @@ public sealed partial class QueuePage : Page
         var parameter = e.Parameter as string;
         var openPasteDialog = string.Equals(parameter, "paste", StringComparison.OrdinalIgnoreCase);
 
+        // The Jump List "Start Recording" quick action navigates here with the
+        // "record" parameter so capturing starts as soon as the page is up.
+        var startRecording = string.Equals(parameter, StartRecordingParameter, StringComparison.OrdinalIgnoreCase);
+
         // The Home page's recall card navigates here with "recall:<promptId>"
         // so the queue's recall card focuses that prompt.
         string? focusRecallPromptId = null;
@@ -59,6 +71,20 @@ public sealed partial class QueuePage : Page
         if (openPasteDialog)
         {
             OpenPasteDialogWhenReady();
+        }
+
+        if (startRecording)
+        {
+            if (ViewModel.CanStartRecording)
+            {
+                // StartRecordingAsync reports its own failures in the status line.
+                await ViewModel.StartRecordingCommand.ExecuteAsync(null);
+            }
+            else
+            {
+                // A session is already open (recording or paused); do not stack a second one.
+                ViewModel.StatusText = "A recording is already in progress";
+            }
         }
     }
 
@@ -80,6 +106,66 @@ public sealed partial class QueuePage : Page
     private void TypeRecallAnswerButton_Click(object sender, RoutedEventArgs e)
     {
         _ = ShowPasteDialogAsync(recallAnswerMode: true);
+    }
+
+    /// <summary>
+    /// "Import audio…": multi-select file picker (unpackaged-app interop: the
+    /// picker must be initialized with the window handle, as the other pickers
+    /// do), then the ViewModel imports each file through the capture-ingestion
+    /// pipeline and the outcome lands in the InfoBar.
+    /// </summary>
+    private async void ImportAudioButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var openPicker = new FileOpenPicker
+            {
+                ViewMode = PickerViewMode.List,
+                SuggestedStartLocation = PickerLocationId.MusicLibrary
+            };
+            foreach (var extension in QueueViewModel.ImportableAudioExtensions)
+            {
+                openPicker.FileTypeFilter.Add(extension);
+            }
+
+            var hwnd = WindowNative.GetWindowHandle(App.Current.Window);
+            InitializeWithWindow.Initialize(openPicker, hwnd);
+
+            var files = await openPicker.PickMultipleFilesAsync();
+            var paths = files?
+                .Select(f => f.Path)
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList() ?? new List<string>();
+            if (paths.Count == 0)
+            {
+                return;
+            }
+
+            var outcome = await ViewModel.ImportAudioFilesAsync(paths);
+            ShowImportOutcome(outcome);
+        }
+        catch (Exception ex)
+        {
+            // Picker/infrastructure failure (the VM handles import failures itself).
+            ShowImportOutcome(new AudioImportOutcome("Import failed", ex.Message, 0, 1));
+        }
+    }
+
+    /// <summary>
+    /// Maps an import outcome onto the page's InfoBar: success when everything
+    /// imported, warning when some files were skipped/failed, error when nothing
+    /// entered the queue.
+    /// </summary>
+    private void ShowImportOutcome(AudioImportOutcome outcome)
+    {
+        ImportInfoBar.Severity = outcome.ImportedCount == 0
+            ? InfoBarSeverity.Error
+            : outcome.HasProblems
+                ? InfoBarSeverity.Warning
+                : InfoBarSeverity.Success;
+        ImportInfoBar.Title = outcome.Title;
+        ImportInfoBar.Message = outcome.Message;
+        ImportInfoBar.IsOpen = true;
     }
 
     /// <summary>

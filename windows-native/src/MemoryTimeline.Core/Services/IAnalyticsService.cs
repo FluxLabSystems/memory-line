@@ -113,15 +113,17 @@ public class AnalyticsService : IAnalyticsService
                 analytics.TimelineSpan = analytics.LatestEventDate - analytics.EarliestEventDate;
             }
 
-            // Get all component analytics
+            // Get all component analytics. The density and heatmap series are
+            // pure functions of the start dates read once above; the public
+            // per-series methods re-read for callers that want one series.
             analytics.CategoryDistribution = await GetCategoryDistributionAsync();
-            analytics.MonthlyDensity = await GetTimelineDensityAsync(DensityGranularity.Monthly);
-            analytics.YearlyDensity = await GetTimelineDensityAsync(DensityGranularity.Yearly);
+            analytics.MonthlyDensity = BuildDensityPoints(dates, DensityGranularity.Monthly);
+            analytics.YearlyDensity = BuildDensityPoints(dates, DensityGranularity.Yearly);
             analytics.TagCloud = await GetTagCloudAsync();
             analytics.PeopleNetwork = await GetPeopleNetworkAsync();
-            analytics.ActivityByDayOfWeek = await GetActivityHeatmapAsync(HeatmapType.DayOfWeek);
-            analytics.ActivityByMonth = await GetActivityHeatmapAsync(HeatmapType.MonthOfYear);
-            analytics.ActivityByYear = await GetActivityHeatmapAsync(HeatmapType.YearOverTime);
+            analytics.ActivityByDayOfWeek = BuildHeatmapCells(dates, HeatmapType.DayOfWeek);
+            analytics.ActivityByMonth = BuildHeatmapCells(dates, HeatmapType.MonthOfYear);
+            analytics.ActivityByYear = BuildHeatmapCells(dates, HeatmapType.YearOverTime);
 
             _logger.LogInformation("Analytics generated: {EventCount} events analyzed", analytics.TotalEvents);
         }
@@ -172,8 +174,6 @@ public class AnalyticsService : IAnalyticsService
 
     public async Task<List<TimelineDensityPoint>> GetTimelineDensityAsync(DensityGranularity granularity)
     {
-        var points = new List<TimelineDensityPoint>();
-
         try
         {
             await using var dbContext = await _contextFactory.CreateDbContextAsync();
@@ -182,9 +182,24 @@ public class AnalyticsService : IAnalyticsService
                 .Select(e => e.StartDate)
                 .ToListAsync();
 
-            if (!events.Any())
-                return points;
+            return BuildDensityPoints(events, granularity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting timeline density");
+            return new List<TimelineDensityPoint>();
+        }
+    }
 
+    /// <summary>Density series from a list of start dates; pure, so the full load can reuse one read.</summary>
+    internal static List<TimelineDensityPoint> BuildDensityPoints(List<DateTime> events, DensityGranularity granularity)
+    {
+        var points = new List<TimelineDensityPoint>();
+
+        if (!events.Any())
+            return points;
+
+        {
             var grouped = granularity switch
             {
                 DensityGranularity.Daily => events.GroupBy(d => d.Date),
@@ -218,10 +233,6 @@ public class AnalyticsService : IAnalyticsService
                     NormalizedValue = maxCount > 0 ? (double)item.Count / maxCount : 0
                 });
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting timeline density");
         }
 
         return points;
@@ -363,8 +374,6 @@ public class AnalyticsService : IAnalyticsService
 
     public async Task<List<ActivityHeatmapCell>> GetActivityHeatmapAsync(HeatmapType type)
     {
-        var cells = new List<ActivityHeatmapCell>();
-
         try
         {
             await using var dbContext = await _contextFactory.CreateDbContextAsync();
@@ -373,31 +382,31 @@ public class AnalyticsService : IAnalyticsService
                 .Select(e => e.StartDate)
                 .ToListAsync();
 
-            if (!events.Any())
-                return cells;
-
-            switch (type)
-            {
-                case HeatmapType.DayOfWeek:
-                    cells = GenerateDayOfWeekHeatmap(events);
-                    break;
-                case HeatmapType.MonthOfYear:
-                    cells = GenerateMonthOfYearHeatmap(events);
-                    break;
-                case HeatmapType.YearOverTime:
-                    cells = GenerateYearOverTimeHeatmap(events);
-                    break;
-            }
+            return BuildHeatmapCells(events, type);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting activity heatmap");
+            return new List<ActivityHeatmapCell>();
         }
-
-        return cells;
     }
 
-    private List<ActivityHeatmapCell> GenerateDayOfWeekHeatmap(List<DateTime> events)
+    /// <summary>Heatmap cells from a list of start dates; pure, so the full load can reuse one read.</summary>
+    internal static List<ActivityHeatmapCell> BuildHeatmapCells(List<DateTime> events, HeatmapType type)
+    {
+        if (!events.Any())
+            return new List<ActivityHeatmapCell>();
+
+        return type switch
+        {
+            HeatmapType.DayOfWeek => GenerateDayOfWeekHeatmap(events),
+            HeatmapType.MonthOfYear => GenerateMonthOfYearHeatmap(events),
+            HeatmapType.YearOverTime => GenerateYearOverTimeHeatmap(events),
+            _ => new List<ActivityHeatmapCell>(),
+        };
+    }
+
+    private static List<ActivityHeatmapCell> GenerateDayOfWeekHeatmap(List<DateTime> events)
     {
         var cells = new List<ActivityHeatmapCell>();
         var dayNames = new[] { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
@@ -428,7 +437,7 @@ public class AnalyticsService : IAnalyticsService
         return cells;
     }
 
-    private List<ActivityHeatmapCell> GenerateMonthOfYearHeatmap(List<DateTime> events)
+    private static List<ActivityHeatmapCell> GenerateMonthOfYearHeatmap(List<DateTime> events)
     {
         var cells = new List<ActivityHeatmapCell>();
         var monthNames = new[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -459,7 +468,7 @@ public class AnalyticsService : IAnalyticsService
         return cells;
     }
 
-    private List<ActivityHeatmapCell> GenerateYearOverTimeHeatmap(List<DateTime> events)
+    private static List<ActivityHeatmapCell> GenerateYearOverTimeHeatmap(List<DateTime> events)
     {
         var cells = new List<ActivityHeatmapCell>();
         var monthNames = new[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };

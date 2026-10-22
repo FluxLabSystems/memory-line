@@ -148,6 +148,44 @@ final class SyncAPIClient: SyncAPI {
             body: encode(SyncAckRequest(cursor: cursor)), contentType: "application/json")
     }
 
+    // MARK: - Assistant (Phase 4)
+
+    /// `POST /api/v1/assistant/sessions`.
+    ///
+    /// Like `push`, these four are concrete methods rather than `SyncAPI`
+    /// requirements: only the Mac has an Ask surface today, and a protocol
+    /// requirement would oblige every fake in both test suites to implement
+    /// calls the phone never makes.
+    func createAssistantSession(_ request: AssistantSessionCreateRequest) async throws -> AssistantSessionResponse {
+        let data = try await authenticated(
+            method: "POST", path: "/assistant/sessions",
+            body: encode(request), contentType: "application/json")
+        return try decode(AssistantSessionResponse.self, from: data)
+    }
+
+    /// `POST /api/v1/assistant/sessions/{sessionId}/turns` — idempotent on the
+    /// client-generated turnId (a replay returns the stored turn with 200,
+    /// answer included if one has arrived).
+    func submitAssistantTurn(sessionId: String, _ request: AssistantTurnCreateRequest) async throws -> AssistantTurnResponse {
+        let data = try await authenticated(
+            method: "POST", path: "/assistant/sessions/\(sessionId)/turns",
+            body: encode(request), contentType: "application/json")
+        return try decode(AssistantTurnResponse.self, from: data)
+    }
+
+    /// `GET /api/v1/assistant/turns/{turnId}` — the poll for an answer.
+    func assistantTurn(turnId: String) async throws -> AssistantTurnResponse {
+        let data = try await authenticated(method: "GET", path: "/assistant/turns/\(turnId)")
+        return try decode(AssistantTurnResponse.self, from: data)
+    }
+
+    /// `POST /api/v1/assistant/turns/{turnId}/cancel` — terminal; a late answer
+    /// for a cancelled turn is discarded by the service.
+    func cancelAssistantTurn(turnId: String) async throws -> AssistantTurnResponse {
+        let data = try await authenticated(method: "POST", path: "/assistant/turns/\(turnId)/cancel")
+        return try decode(AssistantTurnResponse.self, from: data)
+    }
+
     // MARK: - Request plumbing
 
     /// Executes an authenticated request. On a 401 the token pair is refreshed

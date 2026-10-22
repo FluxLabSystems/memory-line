@@ -13,7 +13,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
-    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <!-- No PublishProfile: the template's win-$(Platform).pubxml was never added
+         (there is no Properties/PublishProfiles folder). The app is distributed
+         unpackaged from the build output; see DEVELOPMENT-STATUS.md on MSIX. -->
     <UseWinUI>true</UseWinUI>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -28,6 +30,9 @@
     <StartupObject>MemoryTimeline.Program</StartupObject>
   </PropertyGroup>
 
+  <!-- Assets\ does not exist yet (no app icons/tiles have been produced), so this
+       glob matches nothing today; Package.appxmanifest still references the
+       standard Assets\*.png names for a future MSIX build. -->
   <ItemGroup>
     <Content Include="Assets\**" />
   </ItemGroup>
@@ -39,6 +44,10 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageReference Include="Whisper.net" Version="1.5.0" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.5.0" />
+    <!-- DPAPI (ProtectedData) for secrets at rest in app_settings; see
+         Services/DpapiSecretProtector.cs. Windows-only, which is why it is
+         referenced here and not in Core. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

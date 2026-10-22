@@ -397,8 +397,8 @@ struct CaptureView: View {
 
     /// Denied is a dead end the app cannot escape on its own, so it replaces
     /// the pane instead of disabling a button and leaving the user to guess —
-    /// the same "say what is actually true" treatment `NotBuiltYetView` gives
-    /// unported sections.
+    /// the same "say what is actually true" treatment the Ask pane gives a
+    /// question the PC has not picked up yet.
     private var microphoneDeniedView: some View {
         ContentUnavailableView {
             Label("Microphone access is off", systemImage: "mic.slash")

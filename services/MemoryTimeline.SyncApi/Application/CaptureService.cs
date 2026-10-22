@@ -235,30 +235,131 @@ public sealed class CaptureService : ICaptureService
         return ServiceResult<CaptureResponse>.Ok(EntityMappers.ToCaptureResponse(capture, artifacts));
     }
 
-    public async Task<ServiceResult<CaptureResponse>> TouchAsync(
+    public async Task<ServiceResult<CaptureResponse>> CompleteAsync(
         Device caller,
         string captureId,
         CancellationToken cancellationToken)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        var (capture, error) = await LoadCaptureAsync(db, caller, captureId, track: false, cancellationToken);
+        var (capture, error) = await LoadCaptureAsync(db, caller, captureId, track: true, cancellationToken);
         if (capture is null)
         {
             return ServiceResult<CaptureResponse>.Fail(error!);
         }
 
-        var device = await db.Devices.FirstOrDefaultAsync(d => d.DeviceId == caller.DeviceId, cancellationToken);
-        if (device is not null)
+        var artifacts = await db.Artifacts.AsNoTracking()
+            .Where(a => a.CaptureId == capture.CaptureId)
+            .ToListAsync(cancellationToken);
+
+        // "Fully uploaded" needs something to have been uploaded: a capture
+        // with no declared artifact has no content for Windows to process.
+        if (artifacts.Count == 0)
         {
-            device.LastSeenAtUtc = DateTime.UtcNow;
+            return ServiceResult<CaptureResponse>.Fail(
+                StatusCodes.Status409Conflict, SyncApiErrorCodes.CaptureArtifactsIncomplete,
+                "No artifact has been declared for this capture; initiate and upload one before completing it.",
+                retryable: true);
+        }
+
+        // Purged counts as done: the upload finished long ago and retention
+        // took the bytes, which must not make a replayed complete start failing.
+        var incomplete = artifacts.FirstOrDefault(
+            a => a.State != ArtifactState.Complete && a.State != ArtifactState.Purged);
+        if (incomplete is not null)
+        {
+            return ServiceResult<CaptureResponse>.Fail(
+                StatusCodes.Status409Conflict, SyncApiErrorCodes.CaptureArtifactsIncomplete,
+                $"Artifact {incomplete.ArtifactId} is {incomplete.State}; every declared artifact must be complete.",
+                retryable: true);
+        }
+
+        // Only a capture still in a client-authored pre-upload status moves:
+        // anything at or past received was already handed to Windows (artifact
+        // completion appends the ingestion-triggering change), and republishing
+        // it would be a second change saying the same thing.
+        if (IsPreUploadStatus(capture.Status))
+        {
+            capture.Status = SyncCaptureStatus.Received;
+            capture.Revision++;
+            db.SyncChanges.Add(EntityMappers.CreateCaptureChange(
+                capture, CompletedAudioSummary(artifacts), caller.DeviceId));
             await db.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation(
+                "Capture {CaptureId} completed by device {DeviceId}; revision {Revision}.",
+                capture.CaptureId, caller.DeviceId, capture.Revision);
+        }
+
+        await TouchDeviceAsync(db, caller, cancellationToken);
+        return ServiceResult<CaptureResponse>.Ok(EntityMappers.ToCaptureResponse(capture, artifacts));
+    }
+
+    public async Task<ServiceResult<CaptureResponse>> RetryAsync(
+        Device caller,
+        string captureId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var (capture, error) = await LoadCaptureAsync(db, caller, captureId, track: true, cancellationToken);
+        if (capture is null)
+        {
+            return ServiceResult<CaptureResponse>.Fail(error!);
+        }
+
+        if (!string.Equals(capture.Status, SyncCaptureStatus.Failed, StringComparison.OrdinalIgnoreCase))
+        {
+            return ServiceResult<CaptureResponse>.Fail(
+                StatusCodes.Status409Conflict, SyncApiErrorCodes.CaptureNotFailed,
+                $"The capture is {capture.Status}; only a failed capture can be retried.");
         }
 
         var artifacts = await db.Artifacts.AsNoTracking()
             .Where(a => a.CaptureId == capture.CaptureId)
             .ToListAsync(cancellationToken);
+
+        // A retry re-publishes the audio for Windows to download again; audio
+        // the retention sweep has already purged cannot be re-processed from
+        // here, and saying so beats re-queueing a capture nothing can fetch.
+        var audio = CompletedAudioSummary(artifacts);
+        if (audio is null && artifacts.Any(a => a.State == ArtifactState.Purged && EntityMappers.IsAudioArtifact(a)))
+        {
+            return ServiceResult<CaptureResponse>.Fail(
+                StatusCodes.Status409Conflict, SyncApiErrorCodes.ArtifactPurged,
+                "The capture's audio was purged by the retention sweep; upload it again before retrying.");
+        }
+
+        capture.Status = SyncCaptureStatus.Received;
+        capture.Revision++;
+        db.SyncChanges.Add(EntityMappers.CreateCaptureChange(capture, audio, caller.DeviceId));
+        await db.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation(
+            "Capture {CaptureId} re-queued by device {DeviceId}; revision {Revision}.",
+            capture.CaptureId, caller.DeviceId, capture.Revision);
+
+        await TouchDeviceAsync(db, caller, cancellationToken);
         return ServiceResult<CaptureResponse>.Ok(EntityMappers.ToCaptureResponse(capture, artifacts));
     }
+
+    /// <summary>Statuses a client may author before its upload is done (SyncCaptureStatus vocabulary).</summary>
+    private static bool IsPreUploadStatus(string status)
+        => string.Equals(status, SyncCaptureStatus.LocalOnly, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, SyncCaptureStatus.Uploading, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The complete audio artifact's summary — what a capture change carries to trigger ingestion — or null.</summary>
+    private static ArtifactSummary? CompletedAudioSummary(IEnumerable<ServerArtifact> artifacts)
+    {
+        var audio = artifacts.FirstOrDefault(
+            a => a.State == ArtifactState.Complete && EntityMappers.IsAudioArtifact(a));
+        return audio is null ? null : EntityMappers.ToSummary(audio);
+    }
+
+    /// <summary>
+    /// Last-seen bookkeeping for the calling device. Saved after the capture
+    /// write and through the concurrency helper, because the device row's
+    /// refresh hash is a concurrency token and a racing token refresh must not
+    /// fail a capture operation that already succeeded.
+    /// </summary>
+    private static Task TouchDeviceAsync(SyncDbContext db, Device caller, CancellationToken cancellationToken)
+        => DeviceRowConcurrency.SaveAsync(db, caller.DeviceId, d => d.LastSeenAtUtc = DateTime.UtcNow, cancellationToken);
 
     /// <summary>Reads a JSON node expected to be a string or null; false when it is another type.</summary>
     private static bool TryGetString(JsonNode? node, out string? value)

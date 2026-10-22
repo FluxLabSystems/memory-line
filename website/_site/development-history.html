@@ -142,7 +142,7 @@
   <p class="doc-lede">Consolidated phase completion reports (Phase 0 through Phase 6) with deliverables, statistics, and architecture achievements.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>2,156</b> words</span>
+    <span class="doc-meta-item"><b>2,230</b> words</span>
     <span class="doc-meta-item"><b>10</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEVELOPMENT-HISTORY.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEVELOPMENT-HISTORY.md ↗
@@ -560,7 +560,7 @@
 <li>Group-based organization</li>
 <li>Duplicate prevention</li>
 </ul>
-<p><strong>Windows Timeline Service:</strong></p>
+<p><strong>Windows Timeline Service</strong> <em>(historical — removed in 2026-10: it never had a caller, needed package identity the unpackaged app lacks, and Windows 11 dropped the Timeline UI)</em>:</p>
 <ul>
 <li>IWindowsTimelineService interface</li>
 <li>WindowsTimelineService implementation</li>
@@ -748,6 +748,11 @@
 </ul>
 <hr>
 <h2 id="known-limitations" class="anchored">Known Limitations<a class="heading-anchor" href="#known-limitations" aria-label="Link to this section">#</a></h2>
+<div class="callout callout-note"><div class="callout-body"><p><strong>Note (2026-10):</strong> this list is the historical snapshot from the Phase 6 milestone and is
+kept as written. Since then: unit/integration/performance tests exist and gate CI (item 1);
+local ONNX embeddings are the default provider (item 6); items 2-4 and 7 are still open.
+See <code>DEVELOPMENT-STATUS.md</code> for the current state.</p>
+</div></div>
 <p>Current limitations pending Phase 7:</p>
 <ol>
 <li><strong>Testing:</strong> Comprehensive automated tests not yet implemented</li>
@@ -935,7 +940,7 @@ the context factory) are tracked in <a href="hardening-followups.html"><code>HAR
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

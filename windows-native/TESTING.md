@@ -60,7 +60,9 @@ cd windows-native/src
 msbuild MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 
 # 2. Run the already-built test assembly (no rebuild).
-$dll = "MemoryTimeline.Tests/bin/x64/Release/net8.0-windows10.0.26100.0/MemoryTimeline.Tests.dll"
+# The solution maps the Tests project's Release|x64 to Release|AnyCPU, so the DLL may land
+# under bin/Release/... instead of bin/x64/Release/...; CI searches both layouts.
+$dll = "MemoryTimeline.Tests/bin/x64/Release/net10.0-windows10.0.26100.0/MemoryTimeline.Tests.dll"
 dotnet vstest $dll --logger:"trx;LogFileName=test.trx" --ResultsDirectory:TestResults
 ```
 
@@ -74,7 +76,7 @@ dotnet vstest $dll --TestCaseFilter:"FullyQualifiedName~QueueServiceTests"
 dotnet vstest $dll --TestCaseFilter:"FullyQualifiedName=MemoryTimeline.Tests.UnitTests.QueueServiceTests.AddToQueueAsync_ValidRecording_AddsToQueue"
 ```
 
-> **Environment note.** Running a self-contained WinUI 3 test assembly under headless VSTest is finicky; in CI this step is treated as best-effort (it does not gate the build). If the app assembly fails to build for any reason, the test project — which references it — will also fail to build, so a green **compile** is the primary signal.
+> **Environment note.** The test project references the WinUI app, so it only builds on a Windows machine with VS msbuild, and the tests must never activate WinRT types (there is no Windows App SDK bootstrap in the test host) — keep tests to Core/Data/Sync and pure head helpers. In CI the `dotnet vstest` run **gates** the workflow: a failing test or a missing test assembly fails the run, so green CI means both compile and tests passed.
 
 ## Code Coverage
 
@@ -237,13 +239,13 @@ GenerateMockEmbedding(int seed)
 
 ### GitHub Actions — `.github/workflows/windows-native-build.yml`
 The real workflow runs on **`windows-latest`** and:
-- Installs the **.NET 8 SDK** plus **Visual Studio MSBuild** (`microsoft/setup-msbuild`).
+- Installs the **.NET 10 SDK** (`dotnet-version: 10.0.x`, matching `global.json`'s `10.0.300` / `latestFeature` pin) plus **Visual Studio MSBuild** (`microsoft/setup-msbuild`).
 - Builds the whole solution **`Release | x64`** with **`msbuild MemoryTimeline.sln /t:Restore,Build`** (not `dotnet build`).
 - Runs tests with **`dotnet vstest`** against the built `MemoryTimeline.Tests.dll` (not `dotnet test`).
 
 ### Behavior
-- **Compilation is the gate.** A build failure fails the workflow.
-- The headless VSTest run of the self-contained WinUI test assembly is **best-effort** (`continue-on-error: true`); its `.trx`/logs are uploaded as artifacts for visibility but do not by themselves fail the run.
+- **Compilation and tests both gate.** A build failure fails the workflow, and so does a vstest failure or a missing `MemoryTimeline.Tests.dll` (the step searches `bin/x64/Release` and `bin/Release` recursively). The `.trx`/logs are uploaded as artifacts and the TRX counters are surfaced as annotations.
+- The plain-`net10.0` `MemoryTimeline.Portability.Tests` project is run separately with `dotnet test` by `.github/workflows/macos-native-build.yml`.
 - There is currently **no** Codecov upload or long-term benchmark tracking configured.
 
 ## Writing New Tests

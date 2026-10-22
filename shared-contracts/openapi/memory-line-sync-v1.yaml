@@ -2,15 +2,20 @@ openapi: 3.0.3
 
 # Memory Line Sync API v1 — wire contract.
 # Faithful to docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md §11 (API design),
-# §6 (domain model), and §12 (synchronization). The devices/captures/artifacts/sync
-# sections mirror the shipped DTOs in ../dotnet/MemoryTimeline.SyncContracts
-# (used verbatim by services/MemoryTimeline.SyncApi and the Windows sync client,
-# serialized camelCase via System.Text.Json web defaults); see ../README.md for
-# versioning rules.
+# §6 (domain model), and §12 (synchronization). Every schema mirrors a shipped DTO
+# in ../dotnet/MemoryTimeline.SyncContracts (used verbatim by
+# services/MemoryTimeline.SyncApi and the Windows sync client, serialized camelCase
+# via System.Text.Json web defaults); see ../README.md for versioning rules.
+#
+# This file is checked by a test in services/MemoryTimeline.SyncApi.Tests
+# (ContractCompatibilityTests): every path+method here must be routed by the
+# service and vice versa, every DTO must have a schema with the same property
+# names, and the entityType enums must match SyncChangeEntityType. Edit the DTOs
+# and this file together, in the same commit, or the sync-api workflow fails.
 
 info:
   title: Memory Line Sync API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     Device-neutral sync, capture, assistant, and roadtrip API for Memory Line.
     Conventions (design doc section 11.1): base path /api/v1, JSON metadata,
@@ -237,15 +242,26 @@ paths:
       operationId: completeCapture
       summary: Mark a capture fully uploaded; all declared artifacts must be complete.
       description: >-
-        Phase 1 behavior: returns the current capture state (artifact
-        completeness is not yet enforced by this endpoint; artifact integrity
-        is enforced on artifact complete).
+        Every artifact declared on the capture must be complete (an artifact
+        already purged by retention counts as done); otherwise the call is
+        rejected with 409 capture_artifacts_incomplete, which is retryable —
+        finish the upload and call again. Nothing is declared at all: the same
+        409, since a capture with no content has nothing for Windows to
+        process.
+
+
+        A capture still in a client-authored pre-upload status (local_only or
+        uploading) advances to received with a bumped serverRevision and
+        publishes a capture change carrying the completed audio artifact. A
+        capture already at or past received is left exactly as it is — artifact
+        completion already appended the ingestion-triggering change — so
+        replaying this call appends nothing and returns the current state.
       parameters:
         - $ref: '#/components/parameters/CaptureId'
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          description: Capture accepted for processing.
+          description: Capture accepted for processing (or already was).
           content:
             application/json:
               schema:
@@ -260,7 +276,21 @@ paths:
       tags: [captures]
       operationId: retryCapture
       summary: Re-run processing for a failed capture.
-      description: 'Phase 1 behavior: returns the current capture state.'
+      description: >-
+        Re-queues a capture whose status is failed: the status returns to
+        received, serverRevision is bumped, and a capture change carrying the
+        complete audio artifact is published so Windows can download and
+        ingest it again. Only a failed capture may be retried — any other
+        status is rejected with 409 capture_not_failed — and not one whose
+        audio the retention sweep has purged (409 artifact_purged; upload the
+        audio again first).
+
+
+        The capture_status projection is Windows-authored and is deliberately
+        left untouched: it keeps reporting the failure until Windows publishes
+        the outcome of the retried run. Whether Windows re-processes a capture
+        it has already ingested once is the Windows client's decision, tracked
+        on that side.
       parameters:
         - $ref: '#/components/parameters/CaptureId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -273,6 +303,7 @@ paths:
                 $ref: '#/components/schemas/Capture'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   # --------------------------------------------------------------- artifacts
@@ -394,6 +425,14 @@ paths:
         rejected with 409 artifact_not_complete. Range requests are supported.
         The response media type is the artifact's declared mediaType
         (application/octet-stream when none was declared).
+
+
+        Once the service's retention sweep has purged the bytes (14 days after
+        Windows acknowledged archival with a completed capture_status, or
+        sooner under storage pressure — design doc section 22, decision 7) the
+        artifact's state is purged and the request is rejected with 410
+        artifact_purged. That is permanent, never retryable: the metadata row
+        survives, the content does not.
       parameters:
         - $ref: '#/components/parameters/ArtifactId'
       responses:
@@ -407,6 +446,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '410': { $ref: '#/components/responses/Gone' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   # -------------------------------------------------------------------- sync
@@ -719,6 +759,10 @@ paths:
       tags: [trips]
       operationId: createTrip
       summary: Create a trip.
+      description: >-
+        The service mints the tripId. Trips are owner-scoped, like captures:
+        every device of the owner reads and updates the same trips. A status
+        of active at creation stamps startedAtUtc when none is sent.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -737,12 +781,53 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '500': { $ref: '#/components/responses/InternalServerError' }
+    get:
+      tags: [trips]
+      operationId: listTrips
+      summary: List the owner's trips, newest first (added in v1.4).
+      responses:
+        '200':
+          description: The owner's trips.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
 
   /trips/{tripId}:
+    get:
+      tags: [trips]
+      operationId: getTrip
+      summary: Fetch a trip (added in v1.4).
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: The trip.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
     patch:
       tags: [trips]
       operationId: updateTrip
       summary: Update trip metadata or status (latest valid state transition wins).
+      description: >-
+        The body is a JSON object where an absent key means "unchanged" and an
+        explicit null clears a nullable field, as for captures. A status key
+        runs through the trip state machine (design doc section 12.2):
+        planned → active | archived; active → paused | completed | archived;
+        paused → active | completed | archived; completed → archived; archived
+        is terminal. Asking for the status the trip already has is a no-op;
+        any other move the machine lacks is rejected with 409
+        trip_invalid_transition. Moving to active stamps startedAtUtc when the
+        trip has none, and completing stamps endedAtUtc the same way.
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -773,6 +858,11 @@ paths:
       description: >-
         One contextual snapshot per capture by default; continuous trails only
         when the user explicitly enables trip logging (design doc section 6.4).
+        A client-supplied routeContextId that parses as a UUID is honoured and
+        replaying it returns the stored snapshot with 200; otherwise the
+        service mints one. The service keeps a trip's trail for 14 days
+        (section 22, decision 9) and always its newest snapshot; exact
+        location is never logged (section 14.5).
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -783,6 +873,12 @@ paths:
             schema:
               $ref: '#/components/schemas/RouteContext'
       responses:
+        '200':
+          description: Idempotent replay — a snapshot with this routeContextId already exists and is returned as-is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteContext'
         '201':
           description: Snapshot stored.
           content:
@@ -792,6 +888,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
   /trips/{tripId}/detours/generate:
@@ -799,6 +896,16 @@ paths:
       tags: [trips]
       operationId: generateDetourSuggestions
       summary: Generate verified detour suggestions for the trip's current route context.
+      description: >-
+        Runs the configured place provider against the trip's most recent
+        route context snapshot and returns the suggestions it produced, newest
+        first, each stored in the proposed state with an expiry. Places
+        already suggested, saved, accepted or dismissed on this trip are never
+        proposed again (design doc section 10.5). An empty array is a real
+        answer, not an error: the trip has no route context yet, or the service
+        has no place provider configured — the shipped service has none (the
+        Google/Apple adapters of section 22, decision 5, are not built), so it
+        invents nothing.
       parameters:
         - $ref: '#/components/parameters/TripId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -842,6 +949,15 @@ paths:
       tags: [detours]
       operationId: acceptDetourSuggestion
       summary: Accept a suggestion (monotonic; not overwritten by a stale proposed state).
+      description: >-
+        Disposition is a monotonic state machine (design doc section 12.2):
+        proposed, heard and saved may each become accepted or dismissed, both
+        terminal; a suggestion whose expiresAtUtc has passed becomes expired,
+        also terminal, the moment it is read. Asking for the state a
+        suggestion already has is a no-op 200; a move the machine lacks is
+        409 detour_invalid_transition. The same rules apply to dismiss and
+        save (save is a step before accept or dismiss, from proposed or heard
+        only).
       parameters:
         - $ref: '#/components/parameters/SuggestionId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1022,7 +1138,11 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     NotFound:
-      description: The addressed entity does not exist or is not owned by the caller.
+      description: >-
+        The addressed entity does not exist or is not owned by the caller
+        (capture_not_found, artifact_not_found, device_unknown,
+        assistant_session_not_found, assistant_turn_not_found, trip_not_found,
+        detour_not_found).
       content:
         application/json:
           schema:
@@ -1031,7 +1151,21 @@ components:
       description: >-
         Conflicting state: duplicate ID with a different declaration, invalid
         lifecycle state, or missing parts (artifact_incomplete_parts is
-        retryable after uploading the missing part).
+        retryable after uploading the missing part). On captures:
+        capture_artifacts_incomplete (complete called before every declared
+        artifact finished — retryable) and capture_not_failed (retry called on
+        a capture that is not failed). On trips and detours:
+        trip_invalid_transition and detour_invalid_transition (a state-machine
+        move the entity does not allow from where it is).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Gone:
+      description: >-
+        The addressed content existed but was removed on purpose and will not
+        come back (artifact_purged: the retention sweep deleted the bytes after
+        Windows acknowledged archival). Never retryable.
       content:
         application/json:
           schema:
@@ -1282,11 +1416,16 @@ components:
           description: Lowercase hex SHA-256 of the artifact bytes.
         state:
           type: string
-          enum: [pending, uploading, complete, failed]
+          enum: [pending, uploading, complete, failed, purged]
           description: >-
             SERVER artifact lifecycle state (upload progress on the sync
             service). Distinct from the Windows-local upload_state vocabulary
             (pending_upload, uploaded, ...), which never crosses this API.
+            purged (added in v1.4) means the retention sweep removed the bytes
+            after Windows acknowledged archival; byteLength and sha256 keep the
+            measured values, and a download answers 410 artifact_purged. A
+            client that only downloads complete artifacts needs no change to
+            handle it.
 
     ArtifactInitiateRequest:
       type: object
@@ -1395,12 +1534,21 @@ components:
         entityType:
           type: string
           enum: [capture, capture_artifact, capture_status, recording_queue,
-                 pending_event, event, assistant_turn, assistant_turn_chunk]
+                 pending_event, event, era, person, pending_event_decision,
+                 assistant_turn, assistant_turn_chunk]
+          description: >-
+            Entity discriminator (the SyncChangeEntityType constants). event,
+            era, person and pending_event are the read-only timeline projection
+            Windows publishes (v1.4); pending_event_decision is a companion's
+            verdict travelling the other way.
         entityId:
           type: string
           description: >-
             The entity's ID. For capture_status this is the captureId, so a
-            capture has exactly one status entity.
+            capture has exactly one status entity. For the timeline
+            projections it is the projected row's own key (eventId, eraId,
+            personId, pendingEventId) in canonical lowercase UUID form, and for
+            pending_event_decision the pendingEventId being decided.
         operation:
           type: string
           enum: [upsert, delete]
@@ -1423,7 +1571,13 @@ components:
             Entity-type-specific payload, delivered as a JSON string — not an
             embedded object. For capture upserts it encodes a
             CaptureChangePayload; for capture_status upserts, a
-            CaptureStatusChangePayload. Null for tombstones and payload-free
+            CaptureStatusChangePayload; for event, era, person and
+            pending_event upserts an EventProjectionPayload,
+            EraProjectionPayload, PersonProjectionPayload or
+            PendingEventProjectionPayload; for pending_event_decision a
+            PendingEventDecisionPayload; for assistant_turn and
+            assistant_turn_chunk an AssistantTurnChangePayload or
+            AssistantTurnChunkPayload. Null for tombstones and payload-free
             changes.
 
     CaptureChangePayload:
@@ -1597,6 +1751,346 @@ components:
             section 16.2). Null when the publisher cannot classify it — which
             is not evidence either way.
 
+    # --------------------------------------------------- timeline projections
+
+    EventProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for event changes: a
+        read-only projection of one archive event, published by the owner's
+        Windows device so a companion can draw a timeline it does not own
+        (design doc section 19 Phase 3; the EventProjectionPayload DTO).
+        Documented here for reference — on the wire it travels as a string
+        inside payloadJson, not as an inline object.
+
+
+        Denormalised on purpose: tags, people and location names ride inline
+        so a consumer draws a bubble rather than reconstructs a graph. Every
+        date-time is UTC; startDate and friends are the archive's dates in a
+        UTC encoding, which is why clients render displayDate rather than
+        localising them. Payloads do not strip nulls.
+      required:
+        - eventId
+        - title
+        - startDate
+        - datePrecision
+        - tags
+        - personIds
+        - locations
+        - mediaCount
+        - updatedAtUtc
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+          description: Trimmed to a readable length by the publisher; not the archive's full text.
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+          description: >-
+            How much of startDate to believe. Carried rather than derived so a
+            companion never invents an exact day for a memory the user dated to
+            a summer; a value outside this list rejects the push entry.
+        displayDate:
+          type: string
+          nullable: true
+          description: Precision-honest display string ("Summer 2003"), formatted by Windows.
+        earliestPossible:
+          type: string
+          format: date-time
+          nullable: true
+        latestPossible:
+          type: string
+          format: date-time
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        eraId:
+          type: string
+          format: uuid
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+          description: Tag names, already resolved.
+        personIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Linked person ids; names come from the person projection.
+        locations:
+          type: array
+          items:
+            type: string
+          description: Location display names, already resolved.
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        mediaCount:
+          type: integer
+          minimum: 0
+          description: Attached media items, so a companion can show a badge without fetching any.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    EraProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for era changes: a
+        life period, projected for timeline backgrounds and the eras list
+        (the EraProjectionPayload DTO). Travels as a string inside
+        payloadJson.
+      required: [eraId, name, startDate, colorCode, displayOrder, updatedAtUtc]
+      properties:
+        eraId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        name:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null for an ongoing era.
+        colorCode:
+          type: string
+          description: >-
+            "#RRGGBB". Colours cross as strings and the client builds its own
+            brush. The service also accepts "#AARRGGBB", which the Windows
+            column can hold; anything that is not a hex colour rejects the
+            push entry.
+        categoryId:
+          type: string
+          nullable: true
+        categoryName:
+          type: string
+          nullable: true
+        displayOrder:
+          type: integer
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PersonProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for person changes: a
+        contact-book person, projected for the People hub and for resolving
+        EventProjectionPayload.personIds (the PersonProjectionPayload DTO).
+        Travels as a string inside payloadJson.
+      required: [personId, name, isFavorite, eventCount, updatedAtUtc]
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        name:
+          type: string
+        nickname:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+          nullable: true
+        mergedIntoId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >-
+            When set, this person was merged into another and this id is a
+            tombstone companions must follow rather than show as a duplicate;
+            a value that is not a UUID rejects the push entry.
+        isFavorite:
+          type: boolean
+        eventCount:
+          type: integer
+          minimum: 0
+          description: Events this person appears in, so the hub can sort without a scan.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PendingEventProjectionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for pending_event
+        changes: an extracted event awaiting review, projected so a companion
+        can show the queue and act on it with a PendingEventDecisionPayload
+        (the PendingEventProjectionPayload DTO). Travels as a string inside
+        payloadJson.
+      required:
+        - pendingEventId
+        - title
+        - startDate
+        - datePrecision
+        - confidenceScore
+        - tags
+        - peopleNames
+        - updatedAtUtc
+      properties:
+        pendingEventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        captureId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Capture this was extracted from, so the companion can link back.
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+        displayDate:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Extraction confidence, so the reviewer can triage.
+        tags:
+          type: array
+          items:
+            type: string
+        peopleNames:
+          type: array
+          items:
+            type: string
+          description: People the extraction found, by name — they may not exist yet.
+        transcriptPreview:
+          type: string
+          nullable: true
+          maxLength: 600
+          description: >-
+            Bounded excerpt of the source transcript (design doc section 14.5),
+            never the whole thing; the same bound as
+            CaptureStatusChangePayload.transcriptPreview, refused rather than
+            trimmed when exceeded.
+        updatedAtUtc:
+          type: string
+          format: date-time
+
+    PendingEventDecisionPayload:
+      type: object
+      description: >-
+        Shape of the JSON string carried in payloadJson for
+        pending_event_decision changes: a companion's approve/reject verdict
+        on a pending event — the one write a non-Windows device may make (the
+        PendingEventDecisionPayload DTO). Travels as a string inside
+        payloadJson.
+
+
+        Safe to accept precisely because it is not an edit: it carries no
+        field values to merge, applying it twice means what applying it once
+        meant, and two devices sending the same verdict agree by
+        construction. Windows still performs the approval and drops verdicts
+        for reviews it has already resolved. The service relays the entry
+        verbatim; it keeps no pending events to validate against.
+      required: [pendingEventId, decision, decidedByDeviceId, decidedAtUtc]
+      properties:
+        pendingEventId:
+          type: string
+          format: uuid
+          description: Equals the change's entityId.
+        decision:
+          type: string
+          enum: [approve, reject]
+          description: >-
+            Exact lowercase. Deliberately has no default: a missing or
+            unknown verdict is rejected rather than read as approve, because
+            the failure mode of a missing field must never be a write to the
+            archive.
+        decidedByDeviceId:
+          type: string
+          format: uuid
+          description: >-
+            Must be the device pushing the decision (change_not_permitted
+            otherwise); Windows keeps it as the audit trail of who reviewed
+            what.
+        decidedAtUtc:
+          type: string
+          format: date-time
+        corrections:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/PendingEventCorrections'
+          description: >-
+            Optional reviewer corrections applied before approval. Null means
+            approve as extracted.
+
+    PendingEventCorrections:
+      type: object
+      description: >-
+        The narrow set of fields a reviewer may correct while approving (the
+        PendingEventCorrections DTO) — title and dates, the fields realistically
+        fixed on a phone. Deliberately not general editing: it rides the
+        decision because fixing a title while approving is one act, not two.
+      properties:
+        title:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        datePrecision:
+          type: string
+          enum: [exact, day, month, season, year, decade, unknown]
+          nullable: true
+          description: A value outside the vocabulary rejects the push entry.
+        category:
+          type: string
+          nullable: true
+
     SyncPushRequest:
       type: object
       required: [entries]
@@ -1620,18 +2114,31 @@ components:
         entityType:
           type: string
           enum: [capture, capture_artifact, capture_status, recording_queue,
-                 pending_event, event, assistant_turn, assistant_turn_chunk]
+                 pending_event, event, era, person, pending_event_decision,
+                 assistant_turn, assistant_turn_chunk]
+          description: >-
+            Entity discriminator. event, era, person and pending_event may be
+            pushed only by the owner's Windows device — any other device is
+            refused per entry with change_not_permitted — and
+            pending_event_decision is the one entity a companion may author
+            besides its own captures.
         entityId:
           type: string
           description: >-
             The entity's ID; for capture_status the captureId, which must equal
-            the payload's captureId.
+            the payload's captureId. For the timeline projections and
+            decisions it must be a UUID in canonical lowercase "D" form equal
+            to the payload's own ID, so every consumer keys the same row the
+            same way.
         operation:
           type: string
           enum: [upsert, delete]
           description: >-
-            capture_status accepts upsert only — a status is a latest-wins
-            projection with nothing to tombstone.
+            capture_status, assistant_turn, assistant_turn_chunk and
+            pending_event_decision accept upsert only — a status is a
+            latest-wins projection with nothing to tombstone, and a verdict is
+            a fact that cannot be retracted. delete tombstones one of the four
+            timeline projections and needs no payload.
         payloadJson:
           type: string
           nullable: true
@@ -1808,8 +2315,10 @@ components:
 
     Trip:
       type: object
-      description: Trip lifecycle entity (design doc section 6.4).
-      required: [tripId, name, status]
+      description: >-
+        Trip lifecycle entity (design doc section 6.4; the TripResponse DTO).
+        Owner-scoped: every device of the owner sees the same trips.
+      required: [tripId, name, status, createdAtUtc, updatedAtUtc]
       properties:
         tripId:
           type: string
@@ -1837,21 +2346,36 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-          description: Free-form trip preferences (detour categories, budget, pace, ...).
+          description: Free-form trip preferences (detour categories, budget, pace, ...). Stored and returned verbatim.
+        createdAtUtc:
+          type: string
+          format: date-time
+          description: When the service created the trip (added in v1.4).
+        updatedAtUtc:
+          type: string
+          format: date-time
+          description: When the trip last changed on the service (added in v1.4).
 
     TripCreateRequest:
       type: object
+      description: Creates a trip (the TripCreateRequest DTO). The server mints the tripId.
       required: [name]
       properties:
         name:
           type: string
+          maxLength: 200
         startedAtUtc:
           type: string
           format: date-time
+          nullable: true
         originLabel:
           type: string
+          nullable: true
+          maxLength: 500
         destinationLabel:
           type: string
+          nullable: true
+          maxLength: 500
         status:
           type: string
           enum: [planned, active, paused, completed, archived]
@@ -1859,6 +2383,7 @@ components:
         preferencesJson:
           type: object
           additionalProperties: true
+          nullable: true
 
     TripUpdateRequest:
       type: object
@@ -1892,44 +2417,65 @@ components:
 
     RouteContext:
       type: object
-      description: Point-in-time route/location snapshot for a trip (design doc section 6.4).
+      description: >-
+        Point-in-time route/location snapshot for a trip (design doc section
+        6.4; the TripRouteContext DTO — named differently in C# only because
+        ASP.NET Core has a RouteContext type). The same shape is the request
+        and the response: routeContextId and tripId are optional on the way in
+        and always present on the way out. Optional fields the client did not
+        send come back as null, since responses do not strip nulls.
       required: [capturedAtUtc, latitude, longitude]
       properties:
         routeContextId:
           type: string
           format: uuid
-          description: Client-generated snapshot ID; the server mints one when absent.
+          nullable: true
+          description: Client-generated snapshot ID; the server mints one when absent or not a UUID.
         tripId:
           type: string
           format: uuid
+          nullable: true
+          description: Taken from the path on write; present on read.
         capturedAtUtc:
           type: string
           format: date-time
         latitude:
           type: number
           format: double
+          minimum: -90
+          maximum: 90
         longitude:
           type: number
           format: double
+          minimum: -180
+          maximum: 180
         horizontalAccuracyM:
           type: number
           format: double
+          nullable: true
         headingDegrees:
           type: number
           format: double
+          nullable: true
         speedMps:
           type: number
           format: double
+          nullable: true
         routeProgress:
           type: number
           format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
           description: Fraction of the route completed, 0.0 to 1.0.
         remainingDistanceM:
           type: number
           format: double
+          nullable: true
         remainingDurationS:
           type: number
           format: double
+          nullable: true
         currentRoadName:
           type: string
           nullable: true
@@ -1939,13 +2485,19 @@ components:
           nullable: true
         provider:
           type: string
+          nullable: true
           description: Source of the routing data, e.g. apple_maps.
 
     # --------------------------------------------------------------- detours
 
     DetourSuggestion:
       type: object
-      description: Verified detour suggestion (design doc section 6.5).
+      description: >-
+        Verified detour suggestion (design doc section 6.5; the
+        DetourSuggestion DTO). The descriptive fields are what the place
+        provider produced and are relayed as they came — a field the provider
+        could not fill is null, since responses do not strip nulls. Only state
+        moves, through the accept/dismiss/save endpoints and expiry.
       required: [suggestionId, tripId, generatedAtUtc, name, state]
       properties:
         suggestionId:
@@ -1960,32 +2512,47 @@ components:
         expiresAtUtc:
           type: string
           format: date-time
+          nullable: true
+          description: >-
+            When the suggestion stops being actionable; the service applies a
+            default lifetime when the provider sets none. Past it, the state
+            becomes expired on the next read.
         placeProvider:
           type: string
+          nullable: true
         providerPlaceId:
           type: string
+          nullable: true
+          description: The provider's own place ID; what keeps a place from being suggested twice.
         name:
           type: string
         category:
           type: string
+          nullable: true
         reason:
           type: string
+          nullable: true
           description: Short human-readable justification for the suggestion.
         latitude:
           type: number
           format: double
+          nullable: true
         longitude:
           type: number
           format: double
+          nullable: true
         routeAddedDistanceM:
           type: number
           format: double
+          nullable: true
         routeAddedDurationS:
           type: number
           format: double
+          nullable: true
         openStatus:
           type: string
           enum: [open, closed, closing_soon, unknown]
+          nullable: true
         nextOpenInterval:
           type: string
           nullable: true
@@ -1998,6 +2565,7 @@ components:
         confidence:
           type: number
           format: double
+          nullable: true
           description: Verification confidence, 0.0 to 1.0.
         verificationSourcesJson:
           type: object

@@ -143,8 +143,8 @@
   <p class="doc-lede">The repository README: what Memory Timeline is, the memory pipeline, the full feature list, tech stack, architecture, setup, configuration, and privacy model.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>2,999</b> words</span>
-    <span class="doc-meta-item"><b>14</b> min read</span>
+    <span class="doc-meta-item"><b>3,213</b> words</span>
+    <span class="doc-meta-item"><b>15</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/README.md" target="_blank" rel="noopener noreferrer">
       README.md ↗
     </a>
@@ -186,7 +186,7 @@
 <h3 id="home--rediscovery" class="anchored">Home &amp; rediscovery<a class="heading-anchor" href="#home--rediscovery" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Home page</strong> — the default landing page: <strong>On This Day</strong> anniversary cards (precision-aware — only memories with a real day anchor appear on a specific day), a recall-prompt card, recent activity, and a first-run empty state that walks a new archive through capture.</li>
-<li><strong>Daily toast</strong> — an optional once-a-day notification when today has an anniversary; clicking it (and JumpList/Windows Timeline entries) deep-links straight to the event.</li>
+<li><strong>Daily toast</strong> — an optional once-a-day notification when today has an anniversary; clicking it (and a Jump List recent-event entry) deep-links straight to the event.</li>
 <li><strong>Guided recall prompts</strong> — the app mines the archive for gaps (empty stretches, people with no events, era edges, thin one-line events, anniversary anchors) and asks specific questions on the Home and Queue pages. A dismissed or answered question is <strong>never asked again</strong>; answers can be typed or spoken and flow into the normal extraction queue.</li>
 </ul>
 <h3 id="timeline" class="anchored">Timeline<a class="heading-anchor" href="#timeline" aria-label="Link to this section">#</a></h3>
@@ -199,7 +199,8 @@
 </ul>
 <h3 id="capture--events" class="anchored">Capture → events<a class="heading-anchor" href="#capture--events" aria-label="Link to this section">#</a></h3>
 <ul>
-<li><strong>Recording</strong> with pause/resume/cancel using Windows <code>MediaCapture</code>; recordings are written under <code>%LOCALAPPDATA%\MemoryTimeline\AudioRecordings</code>.</li>
+<li><strong>Recording</strong> with pause/resume/cancel using Windows <code>MediaCapture</code>, a live input-level meter, and a microphone picker in Settings; recordings are written under <code>%LOCALAPPDATA%\MemoryTimeline\AudioRecordings</code>.</li>
+<li><strong>Import audio</strong> — bring existing recordings (WAV, plus M4A/MP3/AAC/OGG/FLAC) into the same queue from the Queue page&#39;s <em>Import Audio…</em> button.</li>
 <li><strong>Text &amp; paste capture</strong> — Ctrl+Shift+V (or the Queue-page button) captures typed or pasted text through the same queue; transcripts are persisted and reused across retries.</li>
 <li><strong>Local speech-to-text</strong> via <strong>Whisper</strong> (<a href="https://github.com/sandrohanea/whisper.net" target="_blank" rel="noopener noreferrer" class="external-link">Whisper.net</a>) — file-based, fully <strong>offline</strong> after a one-time model download. The recorded WAV is transcribed on-device; no audio is sent to the cloud.</li>
 <li><strong>LLM event extraction</strong> producing structured events with dates <em>and their precision</em>, tags, people (alias-aware), and locations, held in a <strong>review queue</strong> with approve / edit / reject.</li>
@@ -226,14 +227,13 @@
 <li><strong>Backup &amp; restore</strong> — one-click <code>.mtbak</code> backup archives (consistent online SQLite backup, optionally including media), <strong>restore with a preview and explicit confirmation</strong>, and optional scheduled daily/weekly backups.</li>
 <li><strong>Revision history</strong> — every event edit is recorded append-only; a history dialog shows what changed and when.</li>
 <li><strong>Export / Import</strong> — JSON, CSV, and Markdown export; JSON import with duplicate handling and an optional pre-import database backup.</li>
-<li><strong>Settings</strong> — API keys, <strong>pluggable AI providers</strong> (Claude or an OpenAI-compatible endpoint such as Ollama/LM Studio; local or OpenAI embeddings with a guarded re-embed flow), a per-session LLM usage counter, backup schedule, a real Clear Cache, default zoom, and theme — all persisted locally and applied without a restart.</li>
+<li><strong>Settings</strong> — API keys, <strong>pluggable AI providers</strong> (Claude or an OpenAI-compatible endpoint such as Ollama/LM Studio; local or OpenAI embeddings with a guarded re-embed flow), a per-session LLM usage counter, backup schedule, a real Clear Cache, microphone selection, default zoom (applied when the timeline first loads), and theme — all persisted locally and applied without a restart.</li>
 </ul>
 <h3 id="windows-11-integration" class="anchored">Windows 11 integration<a class="heading-anchor" href="#windows-11-integration" aria-label="Link to this section">#</a></h3>
 <ul>
 <li>Toast <strong>notifications</strong> (e.g. &quot;processing complete&quot;).</li>
-<li><strong>JumpList</strong> quick actions and recent events.</li>
-<li><strong>Windows Timeline</strong> activity publishing (Adaptive Cards).</li>
-<li>Light / Dark / System <strong>theming</strong>; touch and pen friendly.</li>
+<li><strong>Jump List</strong> quick actions (new event, start recording, timeline, search) and a recent-events group that fills as you open events. Note: the app ships <strong>unpackaged</strong>, and the <code>Windows.UI.StartScreen.JumpList</code> API needs package identity, so the Jump List may be absent on an unpackaged install — the app detects the failure and logs it once rather than crashing.</li>
+<li>Light / Dark / System <strong>theming</strong>; touch-friendly timeline gestures (pinch-zoom, drag-pan). There is no Windows Ink / pen-annotation feature, and the former Windows Timeline (User Activities) integration was removed — it had no callers and Windows 11 dropped the Timeline UI.</li>
 </ul>
 <hr>
 <h2 id="tech-stack" class="anchored">Tech stack<a class="heading-anchor" href="#tech-stack" aria-label="Link to this section">#</a></h2>
@@ -301,7 +301,10 @@ MemoryTimeline.Data       Data access  — EF Core DbContext, entity models, rep
                                          SchemaUpgrader
 MemoryTimeline.Sync       Sync client  — pairing, push/pull/ack, outbox publisher,          [net10.0]
                                          capture-status publisher, background worker
-MemoryTimeline.Tests      xUnit unit, integration, and performance tests            [net10.0-windows]</code></pre></div>
+MemoryTimeline.Tests      xUnit unit, integration, and performance tests            [net10.0-windows]
+MemoryTimeline.Portability.Tests
+                          xUnit proof that Core/Data/Sync *run* off Windows; plain    [net10.0]
+                          dotnet CLI, executed by the macOS workflow (not in the .sln)</code></pre></div>
 <p>Key architectural decisions (recently reworked — see <a href="#recent-engineering-work">Recent engineering</a>):</p>
 <ul>
 <li><strong>Per-operation <code>DbContext</code> via <code>IDbContextFactory</code>.</strong> A desktop app has no request scope, so every repository and service opens a short-lived context per operation (<code>await using var ctx = await factory.CreateDbContextAsync()</code>). This replaced a single app-lifetime context that was shared across all features and was the root cause of intermittent &quot;second operation on this context&quot; failures.</li>
@@ -314,18 +317,18 @@ MemoryTimeline.Tests      xUnit unit, integration, and performance tests        
 <h3 id="prerequisites" class="anchored">Prerequisites<a class="heading-anchor" href="#prerequisites" aria-label="Link to this section">#</a></h3>
 <ul>
 <li><strong>Windows 11</strong> (22H2 or later).</li>
-<li><strong>Visual Studio 2022</strong> (17.8+) with the <strong>.NET Desktop Development</strong> and <strong>Windows App SDK</strong> workloads.</li>
-<li>A <strong>.NET SDK</strong>: the repo pins the build to the <strong>.NET 10</strong> SDK via <code>windows-native/src/global.json</code>, to the <code>10.0.1xx</code> feature band. That band is deliberate — it declares MSBuild 17.14 as its minimum, so Visual Studio 2022 can still build it; bands <code>10.0.2xx</code>+ require MSBuild 18 / Visual Studio 2026.</li>
+<li><strong>Visual Studio 2026</strong> (18.0+) with the <strong>.NET Desktop Development</strong> and <strong>Windows App SDK</strong> workloads.</li>
+<li>A <strong>.NET SDK</strong>: the repo pins the build to the <strong>.NET 10</strong> SDK via <code>windows-native/src/global.json</code>, to <code>10.0.300</code> with <code>rollForward: latestFeature</code> (any 10.0.3xx-or-newer SDK). Those SDK bands require MSBuild 18, so Visual Studio 2022 can no longer build the repo.</li>
 </ul>
 <h3 id="build--run" class="anchored">Build &amp; run<a class="heading-anchor" href="#build--run" aria-label="Link to this section">#</a></h3>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-builtin">git</span> clone &lt;repository-url&gt;
 cd memory-line/windows-native/src
 
-<span class="tok-comment"># Open the solution in Visual Studio 2022 and press F5,</span>
-<span class="tok-comment"># or build from the command line for x64 (the solution has no AnyCPU config):</span>
-<span class="tok-builtin">dotnet</span> build MemoryTimeline.sln <span class="tok-flag">-c</span> Debug <span class="tok-flag">-p</span>:Platform=x64</code></pre></div>
-<div class="callout callout-note"><div class="callout-body"><p><strong>Note on <code>dotnet build</code> vs. Visual Studio:</strong> WinUI 3 PRI resource generation uses a .NET Framework MSBuild task that loads under <strong>Visual Studio&#39;s <code>msbuild.exe</code></strong> but not under the <code>dotnet</code> CLI&#39;s build engine. Build from <strong>Visual Studio</strong> (or <code>msbuild</code>) for a full app build; the CI pipeline does the same on a Windows runner.</p>
-</div></div>
+<span class="tok-comment"># Open the solution in Visual Studio 2026 and press F5, or build from a</span>
+<span class="tok-comment"># Developer PowerShell for VS 2026 with VS msbuild (x64 only - no AnyCPU):</span>
+<span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64</code></pre></div>
+<blockquote><p><strong>Do not use <code>dotnet build</code> / <code>dotnet run</code> for the app.</strong> WinUI 3 PRI resource generation uses a .NET Framework MSBuild task that loads under <strong>Visual Studio&#39;s <code>msbuild.exe</code></strong> but fails under the <code>dotnet</code> CLI&#39;s build engine (error MSB4062). Build from <strong>Visual Studio</strong> (or <code>msbuild</code>); the CI pipeline does the same on a Windows runner. Only the plain-<code>net10.0</code> projects (Core, Data, Sync, Portability.Tests, the sync service) build with the <code>dotnet</code> CLI.</p>
+</blockquote>
 <h3 id="first-run" class="anchored">First run<a class="heading-anchor" href="#first-run" aria-label="Link to this section">#</a></h3>
 <ul>
 <li>The app creates its SQLite database at <code>%LOCALAPPDATA%\MemoryTimeline\memory-timeline.db</code>.</li>
@@ -399,7 +402,7 @@ cd memory-line/windows-native/src
 <li><strong>Regenerate EF Core migrations</strong> to replace the <code>SchemaUpgrader</code> stopgap with a proper migration history.</li>
 <li><strong>Deferred items from the 2026-08 wave</strong> — photo-import wizard, map tile basemaps, timeline location chip, LLM token streaming, PDF narrative export, and others; see <a href="development-status.html"><code>windows-native/DEVELOPMENT-STATUS.md</code></a>.</li>
 <li><strong>Whisper model options</strong> (larger models for accuracy; language selection UI).</li>
-<li><strong>Analytics export</strong> and a few remaining UI polish items.</li>
+<li>A few remaining UI polish items.</li>
 <li>MSIX packaging and Microsoft Store submission (Phase 7).</li>
 <li><strong>macOS app</strong> — SwiftUI head under <code>macos-native/</code>; see <a href="macos-port-plan.html"><code>docs/design/MACOS-PORT-PLAN.md</code></a>.</li>
 </ul>
@@ -412,9 +415,12 @@ cd memory-line/windows-native/src
 │   │   ├── MemoryTimeline/          WinUI 3 app (Views, ViewModels, Controls, Services)
 │   │   ├── MemoryTimeline.Core/     Business logic &amp; services
 │   │   ├── MemoryTimeline.Data/     EF Core context, models, repositories, SchemaUpgrader
-│   │   ├── MemoryTimeline.Tests/    xUnit tests
+│   │   ├── MemoryTimeline.Sync/     sync client (pairing, push/pull/ack, outbox, background worker)
+│   │   ├── MemoryTimeline.Tests/    xUnit tests (Windows runner, gates CI)
+│   │   ├── MemoryTimeline.Portability.Tests/  plain net10.0 tests run with the dotnet CLI (macOS workflow)
 │   │   ├── MemoryTimeline.sln
 │   │   └── global.json              pins the .NET SDK for the build
+│   ├── scripts/                     setup / verification PowerShell scripts
 │   ├── README.md                    Windows Native overview
 │   ├── FEATURE-AUDIT.md             feature-by-feature audit &amp; root causes
 │   ├── HARDENING-FOLLOWUPS.md       deferred hardening items
@@ -434,8 +440,11 @@ cd memory-line/windows-native/src
 <hr>
 <h2 id="testing" class="anchored">Testing<a class="heading-anchor" href="#testing" aria-label="Link to this section">#</a></h2>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell">cd windows-native/src
-<span class="tok-builtin">dotnet</span> test MemoryTimeline.sln <span class="tok-flag">-c</span> Debug <span class="tok-flag">-p</span>:Platform=x64</code></pre></div>
-<p>Tests cover timeline math, services, repository/integration behavior, and performance. See <a href="testing.html"><code>windows-native/TESTING.md</code></a>.</p>
+<span class="tok-comment"># Build once with VS msbuild (dotnet test would rebuild the WinUI app with the dotnet engine and fail),</span>
+<span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64
+<span class="tok-comment"># then run the already-built test assembly (CI does exactly this; the tests gate the workflow):</span>
+<span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> MemoryTimeline.Tests\bin\x64\Debug\net10.<span class="tok-number">0</span>-windows10.<span class="tok-number">0.26100.0</span>\MemoryTimeline.Tests.dll</code></pre></div>
+<p>Tests cover timeline math, services, repository/integration behavior, and performance. The plain-<code>net10.0</code> <code>MemoryTimeline.Portability.Tests</code> project runs with <code>dotnet test</code> on any OS. See <a href="testing.html"><code>windows-native/TESTING.md</code></a>.</p>
 <hr>
 <h2 id="privacy--security" class="anchored">Privacy &amp; security<a class="heading-anchor" href="#privacy--security" aria-label="Link to this section">#</a></h2>
 <ul>
@@ -524,7 +533,7 @@ See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/READ
 <p>For Windows Native work: follow WinUI 3 guidelines, use CommunityToolkit.Mvvm, keep <code>DbContext</code> usage per-operation via the factory, and surface errors in the UI rather than swallowing them.</p>
 <hr>
 <h2 id="license" class="anchored">License<a class="heading-anchor" href="#license" aria-label="Link to this section">#</a></h2>
-<p>MIT License — see <a href="https://github.com/ethanbissbort/memory-line/tree/main/LICENSE" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>LICENSE</code></a>.</p>
+<p>No license file has been published for this repository yet. Until one is added, the code is not under an open-source license; please ask the maintainers before reusing it.</p>
 
 <nav class="pager" aria-label="Document navigation">
   <span class="pager-link is-empty" aria-hidden="true"></span>
@@ -576,7 +585,7 @@ See <a href="https://github.com/ethanbissbort/memory-line/blob/main/website/READ
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

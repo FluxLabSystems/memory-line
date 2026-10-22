@@ -84,6 +84,7 @@
           <ul class="nav-list">
             <li><a class="nav-link is-active" href="development-status.html" aria-current="page">Development status</a>
               <ul class="nav-sub">
+                <li><a class="nav-sublink" href="#head-wiring-pass-2026-10">Head wiring pass (2026-10)</a></li>
                 <li><a class="nav-sublink" href="#toolchain-roll-up-windows-11-24h2-sdk--net-10-lts--windows-app-sdk-231-2026-08-07">Toolchain roll-up: Windows 11 24H2 SDK + .NET 10 LTS + Windows App SDK 2.3.1 (2026-08-07)</a></li>
                 <li><a class="nav-sublink" href="#ios-roadtrip-companion--phase-3-processing-status--review-handoff-2026-08">iOS roadtrip companion — Phase 3: processing status &amp; review handoff (2026-08)</a></li>
                 <li><a class="nav-sublink" href="#ios-roadtrip-companion--phase-1-sync-service--windows-sync-client-2026-08">iOS roadtrip companion — Phase 1: sync service &amp; Windows sync client (2026-08)</a></li>
@@ -148,8 +149,8 @@
   <p class="doc-lede">Phase-by-phase status, the 2026-08 F1–F12 feature wave with per-feature detail and deferred items, known limitations, and success criteria.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>5,791</b> words</span>
-    <span class="doc-meta-item"><b>26</b> min read</span>
+    <span class="doc-meta-item"><b>6,968</b> words</span>
+    <span class="doc-meta-item"><b>32</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEVELOPMENT-STATUS.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEVELOPMENT-STATUS.md ↗
     </a>
@@ -158,7 +159,43 @@
 </header>
 <div class="doc-grid">
   <article class="prose">
-<p><strong>Last Updated:</strong> 2026-08-07<br><strong>Current Phase:</strong> Phase 7 - Testing &amp; Deployment (plus the 2026-08 feature-spec wave, landed)<br><strong>Overall Progress:</strong> Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress<br><strong>Status:</strong> 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing  </p>
+<p><strong>Last Updated:</strong> 2026-10-21<br><strong>Current Phase:</strong> Phase 7 - Testing &amp; Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring pass, landed)<br><strong>Overall Progress:</strong> Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress<br><strong>Status:</strong> 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing  </p>
+<hr>
+<h2 id="head-wiring-pass-2026-10" class="anchored">Head wiring pass (2026-10)<a class="heading-anchor" href="#head-wiring-pass-2026-10" aria-label="Link to this section">#</a></h2>
+<p><strong>Date:</strong> 2026-10-21</p>
+<p>A read-only audit of the WinUI head found a set of registered-but-dead or decorative
+surfaces; this pass wired or removed them, and the companion Core changes — DPAPI
+secret protection, non-WAV audio normalization, cross-reference heuristics, seed
+parity, the projection backfill and the assistant responder — landed in the same
+change:</p>
+<ul>
+<li><strong>Shell:</strong> <code>MainViewModel</code> implemented (Queue / Review <code>InfoBadge</code> counts, refreshed from
+queue status events and messenger signals); NavigationView selection and back button now
+follow every navigation (programmatic &quot;view on timeline&quot;, draft resume, activations);
+Ctrl+1..7 page accelerators and Alt+Left/Right history chords wired.</li>
+<li><strong>Jump List:</strong> &quot;Recent Events&quot; tracks created/opened events; &quot;New Event&quot; opens the
+add-event dialog and &quot;Start Recording&quot; starts capturing. Unpackaged caveat: the API needs
+package identity, so the service logs the first failure once and then no-ops.</li>
+<li><strong>Audio:</strong> &quot;Import Audio…&quot; on the Queue page (through <code>ICaptureIngestionService</code>);
+live input-level meter while recording; microphone picker in Settings
+(<code>audio_input_device_id</code>); the decorative sample-rate/bit-depth boxes replaced by
+read-only text (the format is fixed at 16 kHz / 16-bit / mono for Whisper).</li>
+<li><strong>Settings:</strong> default zoom level now applied on the timeline&#39;s first load; Reset to
+Defaults uses the seeded values and can remove stored API keys (&quot;Clear key&quot;).</li>
+<li><strong>Eras / Connections:</strong> milestones can be edited and deleted (context flyout,
+double-click); era/milestone dialogs stay open and show the error when a save fails;
+tag suggestions have an Add button.</li>
+<li><strong>Removed as dead code:</strong> <code>WindowsTimelineService</code> (User Activities; no callers, needs
+identity, Timeline UI gone from Windows 11), the fail-fast <code>WindowsSpeechRecognitionService</code>
+stub, the divergent <code>windows-native/packaging/Package.appxmanifest</code>, the csproj&#39;s
+reference to a publish profile that never existed, the nested GitHub workflow under
+<code>windows-native/.github/</code>, and the tracked <code>.vs/</code> and <code>log/</code> files.</li>
+<li><strong>Single instancing:</strong> the secondary instance no longer blocks the STA thread on
+<code>RedirectActivationToAsync</code> (worker thread + <code>CoWaitForMultipleObjects</code>, bounded).</li>
+<li><strong>Scripts/docs:</strong> setup scripts moved to .NET 10 / VS 2026 / WinAppSDK 2.3.1; stale
+claims (Windows Timeline, Windows Ink, Credential Manager, best-effort tests, dotnet
+build/test commands, DirectML) corrected across the docs.</li>
+</ul>
 <hr>
 <h2 id="toolchain-roll-up-windows-11-24h2-sdk--net-10-lts--windows-app-sdk-231-2026-08-07" class="anchored">Toolchain roll-up: Windows 11 24H2 SDK + .NET 10 LTS + Windows App SDK 2.3.1 (2026-08-07)<a class="heading-anchor" href="#toolchain-roll-up-windows-11-24h2-sdk--net-10-lts--windows-app-sdk-231-2026-08-07" aria-label="Link to this section">#</a></h2>
 <div class="table-wrap"><table><thead><tr>
@@ -199,12 +236,11 @@ then the perf-bound fix) because the two framework moves fail in confusingly
 similar ways — both surface as assembly-load and type-resolution errors.</p>
 <p><strong>Developer prerequisites changed</strong> — see <code>README.md</code> → Prerequisites:</p>
 <ul>
-<li>The <strong>.NET 10 SDK, <code>10.0.1xx</code> band</strong>, pinned by <code>src/global.json</code>. That band
-declares MSBuild 17.14 as its minimum, which is what keeps Visual Studio 2022
-able to build; bands <code>10.0.2xx</code>+ require MSBuild 18 / Visual Studio 2026.</li>
+<li>The <strong>.NET 10 SDK, 10.0.3xx or newer</strong>, pinned by <code>src/global.json</code>
+(<code>10.0.300</code>, <code>rollForward: latestFeature</code>). Bands <code>10.0.2xx</code>+ require
+MSBuild 18 / Visual Studio 2026, so VS 2022 can no longer build the repo.</li>
 <li><strong>Visual Studio 2026 is the supported IDE.</strong> Microsoft supports targeting
-.NET 10 only in VS 18.0+; VS 2022 17.14 builds with an &quot;unsupported target&quot;
-warning rather than an error. The CI runner (<code>windows-latest</code>) is already
+.NET 10 only in VS 18.0+, and the SDK pin requires it. The CI runner (<code>windows-latest</code>) is already
 VS 2026 / MSBuild 18.8.2.</li>
 </ul>
 <p><strong>Notes for whoever picks this up next:</strong></p>
@@ -234,9 +270,10 @@ transactions, so it is fsync-bound). Its bound was raised 5000 → 20000 ms as a
 gross-regression gate. It passed under .NET 8 at the old bound, so <strong>a modest
 EF Core 10 write-path slowdown is unconfirmed but not excluded</strong> — worth
 measuring on real hardware.</li>
-<li>Untested from CI: the runtime interaction between
-<code>Microsoft.ML.OnnxRuntime.DirectML</code> 1.16.3 and the ONNX runtime bundled in
-WinAppSDK 2.3.1 (two ONNX runtimes in one process is a known hazard).</li>
+<li>Untested from CI: the runtime interaction between the <code>Microsoft.ML.OnnxRuntime</code>
+package Core references (plain CPU execution provider — the <code>.DirectML</code> variant is
+deliberately <strong>not</strong> referenced; see claude.md &quot;Keeping Core portable&quot;) and the ONNX
+runtime bundled in WinAppSDK 2.3.1 (two ONNX runtimes in one process is a known hazard).</li>
 </ul>
 <hr>
 <h2 id="ios-roadtrip-companion--phase-3-processing-status--review-handoff-2026-08" class="anchored">iOS roadtrip companion — Phase 3: processing status &amp; review handoff (2026-08)<a class="heading-anchor" href="#ios-roadtrip-companion--phase-3-processing-status--review-handoff-2026-08" aria-label="Link to this section">#</a></h2>
@@ -326,7 +363,7 @@ cancellation).</p>
 Phase 0 entry below for the groundwork it builds on) landed:</p>
 <ul>
 <li><strong>Sync service</strong> — new <code>services/MemoryTimeline.SyncApi</code> (ASP.NET Core,
-net8.0; unlike the WinUI solution it is plain cross-platform .NET and
+net10.0; unlike the WinUI solution it is plain cross-platform .NET and
 builds/tests/runs with the <code>dotnet</code> CLI). Self-hosted Mode A server
 (design §4.2): device pairing/registration gated by an owner pairing code,
 self-issued HMAC-SHA256 JWT access tokens with refresh-token rotation and
@@ -355,31 +392,39 @@ tokens, cursor, auto-process); wire DTOs shared with the service via
 <code>JsonSerializerDefaults.Web</code>).</li>
 <li><strong>CI</strong> — new Linux workflow <code>.github/workflows/sync-api-build.yml</code> builds
 <code>services/MemoryTimeline.Services.sln</code> and runs the SyncApi test suite with
-the dotnet CLI on <code>ubuntu-latest</code>; the Windows workflow now also triggers
-on this branch and on <code>shared-contracts/dotnet/**</code> changes.</li>
+the dotnet CLI on <code>ubuntu-latest</code>, on pull requests and on pushes to <code>main</code>
+(path-filtered to <code>services/**</code>, <code>shared-contracts/**</code> and the workflow
+itself); the Windows workflow runs on pull requests and <code>main</code> and also for
+<code>shared-contracts/dotnet/**</code> changes.</li>
 </ul>
 <p><strong>Exit criterion status:</strong> implemented and integration-tested at the service
 level — a test client can register, create a capture, upload its audio
 artifact, and the Windows pull → ingest path dedupes it into review exactly
 once. End-to-end validation against a real iPhone awaits the Phase 2 iOS
 client.</p>
-<p><strong>Known follow-ups (from the post-fix verification pass):</strong></p>
+<p><strong>Known follow-ups (from the post-fix verification pass) — status as of 2026-10-22:</strong></p>
 <ul>
-<li>The <code>RefreshTokenHash</code> concurrency token applies to every device-row update;
-ack/revoke racing a concurrent refresh can surface a retryable 500 (only
-refresh has reload-and-retry today).</li>
-<li>Crash-orphaned <code>*.tmp</code> assembly files in the service&#39;s artifact store are
-never swept (in-process failures clean up after themselves).</li>
-<li>The register endpoint reads the <code>Idempotency-Key</code> header directly and does
-not enforce the 128-char limit the authenticated-route filter applies.</li>
-<li>Service schema is <code>EnsureCreated</code> (no migrations); pre-release upgrades
-across schema changes require deleting <code>sync.db</code> (see services/README.md).</li>
-<li>Sync tokens are stored in the Windows app&#39;s settings table like the other
-keys; DPAPI-at-rest remains the tracked hardening follow-up.</li>
-<li>Per the resolved design §22 decisions (2026-08-07): the service needs an
-artifact retention sweep (delete artifacts 14 days after Windows
-acknowledges archival, or sooner under storage pressure) — artifacts are
-currently retained indefinitely.</li>
+<li>✅ The <code>RefreshTokenHash</code> concurrency token applies to every device-row update;
+ack, revoke and the capture complete/retry touch now reload and retry
+(<code>DeviceRowConcurrency</code>, three attempts) instead of surfacing a 500 when they
+race a concurrent refresh.</li>
+<li>✅ Crash-orphaned <code>*.tmp</code> assembly files in the service&#39;s artifact store are
+swept by <code>RetentionSweepHostedService</code> once they are older than
+<code>TemporaryFileGraceMinutes</code> (60).</li>
+<li>✅ The register endpoint shares the authenticated-route <code>Idempotency-Key</code>
+reader and rejects keys longer than 128 characters with 400.</li>
+<li>Service schema is still <code>EnsureCreated</code> plus idempotent startup DDL (no
+migrations); the startup DDL now also creates the capture_status, assistant
+and trip tables, so upgrades across those phases no longer require deleting
+<code>sync.db</code> (see services/README.md).</li>
+<li>✅ Sync tokens are stored in the Windows app&#39;s settings table like the other
+keys, through the <code>ISecretProtector</code> port (DPAPI on Windows; legacy plaintext
+rows are re-written in protected form on first read).</li>
+<li>✅ Artifact retention per the resolved design §22 decisions: artifact bytes are
+purged 14 days after Windows acknowledges a <code>completed</code> capture_status
+(<code>ArtifactRetentionDays</code>), or oldest-acknowledged-first under
+<code>ArtifactStorageBudgetBytes</code>; the row survives as <code>purged</code> and downloads
+answer a permanent 410.</li>
 </ul>
 <p><strong>Design decisions:</strong> all §22 open decisions were resolved by the owner on
 2026-08-07 — self-hosted only, no user accounts (pairing-code device model),
@@ -487,9 +532,10 @@ replace-only, with a pre-restore safety backup); DirectML execution provider for
 ONNX embedder (CPU is used).</p>
 <p><strong>Honest caveats:</strong> all of the above is code-complete and CI-green, but <strong>runtime
 validation on a real Windows machine is still pending</strong> — none of the new features have
-been exercised end-to-end outside tests. The <strong>EF migration baseline has still not been
-regenerated</strong>; every schema addition above ships through <code>SchemaUpgrader</code>&#39;s idempotent
-DDL, and API keys remain plaintext in <code>app_settings</code> (DPAPI still a follow-up).</p>
+been exercised end-to-end outside tests. A <strong>baseline EF migration now exists</strong>
+(<code>Data/Migrations/20261022004346_InitialCreate</code>), but every schema addition still ships
+through <code>SchemaUpgrader</code>&#39;s idempotent DDL at runtime; API keys and sync tokens are
+DPAPI-protected through <code>ISecretProtector</code>.</p>
 <hr>
 <h2 id="post-audit-hardening-2026-07" class="anchored">Post-audit hardening (2026-07)<a class="heading-anchor" href="#post-audit-hardening-2026-07" aria-label="Link to this section">#</a></h2>
 <p><strong>Date:</strong> 2026-07-10</p>
@@ -552,15 +598,16 @@ remaining Phase 7 work is runtime verification plus the follow-ups listed below.
 <li>The solution is <strong>x64-only</strong> (no AnyCPU configuration).</li>
 <li>WinUI 3 PRI generation needs <strong>Visual Studio <code>msbuild.exe</code></strong>; <code>dotnet build</code>
 fails with <strong>MSB4062</strong>.</li>
-<li><code>global.json</code> pins the <strong>.NET 8 SDK</strong> with <code>rollForward: &quot;major&quot;</code>.</li>
+<li><code>global.json</code> pins the <strong>.NET 10 SDK</strong> at <code>10.0.300</code> with <code>rollForward: &quot;latestFeature&quot;</code>
+(any 10.0.3xx-or-newer band; those bands need MSBuild 18 / Visual Studio 2026).</li>
 <li>CI (<code>windows-native-build.yml</code>) builds <code>Release|x64</code> on <code>windows-latest</code> and runs
-tests.</li>
+the built test assembly with <code>dotnet vstest</code>; both gate the run.</li>
 </ul>
 <p><strong>Immediate follow-ups (see <code>HARDENING-FOLLOWUPS.md</code>):</strong> end-to-end runtime
-validation; DPAPI encryption of API keys at rest; regenerate the EF migration
-baseline; Whisper model/language options; analytics export; MSIX packaging +
-Microsoft Store submission; update tests still using the old constructor signatures
-to the context factory.</p>
+validation; switching existing databases from <code>SchemaUpgrader</code> to the generated
+migration baseline; MSIX packaging + Microsoft Store submission. (DPAPI protection of
+keys and tokens, the EF baseline migration, the Whisper model/language options and
+analytics export have landed; the tests were moved to the context factory and gate CI.)</p>
 <hr>
 <h2 id="executive-summary" class="anchored">Executive Summary<a class="heading-anchor" href="#executive-summary" aria-label="Link to this section">#</a></h2>
 <p>The Memory Timeline Windows native application has completed <strong>Phases 0-6</strong> and is
@@ -618,7 +665,7 @@ Microsoft Store submission. The application is <strong>not yet production ready<
 <td><strong>Phase 6: Polish &amp; Integration</strong></td>
 <td><span class="chip chip-ok">✅ Complete</span></td>
 <td>100%</td>
-<td>Export/Import, Windows notifications, JumpList, Timeline</td>
+<td>Export/Import, Windows notifications, JumpList (the Windows Timeline integration was later removed as dead code)</td>
 </tr>
 <tr>
 <td><strong>Phase 7: Testing &amp; Deployment</strong></td>
@@ -664,6 +711,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done">Moq + FluentAssertions</li>
 <li class="task-item is-done">Anthropic SDK</li>
 <li class="task-item is-done">ONNX Runtime with DirectML</li>
+<li><em>(Historical list. The toolchain has since moved to Windows App SDK 2.3.1 and EF Core 10, and Core references the plain <code>Microsoft.ML.OnnxRuntime</code> package on the CPU execution provider — the DirectML variant is not used. See the toolchain roll-up above.)</em></li>
 </ul>
 </li>
 <li class="task-item is-done"><p><strong>Database Layer</strong></p>
@@ -683,7 +731,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-21<br><strong>Verification:</strong> See <code>PHASE0-COMPLETION-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-21<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-1-core-infrastructure---completed" class="anchored">Phase 1: Core Infrastructure - ✅ COMPLETED<a class="heading-anchor" href="#phase-1-core-infrastructure---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-1" class="anchored">Summary<a class="heading-anchor" href="#summary-1" aria-label="Link to this section">#</a></h3>
@@ -706,7 +754,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <ul>
 <li class="task-item is-done">SettingsService with Windows.Storage integration</li>
 <li class="task-item is-done">Strongly-typed settings models</li>
-<li class="task-item is-done">API key secure storage (Windows Credential Manager)</li>
+<li class="task-item is-done">API key storage in the <code>app_settings</code> table, DPAPI-protected through <code>ISecretProtector</code> (Windows Credential Manager was never used)</li>
 <li class="task-item is-done">Theme settings (Light/Dark)</li>
 <li class="task-item is-done">LLM configuration settings</li>
 <li class="task-item is-done">Audio quality settings</li>
@@ -732,7 +780,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-21<br><strong>Verification:</strong> See <code>PHASE1-COMPLETED.md</code> and <code>PHASE1-VERIFICATION-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-21<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-2-timeline-visualization---completed" class="anchored">Phase 2: Timeline Visualization - ✅ COMPLETED<a class="heading-anchor" href="#phase-2-timeline-visualization---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-2" class="anchored">Summary<a class="heading-anchor" href="#summary-2" aria-label="Link to this section">#</a></h3>
@@ -770,7 +818,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done"><p><strong>Touch &amp; Pen Support</strong></p>
 <ul>
 <li class="task-item is-done">Touch gestures (pinch-to-zoom, drag-to-pan)</li>
-<li class="task-item is-done">Windows Ink integration (ready for Phase 6+)</li>
+<li class="task-item"><del>Windows Ink integration</del> — never implemented; no Ink code exists in the app</li>
 <li class="task-item is-done">High-DPI support</li>
 <li class="task-item is-done">Per-monitor DPI awareness</li>
 </ul>
@@ -780,12 +828,12 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done">Command bar with zoom controls</li>
 <li class="task-item is-done">Date range display</li>
 <li class="task-item is-done">Event details panel</li>
-<li class="task-item is-done">Filter controls (placeholder)</li>
+<li class="task-item is-done">Era filter row (per-era checkboxes with All/None)</li>
 <li class="task-item is-done">Loading indicators</li>
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-22<br><strong>Verification:</strong> See <code>PHASE2-IMPLEMENTATION-PLAN.md</code> and <code>PHASE2-PROGRESS-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-22<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-3-audio--processing---completed" class="anchored">Phase 3: Audio &amp; Processing - ✅ COMPLETED<a class="heading-anchor" href="#phase-3-audio--processing---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-3" class="anchored">Summary<a class="heading-anchor" href="#summary-3" aria-label="Link to this section">#</a></h3>
@@ -795,11 +843,12 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done"><p><strong>Audio Recording</strong></p>
 <ul>
 <li class="task-item is-done">MediaCapture API integration</li>
-<li class="task-item is-done">Audio device selection</li>
-<li class="task-item is-done">Format: 16kHz, 16-bit WAV</li>
+<li class="task-item is-done">Audio device selection (Settings → Audio Recording microphone picker, persisted as <code>audio_input_device_id</code>; wired 2026-10)</li>
+<li class="task-item is-done">Format: 16 kHz, 16-bit, mono WAV (fixed — exactly what the local Whisper engine consumes)</li>
 <li class="task-item is-done">Pause/resume/cancel controls</li>
-<li class="task-item is-done">Real-time waveform preview</li>
-<li class="task-item is-done">File management (ApplicationData folder)</li>
+<li class="task-item is-done">Live input-level meter while recording (dB-scaled peak sampled from a <code>MediaFrameReader</code>; wired 2026-10 — a level bar, not a waveform)</li>
+<li class="task-item is-done">File management (<code>%LOCALAPPDATA%\MemoryTimeline\AudioRecordings</code>; the app is unpackaged, so not the MSIX ApplicationData folder)</li>
+<li class="task-item is-done">Import existing audio files (Queue page &quot;Import Audio…&quot;, through the capture-ingestion pipeline; 2026-10)</li>
 </ul>
 </li>
 <li class="task-item is-done"><p><strong>Queue System</strong></p>
@@ -815,7 +864,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done"><p><strong>Speech-to-Text</strong></p>
 <ul>
 <li class="task-item is-done">ISpeechToTextService interface</li>
-<li class="task-item is-done">Windows Speech Recognition implementation</li>
+<li class="task-item is-done">Local Whisper implementation (<code>WhisperSpeechToTextService</code>, file-based, offline). The original Windows Speech Recognition implementation transcribed the live microphone instead of the file; it was reduced to a fail-fast stub in the 2026-07 audit pass and deleted in 2026-10.</li>
 <li class="task-item is-done">Mock STT service for testing</li>
 <li class="task-item is-done">Transcription progress reporting</li>
 <li class="task-item is-done">Confidence scoring</li>
@@ -833,7 +882,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-22<br><strong>Verification:</strong> See <code>PHASE3-VERIFICATION-REPORT.md</code> and <code>PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-22<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-4-llm-integration---completed" class="anchored">Phase 4: LLM Integration - ✅ COMPLETED<a class="heading-anchor" href="#phase-4-llm-integration---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-4" class="anchored">Summary<a class="heading-anchor" href="#summary-4" aria-label="Link to this section">#</a></h3>
@@ -884,7 +933,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-23<br><strong>Verification:</strong> See <code>PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md</code> and <code>PHASE4-5-VERIFICATION-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-23<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-5-rag--embeddings---completed" class="anchored">Phase 5: RAG &amp; Embeddings - ✅ COMPLETED<a class="heading-anchor" href="#phase-5-rag--embeddings---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-5" class="anchored">Summary<a class="heading-anchor" href="#summary-5" aria-label="Link to this section">#</a></h3>
@@ -907,10 +956,10 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <li class="task-item is-done">IRagService interface</li>
 <li class="task-item is-done">RagService implementation</li>
 <li class="task-item is-done">Similarity search (find similar events)</li>
-<li class="task-item is-done">Cross-reference detection (6 relationship types)</li>
+<li class="task-item is-done">Cross-reference detection — <strong>heuristic</strong>, four relationship types (Temporal, Participatory via shared people, Locational via shared locations, Thematic via category/tags), persisted through <code>ICrossReferenceRepository</code></li>
 <li class="task-item is-done">Pattern detection (categories, clusters, transitions)</li>
-<li class="task-item is-done">Tag suggestions based on similarity</li>
-<li class="task-item is-done">LLM-powered relationship analysis</li>
+<li class="task-item is-done">Tag suggestions based on similarity (with a one-click Add on the Connections page; 2026-10)</li>
+<li class="task-item"><del>LLM-powered relationship analysis</del> — not implemented; cross-references are heuristic and involve no LLM call</li>
 </ul>
 </li>
 <li class="task-item is-done"><p><strong>Data Layer</strong></p>
@@ -951,11 +1000,11 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-24<br><strong>Verification:</strong> See <code>PHASE5-IMPLEMENTATION-REPORT.md</code> and <code>PHASE4-5-VERIFICATION-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-24<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-6-polish--windows-integration---completed" class="anchored">Phase 6: Polish &amp; Windows Integration - ✅ COMPLETED<a class="heading-anchor" href="#phase-6-polish--windows-integration---completed" aria-label="Link to this section">#</a></h2>
 <h3 id="summary-6" class="anchored">Summary<a class="heading-anchor" href="#summary-6" aria-label="Link to this section">#</a></h3>
-<p>Added export/import functionality, Windows 11 integration features (notifications, JumpList, Timeline), and comprehensive UI polish.</p>
+<p>Added export/import functionality, Windows 11 integration features (notifications, JumpList; the Windows Timeline integration built here was later removed as dead code), and comprehensive UI polish.</p>
 <h3 id="completed-items-6" class="anchored">Completed Items<a class="heading-anchor" href="#completed-items-6" aria-label="Link to this section">#</a></h3>
 <ul>
 <li class="task-item is-done"><p><strong>Export Service</strong></p>
@@ -997,24 +1046,21 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 <ul>
 <li class="task-item is-done">IJumpListService interface</li>
 <li class="task-item is-done">JumpListService implementation</li>
-<li class="task-item is-done">Recent events (last 10 accessed)</li>
-<li class="task-item is-done">Quick actions (New Event, Start Recording, View Timeline, Search)</li>
+<li class="task-item is-done">Recent events (last 10 created/opened — fed from the messenger since 2026-10)</li>
+<li class="task-item is-done">Quick actions (New Event, Start Recording, View Timeline, Search — since 2026-10 the first two open the add-event dialog and start capturing instead of only navigating)</li>
+<li class="task-item">Works on an unpackaged install — <code>Windows.UI.StartScreen.JumpList</code> needs package identity; the service logs the first failure once and no-ops thereafter</li>
 <li class="task-item is-done">Deep linking with arguments</li>
 <li class="task-item is-done">Group-based organization</li>
 <li class="task-item is-done">Duplicate prevention</li>
 </ul>
 </li>
-<li class="task-item is-done"><p><strong>Windows Timeline Service</strong></p>
-<ul>
-<li class="task-item is-done">IWindowsTimelineService interface</li>
-<li class="task-item is-done">WindowsTimelineService implementation</li>
-<li class="task-item is-done">Publish events to Windows Timeline</li>
-<li class="task-item is-done">User Activity API integration</li>
-<li class="task-item is-done">Adaptive Card visualization</li>
-<li class="task-item is-done">Deep link support (memory-timeline://event/{id})</li>
-<li class="task-item is-done">Activity update and removal</li>
-<li class="task-item is-done">Protocol handler registration</li>
-</ul>
+<li><p><del><strong>Windows Timeline Service</strong></del> — <strong>removed 2026-10.</strong> <code>IWindowsTimelineService</code> /
+<code>WindowsTimelineService</code> (User Activity API + Adaptive Cards, <code>memory-timeline://event/{id}</code>
+deep links) were registered in DI but never called by anything, the User Activity channel
+needs package identity this unpackaged app does not have, the protocol handler existed only
+in an unused packaging manifest, and Windows 11 dropped the Timeline UI. The port plan (§4.4)
+also calls for dropping it. Deep links into events now exist only as the Jump List&#39;s
+<code>event:{id}</code> launch arguments and toast activations.</p>
 </li>
 <li class="task-item is-done"><p><strong>Settings UI Enhancement</strong></p>
 <ul>
@@ -1039,7 +1085,7 @@ See the &quot;Post-audit hardening (2026-07)&quot; section above, plus <code>FEA
 </ul>
 </li>
 </ul>
-<p><strong>Completion Date:</strong> 2025-11-25<br><strong>Verification:</strong> See <code>PHASE6-IMPLEMENTATION-REPORT.md</code>  </p>
+<p><strong>Completion Date:</strong> 2025-11-25<br><strong>Verification:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original per-phase reports are no longer in the tree).  </p>
 <hr>
 <h2 id="phase-7-testing--deployment---in-progress" class="anchored">Phase 7: Testing &amp; Deployment - 🔄 IN PROGRESS<a class="heading-anchor" href="#phase-7-testing--deployment---in-progress" aria-label="Link to this section">#</a></h2>
 <h3 id="status-in-progress" class="anchored">Status: In Progress<a class="heading-anchor" href="#status-in-progress" aria-label="Link to this section">#</a></h3>
@@ -1055,8 +1101,8 @@ removed the shared-context foundation defect.</li>
 on <code>windows-latest</code> and runs the test suite. <strong>The solution builds green in CI.</strong></li>
 </ul>
 <p><strong>Still ahead:</strong> end-to-end runtime validation on real hardware; regenerating the EF
-migration baseline; updating tests still on the old constructor signatures; performance
-validation; MSIX packaging + code signing; Microsoft Store submission.</p>
+migration baseline; performance validation; MSIX packaging + code signing; Microsoft Store
+submission. (The tests now gate CI; see 7.1 for what exists.)</p>
 <h3 id="objectives" class="anchored">Objectives<a class="heading-anchor" href="#objectives" aria-label="Link to this section">#</a></h3>
 <ol>
 <li><p><strong>Comprehensive Testing</strong></p>
@@ -1095,25 +1141,28 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 </ol>
 <h3 id="pending-items" class="anchored">Pending Items<a class="heading-anchor" href="#pending-items" aria-label="Link to this section">#</a></h3>
 <h4 id="71-testing" class="anchored">7.1 Testing<a class="heading-anchor" href="#71-testing" aria-label="Link to this section">#</a></h4>
+<p><em>Status 2026-10:</em> <code>MemoryTimeline.Tests</code> (xUnit; unit, integration and performance suites)
+runs in CI with <code>dotnet vstest</code> and <strong>gates</strong> the workflow; the plain-<code>net10.0</code>
+<code>MemoryTimeline.Portability.Tests</code> runs with <code>dotnet test</code> on the macOS workflow.</p>
 <ul>
 <li class="task-item"><p><strong>Unit Tests</strong></p>
 <ul>
-<li class="task-item">EventService tests (CRUD operations)</li>
-<li class="task-item">SettingsService tests</li>
-<li class="task-item">AudioService tests</li>
-<li class="task-item">LlmService tests (with mocked API)</li>
-<li class="task-item">RagService tests</li>
-<li class="task-item">ExportService tests</li>
-<li class="task-item">ImportService tests</li>
-<li class="task-item">Repository tests</li>
-<li class="task-item">Target: &gt; 80% code coverage</li>
+<li class="task-item is-done">EventService tests (CRUD operations) — <code>Services/EventServiceTests.cs</code></li>
+<li class="task-item is-done">SettingsService tests — <code>Services/SettingsServiceTests.cs</code></li>
+<li class="task-item">AudioService tests — the WinRT <code>MediaCapture</code> recorder has no test seam; only the pure <code>AudioLevelMeter</code> math is covered</li>
+<li class="task-item is-done">LlmService tests (with mocked API) — <code>UnitTests/OpenAiCompatibleLlmServiceTests.cs</code>, <code>RoutingServicesTests.cs</code></li>
+<li class="task-item is-done">RagService tests — <code>UnitTests/RagServiceTests.cs</code>, <code>RagDimensionGuardTests.cs</code>, <code>ReEmbedAllAsyncTests.cs</code></li>
+<li class="task-item is-done">ExportService tests — <code>UnitTests/ExportServiceTests.cs</code>, <code>NarrativeExportTests.cs</code></li>
+<li class="task-item is-done">ImportService tests — <code>UnitTests/ImportServiceTests.cs</code></li>
+<li class="task-item is-done">Repository tests — <code>Integration/DatabaseIntegrationTests.cs</code>, <code>UnitTests/SyncOutboxRepositoryTests.cs</code>, the schema tests</li>
+<li class="task-item">Target: &gt; 80% code coverage (no coverage collection is configured)</li>
 </ul>
 </li>
 <li class="task-item"><p><strong>Integration Tests</strong></p>
 <ul>
-<li class="task-item">Database integration tests</li>
-<li class="task-item">API integration tests (LLM, STT, Embeddings)</li>
-<li class="task-item">File system tests (audio files, exports)</li>
+<li class="task-item is-done">Database integration tests — <code>Integration/*</code></li>
+<li class="task-item">API integration tests (LLM, STT, Embeddings) — provider routing is covered with mocked HTTP only; no live-API or Whisper tests</li>
+<li class="task-item is-done">File system tests (audio files, exports) — <code>BackupServiceTests</code>, <code>ExportServiceTests</code>, <code>MediaServiceTests</code>, <code>MediaCleanupTests</code></li>
 <li class="task-item">Windows API integration tests</li>
 </ul>
 </li>
@@ -1130,16 +1179,28 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 </li>
 <li class="task-item"><p><strong>Performance Tests</strong></p>
 <ul>
-<li class="task-item">Load testing with 10/100/1000/5000/10000 events</li>
+<li class="task-item is-done">Load testing with 10/100/1000/5000/10000 events — <code>Performance/PerformanceTests.cs</code> (gross-regression bounds)</li>
 <li class="task-item">Memory profiling (Visual Studio Profiler)</li>
 <li class="task-item">Render performance benchmarks</li>
-<li class="task-item">Database query performance tests</li>
+<li class="task-item is-done">Database query performance tests — <code>Performance/PerformanceTests.cs</code></li>
 <li class="task-item">Embedding generation performance tests</li>
 <li class="task-item">Timeline FPS monitoring</li>
 </ul>
 </li>
 </ul>
 <h4 id="72-packaging" class="anchored">7.2 Packaging<a class="heading-anchor" href="#72-packaging" aria-label="Link to this section">#</a></h4>
+<blockquote><p><strong>Honest state (2026-10):</strong> the app ships <strong>unpackaged</strong> (<code>WindowsPackageType=None</code>,
+self-contained Windows App SDK) and no MSIX identity exists. The only manifest is
+<code>src/MemoryTimeline/Package.appxmanifest</code>, which still carries the template
+placeholders (<code>Publisher=&quot;CN=Your Name&quot;</code>, a dummy <code>PhoneIdentity</code> GUID) and
+references <code>Assets\*.png</code> files that have not been created (<code>src/MemoryTimeline/Assets/</code>
+does not exist; the csproj&#39;s <code>Assets\**</code> glob matches nothing). A second, divergent
+manifest under <code>windows-native/packaging/</code> (different publisher, MinVersion 19041, and
+protocol / file-type / share-target extensions nothing in the app handled) was deleted
+in 2026-10, as was the csproj&#39;s reference to a <code>win-$(Platform).pubxml</code> publish profile
+that was never added. Filling in a real publisher identity, producing the icon assets,
+and signing are still to do — nothing below has been started.</p>
+</blockquote>
 <ul>
 <li class="task-item"><p><strong>MSIX Package</strong></p>
 <ul>
@@ -1244,11 +1305,10 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 </li>
 </ul>
 <h3 id="timeline" class="anchored">Timeline<a class="heading-anchor" href="#timeline" aria-label="Link to this section">#</a></h3>
-<ul>
-<li><strong>Phase 7 Duration:</strong> 3 weeks</li>
-<li><strong>Start Date:</strong> TBD (after current updates committed)</li>
-<li><strong>Target Completion:</strong> TBD</li>
-</ul>
+<p>No dates are scheduled. Phase 7 is being worked incrementally — the 2026-07 audit/fix
+pass, the 2026-08 feature wave, and the 2026-10 head wiring pass have all landed — and
+what remains (runtime validation on real hardware, MSIX identity/assets/signing, Store
+submission) has neither a start nor a target date.</p>
 <hr>
 <h2 id="technology-stack-summary" class="anchored">Technology Stack Summary<a class="heading-anchor" href="#technology-stack-summary" aria-label="Link to this section">#</a></h2>
 <div class="table-wrap"><table><thead><tr>
@@ -1260,19 +1320,19 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 </thead><tbody><tr>
 <td><strong>UI Framework</strong></td>
 <td>WinUI 3 + XAML</td>
-<td>Windows App SDK 1.5+</td>
+<td>Windows App SDK 2.3.1</td>
 <td><span class="chip chip-ok">✅</span></td>
 </tr>
 <tr>
 <td><strong>Runtime</strong></td>
-<td>.NET 8</td>
-<td>8.0</td>
+<td>.NET 10 (LTS)</td>
+<td>SDK 10.0.3xx+ (global.json)</td>
 <td><span class="chip chip-ok">✅</span></td>
 </tr>
 <tr>
 <td><strong>Database</strong></td>
 <td>SQLite + EF Core</td>
-<td>EF Core 8.0</td>
+<td>EF Core 10.0.10</td>
 <td><span class="chip chip-ok">✅</span></td>
 </tr>
 <tr>
@@ -1338,21 +1398,21 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 <tr>
 <td><strong>JumpList</strong></td>
 <td>Windows.UI.StartScreen</td>
-<td>UWP API</td>
+<td>UWP API — needs package identity; no-ops (logged once) on an unpackaged install</td>
 <td><span class="chip chip-ok">✅</span></td>
 </tr>
 <tr>
-<td><strong>Timeline</strong></td>
-<td>UserActivities</td>
-<td>UWP API</td>
-<td><span class="chip chip-ok">✅</span></td>
+<td><del><strong>Timeline</strong></del></td>
+<td><del>UserActivities</del></td>
+<td>removed 2026-10 (dead code; Windows 11 dropped the Timeline UI)</td>
+<td>—</td>
 </tr>
 </tbody></table></div>
 <hr>
 <h2 id="code-statistics" class="anchored">Code Statistics<a class="heading-anchor" href="#code-statistics" aria-label="Link to this section">#</a></h2>
 <h3 id="overall-project-after-the-2026-08-feature-wave" class="anchored">Overall Project (after the 2026-08 feature wave)<a class="heading-anchor" href="#overall-project-after-the-2026-08-feature-wave" aria-label="Link to this section">#</a></h3>
 <ul>
-<li><strong>Total Projects:</strong> 4 (Main App, Core, Data, Tests)</li>
+<li><strong>Total Projects:</strong> 7 (Main App, Core, Data, Sync, Tests, Portability.Tests, plus the shared SyncContracts project referenced from <code>shared-contracts/dotnet</code>)</li>
 <li><strong>Total Code Files:</strong> 250+ (<code>.cs</code>/<code>.xaml</code>, excluding build output)</li>
 <li><strong>Total Lines of Code:</strong> ~70,000+ (including XAML and tests)</li>
 <li><strong>Data Models:</strong> 20</li>
@@ -1380,11 +1440,11 @@ validation; MSIX packaging + code signing; Microsoft Store submission.</p>
 <li><strong>Runtime validation:</strong> The post-audit fixes <em>and</em> the entire F1–F12 feature wave
 build green in CI but are not yet validated end-to-end on real hardware (Phase 7,
 in progress)</li>
-<li><strong>Automated tests:</strong> Some older tests still use the old constructor signatures and
-need updating to the <code>IDbContextFactory</code> pattern; broad coverage still pending (Phase 7)</li>
+<li><strong>Automated tests:</strong> unit/integration/performance suites exist and gate CI; AudioService
+tests, UI tests (WinAppDriver) and coverage reporting are still absent (Phase 7)</li>
 <li><strong>EF migrations:</strong> Stale migrations deleted; a real migration baseline still needs
 regenerating — all 2026-08 schema additions ship via <code>SchemaUpgrader.EnsureSchemaAsync</code></li>
-<li><strong>API keys:</strong> Stored in plaintext; DPAPI encryption is a follow-up</li>
+<li><strong>API keys:</strong> DPAPI-protected at rest through <code>ISecretProtector</code> (CurrentUser scope); a backup restored under another Windows account must have its keys re-entered</li>
 <li><strong>Performance:</strong> Not yet validated with 5000+ events (Phase 7)</li>
 <li><strong>MSIX Package / Store Submission:</strong> Not created or submitted yet (Phase 7)</li>
 <li><strong>ONNX acceleration:</strong> The local embedder runs on the CPU execution provider;
@@ -1414,7 +1474,7 @@ DirectML/NPU registration is deliberately deferred (can throw on non-DX12 machin
 <li class="task-item is-done">Clean architecture maintained</li>
 <li class="task-item is-done">MVVM pattern throughout</li>
 <li class="task-item is-done">Full dependency injection</li>
-<li class="task-item is-done">Windows-exclusive features (Notifications, JumpList, Timeline)</li>
+<li class="task-item is-done">Windows-exclusive features (Notifications, JumpList)</li>
 <li class="task-item is-done">Export/Import functionality</li>
 <li class="task-item is-done">RAG capabilities (embeddings, cross-references, patterns)</li>
 </ul>
@@ -1447,18 +1507,19 @@ approve → timeline; embeddings/connections; export/import; settings persistenc
 <ul>
 <li>Regenerate a real EF migration baseline (stale migrations were deleted; startup
 currently uses <code>SchemaUpgrader.EnsureSchemaAsync</code>).</li>
-<li>Update tests still using the old constructor signatures to the <code>IDbContextFactory</code>.</li>
 </ul>
 </li>
 <li><p><strong>Security &amp; config hardening</strong></p>
 <ul>
-<li>Encrypt API keys at rest via DPAPI / <code>ProtectedData</code>.</li>
-<li>Add Whisper model/language options; wire up analytics export.</li>
+<li><del>Encrypt API keys at rest via DPAPI / <code>ProtectedData</code></del> — done (<code>ISecretProtector</code> / <code>DpapiSecretProtector</code>).</li>
+<li><del>Add Whisper model/language options</del> — done (<code>whisper_model</code> / <code>whisper_language</code>, chosen in
+Settings and read per transcription). Analytics export is done.</li>
 </ul>
 </li>
 <li><p><strong>Testing &amp; performance baseline</strong></p>
 <ul>
-<li>Set up xUnit structure, in-memory/test DB, first EventService tests.</li>
+<li>The xUnit structure, SQLite test factory and EventService tests exist and gate CI;
+still to do: AudioService tests, UI tests (WinAppDriver), coverage reporting.</li>
 <li>Generate test datasets (100/1000/5000 events) and measure baseline metrics.</li>
 </ul>
 </li>
@@ -1472,26 +1533,20 @@ code-sign, and prepare the Microsoft Store submission.</li>
 <hr>
 <h2 id="documentation-references" class="anchored">Documentation References<a class="heading-anchor" href="#documentation-references" aria-label="Link to this section">#</a></h2>
 <ul>
-<li><strong>Migration Plan:</strong> <code>../MIGRATION-TO-NATIVE-WIN.md</code></li>
-<li><strong>Windows README:</strong> <code>README-WINDOWS.md</code></li>
+<li><strong>Windows README:</strong> <code>README.md</code> (this folder) — overview, setup, tech stack</li>
+<li><strong>AI-assistant / contributor guide:</strong> <code>../claude.md</code></li>
+<li><strong>Feature audit (2026-07):</strong> <code>FEATURE-AUDIT.md</code>; <strong>deferred hardening items:</strong> <code>HARDENING-FOLLOWUPS.md</code></li>
+<li><strong>Exhaustive repo audit (2026-07):</strong> <code>../docs/reviews/exhaustive-audit-2026-07.md</code></li>
 <li><strong>Deployment Guide:</strong> <code>DEPLOYMENT.md</code></li>
 <li><strong>Testing Guide:</strong> <code>TESTING.md</code></li>
-<li><strong>Phase Reports:</strong><ul>
-<li><code>PHASE0-COMPLETION-REPORT.md</code></li>
-<li><code>PHASE1-COMPLETED.md</code></li>
-<li><code>PHASE1-VERIFICATION-REPORT.md</code></li>
-<li><code>PHASE2-IMPLEMENTATION-PLAN.md</code></li>
-<li><code>PHASE2-PROGRESS-REPORT.md</code></li>
-<li><code>PHASE3-VERIFICATION-REPORT.md</code></li>
-<li><code>PHASE3-4-CODE-COMPLETENESS-VERIFICATION.md</code></li>
-<li><code>PHASE4-5-VERIFICATION-REPORT.md</code></li>
-<li><code>PHASE5-IMPLEMENTATION-REPORT.md</code></li>
-<li><code>PHASE6-IMPLEMENTATION-REPORT.md</code></li>
-</ul>
-</li>
+<li><strong>Setup scripts:</strong> <code>scripts/README.md</code></li>
+<li><strong>Phase Reports:</strong> consolidated into <code>DEVELOPMENT-HISTORY.md</code> (the original
+<code>PHASE*-REPORT.md</code> files, <code>MIGRATION-TO-NATIVE-WIN.md</code> and <code>README-WINDOWS.md</code> are no
+longer in the tree)</li>
+<li><strong>Design docs:</strong> <code>../docs/design/</code> (macOS port plan, iOS companion system design, people feature contracts)</li>
 </ul>
 <hr>
-<p><strong>Document Owner:</strong> Development Team<br><strong>Phase 7 Status:</strong> In progress (CI Windows build green through the F1–F12 wave pushes; runtime validation ongoing)<br><strong>Next Review:</strong> After end-to-end runtime validation<br><strong>Last Updated:</strong> 2026-08-07  </p>
+<p><strong>Document Owner:</strong> Development Team<br><strong>Phase 7 Status:</strong> In progress (CI Windows build + tests green through the F1–F12 wave and the 2026-10 head wiring pass; runtime validation ongoing)<br><strong>Next Review:</strong> After end-to-end runtime validation<br><strong>Last Updated:</strong> 2026-10-21  </p>
 <!-- CI retrigger 2026-08-06: runs 31117811806/31119588286/31121424093/31124292681 died (pushes a4f25ca/b9f4276 produced no runs at all — Actions event pipeline outage) to runner/Actions-service infrastructure failures before reaching the code; tree identical to 0d365b2. -->
 
 <nav class="pager" aria-label="Document navigation">
@@ -1508,6 +1563,7 @@ code-sign, and prepare the Microsoft Store submission.</li>
 <aside class="toc" aria-label="On this page">
   <p class="toc-title">On this page</p>
   <ul class="toc-list">
+<li class="toc-item toc-h2"><a href="#head-wiring-pass-2026-10" data-toc-link>Head wiring pass (2026-10)</a></li>
 <li class="toc-item toc-h2"><a href="#toolchain-roll-up-windows-11-24h2-sdk--net-10-lts--windows-app-sdk-231-2026-08-07" data-toc-link>Toolchain roll-up: Windows 11 24H2 SDK + .NET 10 LTS + Windows App SDK 2.3.1 (2026-08-07)</a></li>
 <li class="toc-item toc-h2"><a href="#ios-roadtrip-companion--phase-3-processing-status--review-handoff-2026-08" data-toc-link>iOS roadtrip companion — Phase 3: processing status &amp; review handoff (2026-08)</a></li>
 <li class="toc-item toc-h2"><a href="#ios-roadtrip-companion--phase-1-sync-service--windows-sync-client-2026-08" data-toc-link>iOS roadtrip companion — Phase 1: sync service &amp; Windows sync client (2026-08)</a></li>
@@ -1562,7 +1618,7 @@ code-sign, and prepare the Microsoft Store submission.</li>
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

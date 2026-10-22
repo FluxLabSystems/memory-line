@@ -10,10 +10,49 @@ public interface INavigationService
 {
     Frame? Frame { get; set; }
     bool CanGoBack { get; }
+    bool CanGoForward { get; }
     void NavigateTo(string pageKey);
     void NavigateTo(string pageKey, object? parameter);
     void GoBack();
+    void GoForward();
     void RegisterPage(string key, Type pageType);
+
+    /// <summary>
+    /// Raised after the attached <see cref="Frame"/> completed any navigation —
+    /// a page selected in the NavigationView, a programmatic
+    /// <see cref="NavigateTo(string, object?)"/> ("view on timeline", draft
+    /// resume, Jump List / toast activation), or back/forward. The shell uses
+    /// it to keep the NavigationView selection and back-button state in sync
+    /// with the page actually shown, whichever path got there.
+    /// </summary>
+    event EventHandler<PageNavigatedEventArgs>? Navigated;
+}
+
+/// <summary>
+/// Describes a completed Frame navigation in terms of the page keys registered
+/// with <see cref="INavigationService.RegisterPage"/>.
+/// </summary>
+public sealed class PageNavigatedEventArgs : EventArgs
+{
+    public PageNavigatedEventArgs(string? pageKey, Type pageType, bool canGoBack, bool canGoForward)
+    {
+        PageKey = pageKey;
+        PageType = pageType;
+        CanGoBack = canGoBack;
+        CanGoForward = canGoForward;
+    }
+
+    /// <summary>The registered key of the page navigated to, or null when the page type was never registered.</summary>
+    public string? PageKey { get; }
+
+    /// <summary>The page type navigated to.</summary>
+    public Type PageType { get; }
+
+    /// <summary>Whether the frame can navigate back after this navigation.</summary>
+    public bool CanGoBack { get; }
+
+    /// <summary>Whether the frame can navigate forward after this navigation.</summary>
+    public bool CanGoForward { get; }
 }
 
 /// <summary>
@@ -29,6 +68,8 @@ public class NavigationService : INavigationService
     {
         _logger = logger;
     }
+
+    public event EventHandler<PageNavigatedEventArgs>? Navigated;
 
     public Frame? Frame
     {
@@ -57,6 +98,8 @@ public class NavigationService : INavigationService
     }
 
     public bool CanGoBack => Frame?.CanGoBack ?? false;
+
+    public bool CanGoForward => Frame?.CanGoForward ?? false;
 
     public void RegisterPage(string key, Type pageType)
     {
@@ -97,8 +140,33 @@ public class NavigationService : INavigationService
         }
     }
 
+    public void GoForward()
+    {
+        if (CanGoForward)
+        {
+            Frame?.GoForward();
+        }
+    }
+
+    /// <summary>
+    /// Translates the Frame's navigation back into a page key and raises
+    /// <see cref="Navigated"/>. Frame.Navigated fires on the UI thread for
+    /// every navigation mode (New, Back, Forward, Refresh), so subscribers can
+    /// touch UI directly.
+    /// </summary>
     private void OnNavigated(object sender, Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
     {
-        // Handle navigation events if needed
+        var pageType = e.SourcePageType;
+        string? pageKey = null;
+        foreach (var registration in _pages)
+        {
+            if (registration.Value == pageType)
+            {
+                pageKey = registration.Key;
+                break;
+            }
+        }
+
+        Navigated?.Invoke(this, new PageNavigatedEventArgs(pageKey, pageType, CanGoBack, CanGoForward));
     }
 }

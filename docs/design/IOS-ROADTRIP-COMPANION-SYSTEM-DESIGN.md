@@ -1,6 +1,6 @@
 # Memory Line iOS Roadtrip Companion — System Design
 
-**Status:** Accepted — Phases 0–1 implemented (Windows + sync service); §22 decisions resolved 2026-08-07  
+**Status:** Accepted — Phases 0–3 implemented (Windows, sync service, iOS, macOS); Phase 4 implemented on the service (sessions, turns, idle-session reaper) with a macOS Ask client and no Windows responder yet; Phase 5 trip/detour endpoints implemented on the service as persistence and lifecycle, with no place provider; §22 decisions resolved 2026-08-07  
 **Date:** 2026-08-06  
 **Repository:** `ethanbissbort/memory-line`  
 **Target branch:** `design/ios-roadtrip-companion`

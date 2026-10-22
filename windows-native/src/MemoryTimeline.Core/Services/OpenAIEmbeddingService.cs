@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
@@ -14,6 +15,7 @@ public class OpenAIEmbeddingService : IEmbeddingService
     private readonly ILogger<OpenAIEmbeddingService> _logger;
     private readonly ISettingsService _settingsService;
     private readonly SemaphoreSlim _initLock = new(1, 1);
+    private readonly ResiliencePipeline<HttpResponseMessage> _retry;
     private string _apiKey = string.Empty;
     private string _model = DefaultModel;
 
@@ -37,6 +39,7 @@ public class OpenAIEmbeddingService : IEmbeddingService
         // API key and model are loaded lazily on first use to avoid blocking
         // (sync-over-async) during DI construction, which can deadlock on a
         // captured synchronization context and stalls service resolution.
+        _retry = HttpRetryPolicy.CreateForResponses(_logger, "OpenAI embeddings request");
     }
 
     /// <summary>
@@ -121,7 +124,11 @@ public class OpenAIEmbeddingService : IEmbeddingService
                 Input = textList
             };
 
-            var response = await _httpClient.PostAsJsonAsync(OpenAIApiUrl, request);
+            // Bounded retry on 429/5xx/transport failures (HttpRetryPolicy):
+            // a batch re-embed must not lose an event to one rate-limit answer.
+            var response = await _retry.ExecuteAsync(
+                async token => await _httpClient.PostAsJsonAsync(OpenAIApiUrl, request, token),
+                CancellationToken.None);
             response.EnsureSuccessStatusCode();
 
             var apiResponse = await response.Content.ReadFromJsonAsync<OpenAIEmbeddingResponse>();

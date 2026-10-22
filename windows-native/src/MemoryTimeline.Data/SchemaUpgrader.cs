@@ -510,15 +510,10 @@ public static class SchemaUpgrader
                     INSERT OR IGNORE INTO "app_settings" ("setting_key", "setting_value", "updated_at") VALUES
                         ('theme',                    'light',                    '2025-01-21 00:00:00'),
                         ('default_zoom_level',       'month',                    '2025-01-21 00:00:00'),
-                        ('audio_quality',            'high',                     '2025-01-21 00:00:00'),
                         ('llm_provider',             'anthropic',                '2025-01-21 00:00:00'),
                         ('llm_model',                'claude-sonnet-4-20250514', '2025-01-21 00:00:00'),
                         ('llm_max_tokens',           '4000',                     '2025-01-21 00:00:00'),
                         ('llm_temperature',          '0.3',                      '2025-01-21 00:00:00'),
-                        ('stt_engine',               'windows',                  '2025-01-21 00:00:00'),
-                        ('stt_config',               '{}',                       '2025-01-21 00:00:00'),
-                        ('rag_auto_run_enabled',     'false',                    '2025-01-21 00:00:00'),
-                        ('rag_schedule',             'weekly',                   '2025-01-21 00:00:00'),
                         ('rag_similarity_threshold', '0.75',                     '2025-01-21 00:00:00'),
                         ('embedding_provider',       'local',                    '2025-01-21 00:00:00'),
                         ('embedding_model',          'all-MiniLM-L6-v2',         '2025-01-21 00:00:00'),
@@ -527,10 +522,11 @@ public static class SchemaUpgrader
                         ('llm_base_url',             '',                         '2025-01-21 00:00:00'),
                         ('local_model_path',         '',                         '2025-01-21 00:00:00'),
                         ('auto_generate_embeddings', 'true',                     '2025-01-21 00:00:00'),
-                        ('send_transcripts_only',    'true',                     '2025-01-21 00:00:00'),
-                        ('require_confirmation',     'true',                     '2025-01-21 00:00:00'),
                         ('ask_top_k',                '12',                       '2025-01-21 00:00:00'),
                         ('ask_include_transcripts',  'false',                    '2025-01-21 00:00:00'),
+                        ('audio_input_device_id',    '',                         '2025-01-21 00:00:00'),
+                        ('whisper_model',            'base',                     '2025-01-21 00:00:00'),
+                        ('whisper_language',         'auto',                     '2025-01-21 00:00:00'),
                         ('home_is_default_page',     'true',                     '2025-01-21 00:00:00'),
                         ('daily_toast_enabled',      'true',                     '2025-01-21 00:00:00'),
                         ('weekly_digest_enabled',    'true',                     '2025-01-21 00:00:00'),
@@ -545,7 +541,13 @@ public static class SchemaUpgrader
                 // Note: last_toast_date is deliberately NOT seeded (here or in
                 // AppDbContext.SeedDefaultSettings) - an absent row means "the
                 // On This Day toast has never been shown". Likewise
-                // last_backup_at is NOT seeded - absent means "never backed up".
+                // last_backup_at is NOT seeded - absent means "never backed up",
+                // and timeline_projection_backfill_pending - absent means "no
+                // backfill owed". Keys that no reader ever consulted
+                // (audio_quality, stt_engine, stt_config, rag_auto_run_enabled,
+                // rag_schedule, send_transcripts_only, require_confirmation) were
+                // dropped from both seeds; rows older databases carry are left
+                // alone and ignored.
             }
         }
         finally

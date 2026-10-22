@@ -97,6 +97,7 @@
             </li>
             <li><a class="nav-link is-active" href="repo-audit-2026-07.html" aria-current="page">Exhaustive repo audit</a>
               <ul class="nav-sub">
+                <li><a class="nav-sublink" href="#status-addendum-2026-10-21">Status addendum (2026-10-21)</a></li>
                 <li><a class="nav-sublink" href="#part-1--confirmed-findings-adversarially-verified">Part 1 — CONFIRMED findings (adversarially verified)</a></li>
                 <li><a class="nav-sublink" href="#part-2--unverified-findings-mediumlow-not-adversarially-checked">Part 2 — UNVERIFIED findings (medium/low; not adversarially checked)</a></li>
                 <li><a class="nav-sublink" href="#part-3--improvement-opportunities-ranked-by-scope">Part 3 — Improvement opportunities (ranked by scope)</a></li>
@@ -131,8 +132,8 @@
   <p class="doc-lede">A bug hunt and feature crawl across the repository: 18 adversarially verified findings, 45 unverified medium/low findings, and ranked improvement opportunities.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>10,416</b> words</span>
-    <span class="doc-meta-item"><b>47</b> min read</span>
+    <span class="doc-meta-item"><b>10,906</b> words</span>
+    <span class="doc-meta-item"><b>50</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/docs/reviews/exhaustive-audit-2026-07.md" target="_blank" rel="noopener noreferrer">
       docs/reviews/exhaustive-audit-2026-07.md ↗
     </a>
@@ -150,6 +151,113 @@ findings were not adversarially verified (quota-trimmed) and are listed separate
 </blockquote>
 <p><strong>Context:</strong> the codebase compiles green in CI, but finding #10 below shows the CI test step never actually
 executes tests — so &#39;CI green&#39; currently proves compilation only. Runtime validation remains the top gap.</p>
+<div class="callout callout-feature"><div class="callout-body"><h2 id="status-addendum-2026-10-21" class="anchored">Status addendum (2026-10-21)<a class="heading-anchor" href="#status-addendum-2026-10-21" aria-label="Link to this section">#</a></h2>
+<p>The findings below are kept as originally written. Current state, checked against the code:</p>
+<div class="table-wrap"><table><thead><tr>
+<th>#</th>
+<th>Finding</th>
+<th>Status</th>
+</tr>
+</thead><tbody><tr>
+<td>1</td>
+<td>Legacy-export import binds no snake_case fields</td>
+<td>✅ fixed — <code>ImportService</code> maps the snake_case legacy keys</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Pre-import backup <code>File.Copy</code> of a WAL database</td>
+<td>✅ fixed — <code>SqliteConnection.BackupDatabase</code> (online backup)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>&quot;View on Timeline&quot; passed a DateTime parameter</td>
+<td>✅ fixed — Search passes the event id; <code>TimelineViewModel.NavigateToEventAsync</code> handles it</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Category checkbox state inverts after Clear Filters</td>
+<td><span class="chip chip-ok">✅ fixed — checkboxes bound to ViewModel state</span></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Save Search dialog never shown</td>
+<td>✅ fixed — <code>SaveSearchDialog.ShowAsync()</code> is wired</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Gantt era bars misaligned by the 140 px label column</td>
+<td><span class="chip chip-ok">✅ fixed — the milestone zone and ruler share the spacer</span></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>MediaOpened</code> reset playback state after <code>Play()</code></td>
+<td><span class="chip chip-ok">✅ fixed — state transition guarded</span></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Main instance never subscribed to <code>AppInstance.Activated</code></td>
+<td>✅ fixed — <code>keyInstance.Activated += OnRedirectedActivation</code>; the redirect no longer blocks the STA thread (2026-10)</td>
+</tr>
+<tr>
+<td>9</td>
+<td>CI test glob missed the AnyCPU output path</td>
+<td><span class="chip chip-ok">✅ fixed — both layouts searched</span></td>
+</tr>
+<tr>
+<td>10</td>
+<td>Test suite non-gating (<code>continue-on-error</code>)</td>
+<td><span class="chip chip-ok">✅ fixed — tests gate the workflow</span></td>
+</tr>
+<tr>
+<td>11</td>
+<td>Reject All without confirmation</td>
+<td><span class="chip chip-ok">✅ fixed — confirmation dialogs for Reject / Reject All</span></td>
+</tr>
+<tr>
+<td>12</td>
+<td>Phantom &quot;OpenAI&quot;/&quot;Local&quot; LLM providers</td>
+<td><span class="chip chip-ok">✅ fixed — only Anthropic and OpenAI-compatible are offered, routed per call</span></td>
+</tr>
+<tr>
+<td>13</td>
+<td>Date-range query drops in-progress multi-day events</td>
+<td>✅ fixed — overlap predicate on <code>StartDate</code>/<code>EndDate</code></td>
+</tr>
+<tr>
+<td>14 / 15</td>
+<td>Junction add/remove APIs broke on the detached graph</td>
+<td>✅ fixed — junction writes go through a fresh context (the Connections page now uses <code>AddTagToEventAsync</code>, 2026-10)</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Edit from the detail dialog opened a second dialog</td>
+<td><span class="chip chip-ok">✅ fixed</span></td>
+</tr>
+<tr>
+<td>17</td>
+<td>Individual era filter checkboxes had no effect</td>
+<td>✅ fixed — per-filter <code>PropertyChanged</code> re-evaluates the bar layer</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Audio import advertised formats Whisper cannot parse</td>
+<td>⚠️ mitigated — import is restricted to WAV today; non-WAV normalization (<code>IAudioNormalizer</code>) is being added in Core, and the 2026-10 Queue-page importer surfaces per-file &quot;Unsupported format&quot; instead of a failed queue item</td>
+</tr>
+</tbody></table></div>
+<p><strong>Part 2 / Part 3 items addressed by the 2026-10 head wiring pass:</strong> audio settings that
+were never read (fixed format + microphone picker), default zoom never consumed, milestones
+not editable/deletable, era/milestone dialogs closing on failed saves, the STA-blocking
+activation redirect, the startup/selection double-navigation, the README&#39;s Windows Timeline
+and Jump List claims (Timeline removed, recent events wired), Reset to Defaults not clearing
+keys / resetting to Dark, the unwired navigation accelerators, <code>AudioImportService</code> with no
+consumer, Jump List actions that only navigated, the dead <code>event:</code> deep-link surface, the
+unpackaged Jump List caveat (detected and documented), the unused <code>AudioLevelChanged</code> meter,
+NavigationView selection not following programmatic navigation, and &quot;Support removing stored
+API keys&quot;. Addressed earlier: <code>EventUpdated/DeletedMessage</code>, backup/restore, transcript
+persistence on the queue row, NOCASE identity, the <code>pull_request</code> CI trigger, gating tests,
+the real Clear Cache, <code>CanZoomIn/CanZoomOut</code> notification. The two Electron-only items
+(<code>jest.config.js</code>, <code>batchImportService</code>/<code>main.js</code>) refer to the removed Electron app.</p>
+</div></div>
 <hr>
 <h2 id="part-1--confirmed-findings-adversarially-verified" class="anchored">Part 1 — CONFIRMED findings (adversarially verified)<a class="heading-anchor" href="#part-1--confirmed-findings-adversarially-verified" aria-label="Link to this section">#</a></h2>
 <h3 id="1-high-legacy-export-import-binds-none-of-the-snake_case-fields--all-migrated-events-get-startdate-0001-01-01" class="anchored">1. [HIGH] Legacy-export import binds none of the snake_case fields — all migrated events get StartDate 0001-01-01<a class="heading-anchor" href="#1-high-legacy-export-import-binds-none-of-the-snake_case-fields--all-migrated-events-get-startdate-0001-01-01" aria-label="Link to this section">#</a></h3>
@@ -311,7 +419,7 @@ SettingsPage exposes Sample Rate (8000-48000) and Bits Per Sample (8-32) NumberB
 <li><strong>Dispose frees the WhisperFactory and semaphore while a transcription may be in flight</strong> — <code>windows-native/src/MemoryTimeline/Services/WhisperSpeechToTextService.cs:241</code> (wn-shell)</li>
 <li><strong>StopRecordingAsync failure path silently discards the finished recording</strong> — <code>windows-native/src/MemoryTimeline/Services/AudioRecordingService.cs:169</code> (wn-shell)</li>
 <li><strong>SetThemeAsync test asserts the default value — it passes even if SetThemeAsync is a no-op</strong> — <code>windows-native/src/MemoryTimeline.Tests/Services/SettingsServiceTests.cs:153</code> (tests-ci)</li>
-<li><strong>moduleNameMapper points at identity-obj-proxy, which is not a devDependency</strong> — <code>jest.config.js:21</code> (tests-ci)</li>
+<li><strong>moduleNameMapper points at identity-obj-proxy, which is not a devDependency</strong> — <code>jest.config.js:21</code> (tests-ci) — <em>refers to the removed Electron app; no longer applicable</em></li>
 <li><strong>Performance tests assert absolute wall-clock thresholds — flaky on shared CI runners</strong> — <code>windows-native/src/MemoryTimeline.Tests/Performance/PerformanceTests.cs:101</code> (tests-ci)</li>
 <li><strong>Clear Cache button is a TODO stub that reports success to the user</strong> — <code>windows-native/src/MemoryTimeline/ViewModels/SettingsViewModel.cs:239</code> (product)</li>
 <li><strong>Reset to Defaults silently fails to reset API keys and changes theme to Dark instead of the first-run System default</strong> — <code>windows-native/src/MemoryTimeline/ViewModels/SettingsViewModel.cs:220</code> (product)</li>
@@ -398,7 +506,7 @@ SettingsPage exposes Sample Rate (8000-48000) and Bits Per Sample (8-32) NumberB
 <ul>
 <li><strong>[medium] Make the .NET tests gating by isolating the non-WinUI subset</strong> — All 13 test classes exercise only Core/Data types (services, repositories, layout math) — nothing needs a WinUI dispatcher. Removing the test project&#39;s reference to the WinUI app project (or splitting a MemoryTimeline.Tests.Core project) would let CI run <code>dotnet test</code> normally without the &#39;headless …</li>
 <li><strong>[medium] Cover QueueService&#39;s processing pipeline (ProcessNextItemAsync, retries, ConfigurationException path)</strong> — QueueServiceTests covers only CRUD/status plumbing; ProcessNextItemAsync, ProcessAllPendingAsync, the 3-attempt retry with exponential backoff, the non-retryable ConfigurationException branch, and the notification calls (the parts most likely to break at runtime) have zero tests. Note the retry loop…</li>
-<li><strong>[medium] Add tests for batchImportService and the main.js IPC handler wiring</strong> — batchImportService was rewritten with schema fixes but has no test file at all, and main.js handler registration (the contract the renderer depends on) is explicitly excluded from coverage (jest.config.js line 13). A smoke test that instantiates each service against a schema.sql database and a handl…</li>
+<li><strong>[medium] Add tests for batchImportService and the main.js IPC handler wiring</strong> <em>(Electron app — removed from the repository; no longer applicable)</em> — batchImportService was rewritten with schema fixes but has no test file at all, and main.js handler registration (the contract the renderer depends on) is explicitly excluded from coverage (jest.config.js line 13). A smoke test that instantiates each service against a schema.sql database and a handl…</li>
 <li><strong>[small] Trigger the Windows workflow on pull_request and the default branch</strong> — Replacing the hard-coded feature-branch filter with <code>pull_request</code> plus pushes to main keeps the compile/test gate alive after the current review branch is merged, and gives contributors pre-merge signal instead of post-push annotations on a branch nobody watches.</li>
 <li><strong>[small] Tag PerformanceTests with an xUnit trait and exclude them from the default CI run</strong> — A [Trait(&quot;Category&quot;,&quot;Performance&quot;)] on the class plus a <code>--TestCaseFilter</code> in CI keeps the fast, deterministic suites gating while the wall-clock-sensitive load tests run on demand (workflow_dispatch or nightly), eliminating the main flake source before tests are made blocking.</li>
 <li><strong>[small] Enforce TestDbContextFactory&#39;s &#39;:memory:&#39; prohibition in code</strong> — The class doc warns that SQLite &#39;:memory:&#39; connection strings would give each context an empty database (the classic silently-green trap), but nothing prevents a future test from passing one to the constructor or CreateSqliteFile. A one-line guard (throw if the options&#39; connection string contains &#39;:…</li>
@@ -428,6 +536,7 @@ SettingsPage exposes Sample Rate (8000-48000) and Bits Per Sample (8-32) NumberB
 <aside class="toc" aria-label="On this page">
   <p class="toc-title">On this page</p>
   <ul class="toc-list">
+<li class="toc-item toc-h2"><a href="#status-addendum-2026-10-21" data-toc-link>Status addendum (2026-10-21)</a></li>
 <li class="toc-item toc-h2"><a href="#part-1--confirmed-findings-adversarially-verified" data-toc-link>Part 1 — CONFIRMED findings (adversarially verified)</a></li>
 <li class="toc-item toc-h3"><a href="#1-high-legacy-export-import-binds-none-of-the-snake_case-fields--all-migrated-events-get-startdate-0001-01-01" data-toc-link>1. [HIGH] Legacy-export import binds none of the snake_case fields — all migrated events get StartDate 0001-01-01</a></li>
 <li class="toc-item toc-h3"><a href="#2-high-pre-import-backup-filecopy-of-a-live-wal-mode-sqlite-db-is-a-sharing-violation-or-a-stale-copy" data-toc-link>2. [HIGH] Pre-import backup File.Copy of a live WAL-mode SQLite DB is a sharing violation or a stale copy</a></li>
@@ -468,7 +577,7 @@ SettingsPage exposes Sample Rate (8000-48000) and Bits Per Sample (8-32) NumberB
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

@@ -43,6 +43,19 @@ public interface IArtifactStore
 
     /// <summary>Deletes the part directory after a successful completion. Best-effort; failures are logged.</summary>
     void DeleteParts(Guid artifactId);
+
+    /// <summary>
+    /// Deletes the assembled blob and any leftover parts of a purged artifact.
+    /// Best-effort; returns true when a blob was actually removed.
+    /// </summary>
+    bool DeleteAssembled(Guid artifactId);
+
+    /// <summary>
+    /// Deletes temporary part/assembly files (<c>*.tmp</c>) last written before
+    /// <paramref name="olderThanUtc"/> — the leftovers of requests that crashed
+    /// mid-write. Returns the number removed.
+    /// </summary>
+    int SweepTemporaryFiles(DateTime olderThanUtc);
 }
 
 /// <summary>Outcome of assembling artifact parts into a temporary blob.</summary>

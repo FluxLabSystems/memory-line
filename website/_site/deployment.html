@@ -141,7 +141,7 @@
   <p class="doc-lede">Building Release|x64, runtime data layout, MSIX packaging, code signing, Microsoft Store submission, and side-loading.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Maintainers</span>
-    <span class="doc-meta-item"><b>2,053</b> words</span>
+    <span class="doc-meta-item"><b>2,067</b> words</span>
     <span class="doc-meta-item"><b>9</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEPLOYMENT.md ↗
@@ -151,7 +151,7 @@
 </header>
 <div class="doc-grid">
   <article class="prose">
-<p>This guide covers building, testing, and deploying the Memory Timeline Windows native application (WinUI 3 / Windows App SDK, .NET 8).</p>
+<p>This guide covers building, testing, and deploying the Memory Timeline Windows native application (WinUI 3 / Windows App SDK 2.3.1, .NET 10).</p>
 <div class="callout callout-warning"><div class="callout-body"><p><strong>Important build note.</strong> The WinUI 3 app is currently an <strong>unpackaged</strong> desktop app (<code>WindowsPackageType=None</code>, self-contained Windows App SDK). It builds for a specific CPU platform (<strong>x64</strong>, x86, or ARM64 — there is <strong>no <code>AnyCPU</code></strong>) and, because of the WinUI PRI/XAML resource-generation tooling, must be built with <strong>Visual Studio or <code>msbuild.exe</code></strong>, not <code>dotnet build</code>. See <a href="#building-the-application">Building the Application</a> for details.</p>
 <p>MSIX packaging and Microsoft Store publishing (the later sections of this guide) are <strong>Phase 7 work in progress</strong> and are documented here as the intended path, not as a shipped, verified pipeline.</p>
 </div></div>
@@ -171,15 +171,15 @@
 <h2 id="prerequisites" class="anchored">Prerequisites<a class="heading-anchor" href="#prerequisites" aria-label="Link to this section">#</a></h2>
 <h3 id="development-environment" class="anchored">Development Environment<a class="heading-anchor" href="#development-environment" aria-label="Link to this section">#</a></h3>
 <ul>
-<li><strong>Windows 11 22H2</strong> or later (required for Windows App SDK 1.5+). The WinUI target cannot be built on Linux/macOS.</li>
-<li><strong>Visual Studio 2022</strong> (17.8 or later) with workloads:<ul>
+<li><strong>Windows 11 22H2</strong> or later (<code>TargetPlatformMinVersion</code> 10.0.22621.0; Windows App SDK 2.3.1 is bundled self-contained). The WinUI target cannot be built on Linux/macOS.</li>
+<li><strong>Visual Studio 2026</strong> (18.0 or later) with workloads:<ul>
 <li>.NET Desktop Development</li>
 <li>Universal Windows Platform development</li>
 <li>Windows App SDK C# Templates</li>
 </ul>
 </li>
-<li><strong>.NET SDK</strong> — the repo pins the SDK via <code>windows-native/src/global.json</code>:<div class="codeblock" data-lang="json"><div class="codeblock-bar"><span class="codeblock-lang">JSON</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-json">{ <span class="tok-key">&quot;sdk&quot;</span>: { <span class="tok-key">&quot;version&quot;</span>: <span class="tok-string">&quot;8.0.100&quot;</span>, <span class="tok-key">&quot;rollForward&quot;</span>: <span class="tok-string">&quot;major&quot;</span> } }</code></pre></div>
-This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <strong>roll forward to the next available major</strong> (e.g. .NET 9). It will <strong>not</strong> select the .NET 10 SDK, whose newer WinUI XAML/PRI tooling breaks this project&#39;s resource generation. If you only have a newer SDK installed, install a <strong>.NET 8 or .NET 9 SDK</strong> rather than relying on whatever is latest.</li>
+<li><strong>.NET SDK</strong> — the repo pins the SDK via <code>windows-native/src/global.json</code>:<div class="codeblock" data-lang="json"><div class="codeblock-bar"><span class="codeblock-lang">JSON</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-json">{ <span class="tok-key">&quot;sdk&quot;</span>: { <span class="tok-key">&quot;version&quot;</span>: <span class="tok-string">&quot;10.0.300&quot;</span>, <span class="tok-key">&quot;rollForward&quot;</span>: <span class="tok-string">&quot;latestFeature&quot;</span> } }</code></pre></div>
+This means: use a <strong>.NET 10 SDK, 10.0.3xx or newer</strong>. An older 10.0.1xx/2xx SDK will not satisfy it, because the newer bands require MSBuild 18 (Visual Studio 2026), which ships a suitable SDK.</li>
 <li><strong>Windows App SDK</strong> 1.5.x (restored as the <code>Microsoft.WindowsAppSDK</code> NuGet package)</li>
 </ul>
 <h3 id="for-packaging--store-deployment-phase-7--in-progress" class="anchored">For Packaging / Store Deployment (Phase 7 — in progress)<a class="heading-anchor" href="#for-packaging--store-deployment-phase-7--in-progress" aria-label="Link to this section">#</a></h3>
@@ -202,15 +202,15 @@ This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <s
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell">cd windows-native/src
 
 <span class="tok-comment"># Restore + build the whole solution with Visual Studio MSBuild.</span>
-<span class="tok-comment"># 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2022),</span>
+<span class="tok-comment"># 'msbuild' here is the VS msbuild.exe (e.g. from a Developer PowerShell for VS 2026),</span>
 <span class="tok-comment"># NOT 'dotnet build'.</span>
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m</code></pre></div>
 <h3 id="debug-build" class="anchored">Debug build<a class="heading-anchor" href="#debug-build" aria-label="Link to this section">#</a></h3>
 <div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Debug /p:Platform=x64 /m</code></pre></div>
-<p>You can also simply open <code>windows-native/src/MemoryTimeline.sln</code> in Visual Studio 2022, select the <strong>Release / x64</strong> (or <strong>Debug / x64</strong>) configuration, and Build.</p>
+<p>You can also simply open <code>windows-native/src/MemoryTimeline.sln</code> in Visual Studio 2026, select the <strong>Release / x64</strong> (or <strong>Debug / x64</strong>) configuration, and Build.</p>
 <h3 id="build-output" class="anchored">Build Output<a class="heading-anchor" href="#build-output" aria-label="Link to this section">#</a></h3>
 <p>The compiled application is placed under the platform-specific output folder, for example:</p>
-<div class="codeblock" data-lang="text"><div class="codeblock-bar"><span class="codeblock-lang">text</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-text">windows-native/src/MemoryTimeline/bin/x64/Release/net8.0-windows10.0.26100.0/</code></pre></div>
+<div class="codeblock" data-lang="text"><div class="codeblock-bar"><span class="codeblock-lang">text</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-text">windows-native/src/MemoryTimeline/bin/x64/Release/net10.0-windows10.0.26100.0/</code></pre></div>
 <p>Because the app is unpackaged and self-contained, this folder contains <code>MemoryTimeline.exe</code> plus the Windows App SDK runtime and can be launched directly.</p>
 <hr>
 <h2 id="data--runtime-layout" class="anchored">Data &amp; Runtime Layout<a class="heading-anchor" href="#data--runtime-layout" aria-label="Link to this section">#</a></h2>
@@ -249,7 +249,7 @@ This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <s
 <span class="tok-builtin">msbuild</span> MemoryTimeline.sln /t:Restore,Build /p:Configuration=Release /p:Platform=x64 /m
 
 <span class="tok-comment"># 2. Run the compiled test DLL with vstest (no rebuild)</span>
-<span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> MemoryTimeline.Tests/bin/x64/Release/net8.<span class="tok-number">0</span>-windows10.<span class="tok-number">0.26100.0</span>/MemoryTimeline.Tests.dll `
+<span class="tok-builtin">dotnet</span> <span class="tok-builtin">vstest</span> MemoryTimeline.Tests/bin/x64/Release/net10.<span class="tok-number">0</span>-windows10.<span class="tok-number">0.26100.0</span>/MemoryTimeline.Tests.dll `
   --logger:<span class="tok-string">&quot;trx;LogFileName=test.trx&quot;</span> --ResultsDirectory:TestResults</code></pre></div>
 <h3 id="filtering" class="anchored">Filtering<a class="heading-anchor" href="#filtering" aria-label="Link to this section">#</a></h3>
 <p><code>dotnet vstest</code> supports test filtering via <code>--TestCaseFilter</code>, e.g.:</p>
@@ -287,13 +287,15 @@ This means: use the <strong>.NET 8 SDK</strong> if it is installed, otherwise <s
 </li>
 </ol>
 <h3 id="command-line-packaging" class="anchored">Command-Line Packaging<a class="heading-anchor" href="#command-line-packaging" aria-label="Link to this section">#</a></h3>
-<div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-comment"># Set environment variables</span>
-<span class="tok-variable">$AppxManifestPath</span> = <span class="tok-string">&quot;.\packaging\Package.appxmanifest&quot;</span>
+<div class="codeblock" data-lang="powershell"><div class="codeblock-bar"><span class="codeblock-lang">PowerShell</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-powershell"><span class="tok-comment"># Illustrative only. The former windows-native/packaging/ manifest was removed (it diverged</span>
+<span class="tok-comment"># from the project and declared extensions nothing handled); the only manifest is</span>
+<span class="tok-comment"># src/MemoryTimeline/Package.appxmanifest, which still carries template placeholders</span>
+<span class="tok-comment"># (no publisher identity, no Assets\*.png) - see DEVELOPMENT-STATUS.md section 7.2.</span>
+<span class="tok-variable">$AppxManifestPath</span> = <span class="tok-string">&quot;.\src\MemoryTimeline\Package.appxmanifest&quot;</span>
 <span class="tok-variable">$OutputPath</span> = <span class="tok-string">&quot;.\output\packages&quot;</span>
-<span class="tok-variable">$MappingFile</span> = <span class="tok-string">&quot;.\packaging\FileMapping.txt&quot;</span>
 
-<span class="tok-comment"># Create package using makeappx</span>
-<span class="tok-builtin">makeappx</span> pack /d <span class="tok-string">&quot;.\bin\Release\net8.0-windows\&quot;</span> /p <span class="tok-string">&quot;$OutputPath\MemoryTimeline.msix&quot;</span> /l
+<span class="tok-comment"># Create package using makeappx (no FileMapping.txt exists yet)</span>
+<span class="tok-builtin">makeappx</span> pack /d <span class="tok-string">&quot;.\src\MemoryTimeline\bin\x64\Release\net10.0-windows10.0.26100.0\&quot;</span> /p <span class="tok-string">&quot;$OutputPath\MemoryTimeline.msix&quot;</span> /l
 
 <span class="tok-comment"># For app bundle (multiple architectures)</span>
 <span class="tok-builtin">makeappx</span> bundle /d <span class="tok-string">&quot;$OutputPath\bundles&quot;</span> /p <span class="tok-string">&quot;$OutputPath\MemoryTimeline.msixbundle&quot;</span></code></pre></div>
@@ -510,16 +512,16 @@ reg add <span class="tok-string">&quot;HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Win
 <p>The repository has a <strong>real</strong> GitHub Actions workflow that compiles and tests the native Windows implementation. Its key design decisions mirror the constraints described above:</p>
 <ul>
 <li>Runs on <strong><code>windows-latest</code></strong> (the WinUI target cannot build on Linux).</li>
-<li>Installs the <strong>.NET 8 SDK</strong> (<code>actions/setup-dotnet</code>) and <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>).</li>
+<li>Installs the <strong>.NET 10 SDK</strong> (<code>actions/setup-dotnet</code>, <code>10.0.x</code>) and <strong>Visual Studio MSBuild</strong> (<code>microsoft/setup-msbuild</code>).</li>
 <li>Builds the <strong>whole solution for <code>Release | x64</code></strong> via <code>msbuild MemoryTimeline.sln /t:Restore,Build</code> — <strong>not</strong> <code>dotnet build</code>, to avoid the WinUI PRI/XAML task failure.</li>
 <li>Runs tests with <strong><code>dotnet vstest</code></strong> against the already-built <code>MemoryTimeline.Tests.dll</code> — <strong>not</strong> <code>dotnet test</code>, which would rebuild the WinUI app and hit the same failure.</li>
-<li>Compilation is the gate; the headless VSTest run of the self-contained WinUI test assembly is best-effort (<code>continue-on-error</code>) and its results/logs are uploaded as artifacts.</li>
+<li>Compilation <strong>and</strong> the <code>dotnet vstest</code> run both gate the workflow (a failing or missing test assembly fails the run); results/logs are uploaded as artifacts.</li>
 </ul>
 <p>Core of the build and test steps:</p>
-<div class="codeblock" data-lang="yaml"><div class="codeblock-bar"><span class="codeblock-lang">YAML</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-yaml"><span class="tok-key">- name</span>: Setup .NET <span class="tok-number">8</span>
+<div class="codeblock" data-lang="yaml"><div class="codeblock-bar"><span class="codeblock-lang">YAML</span><button class="codeblock-copy" type="button" data-copy aria-label="Copy code">Copy</button></div><pre><code class="language-yaml"><span class="tok-key">- name</span>: Setup .NET <span class="tok-number">10</span>
 <span class="tok-key">  uses</span>: actions/setup-dotnet@v4
 <span class="tok-key">  with</span>:
-<span class="tok-key">    dotnet-version</span>: <span class="tok-string">'8.0.x'</span>
+<span class="tok-key">    dotnet-version</span>: <span class="tok-string">'10.0.x'</span>
 <span class="tok-key">
 - name</span>: Setup MSBuild (Visual Studio)
 <span class="tok-key">  uses</span>: microsoft/setup-msbuild@v2
@@ -677,7 +679,7 @@ reg add <span class="tok-string">&quot;HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Win
       <div>
         <strong>Memory Timeline</strong> documentation ·
         13 documents ·
-        generated 2026-08-07
+        generated 2026-10-22
       </div>
       <div class="footer-links">
         <a href="index.html">Home</a>

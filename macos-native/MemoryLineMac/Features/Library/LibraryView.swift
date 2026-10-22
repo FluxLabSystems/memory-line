@@ -3,10 +3,12 @@ import SwiftUI
 /// Lists the captures held in the local database, newest first, with the
 /// Windows-authored processing status alongside each one.
 ///
-/// This is the walking skeleton: it exercises the whole shared stack —
-/// `SQLiteCaptureStore` for the rows, `SQLiteCaptureStatusStore` for the
-/// Phase 3 status projection — without needing any macOS-specific capture or
-/// upload code to exist yet. Recording on the Mac comes later (port plan §4.1).
+/// This was the walking skeleton — the first screen to exercise the shared
+/// stack (`SQLiteCaptureStore` for the rows, `SQLiteCaptureStatusStore` for the
+/// Phase 3 status projection) before the Mac could record. It now lists what
+/// `MacAudioRecorderService` records and `MacUploadCoordinator` sends, with the
+/// upload state surfaced below and the processing status Windows reports back
+/// beside each capture.
 struct LibraryView: View {
     @Environment(MacAppEnvironment.self) private var environment
 

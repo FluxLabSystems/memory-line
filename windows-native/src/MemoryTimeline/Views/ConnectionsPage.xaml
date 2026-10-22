@@ -286,6 +286,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
 
                                         <StackPanel Grid.Column="0">
@@ -310,6 +311,21 @@
                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                       HorizontalAlignment="Right"/>
                                         </StackPanel>
+
+                                        <!-- Applies the suggestion (Click handler: x:Bind inside the
+                                             template cannot reach the page's ViewModel command). -->
+                                        <Button Grid.Column="2"
+                                               VerticalAlignment="Center"
+                                               Margin="16,0,0,0"
+                                               Tag="{x:Bind}"
+                                               Click="SuggestedTag_Add_Click"
+                                               AutomationProperties.Name="Add this tag to the event"
+                                               ToolTipService.ToolTip="Add this tag to the event">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                                                <TextBlock Text="Add"/>
+                                            </StackPanel>
+                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

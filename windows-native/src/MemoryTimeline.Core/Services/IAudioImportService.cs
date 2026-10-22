@@ -57,8 +57,12 @@ public interface IAudioImportService
 /// <summary>
 /// Audio import service implementation. Queue insertion routes through
 /// ICaptureIngestionService (design §7.2) so imported files get the same
-/// capture/artifact identity as in-app recordings; the remaining database
-/// work still opens a short-lived DbContext per operation via IDbContextFactory.
+/// capture/artifact identity as in-app recordings — and the same
+/// normalization: ingestion converts a compressed import to the 16 kHz WAV
+/// the transcriber reads, so this service accepts every format the
+/// registered <see cref="IAudioNormalizer"/> can decode. The remaining
+/// database work still opens a short-lived DbContext per operation via
+/// IDbContextFactory.
 /// </summary>
 public class AudioImportService : IAudioImportService
 {
@@ -67,25 +71,43 @@ public class AudioImportService : IAudioImportService
     private readonly ICaptureIngestionService _captureIngestionService;
     private readonly ISpeechToTextService? _sttService;
     private readonly IEventExtractionService? _extractionService;
+    private readonly IAudioNormalizer? _audioNormalizer;
     private readonly ILogger<AudioImportService> _logger;
 
     public event EventHandler<AudioImportProgress>? ImportProgressChanged;
 
+    /// <summary>
+    /// Creates the service. <paramref name="audioNormalizer"/> is the same
+    /// instance ingestion normalizes with; it is only consulted here to decide
+    /// which files to accept (see <see cref="CanTranscode"/>).
+    /// </summary>
     public AudioImportService(
         IDbContextFactory<AppDbContext> contextFactory,
         IQueueService queueService,
         ICaptureIngestionService captureIngestionService,
         ILogger<AudioImportService> logger,
         ISpeechToTextService? sttService = null,
-        IEventExtractionService? extractionService = null)
+        IEventExtractionService? extractionService = null,
+        IAudioNormalizer? audioNormalizer = null)
     {
         _contextFactory = contextFactory;
         _queueService = queueService;
         _captureIngestionService = captureIngestionService;
         _sttService = sttService;
         _extractionService = extractionService;
+        _audioNormalizer = audioNormalizer;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Whether a compressed import can be made transcribable. True with a
+    /// platform normalizer; false with none, or with the portable
+    /// <see cref="WavOnlyAudioNormalizer"/>, which by definition converts
+    /// nothing. The type test is deliberate: the port's shape carries no
+    /// capability flag, and the one implementation that cannot transcode is
+    /// the one Core itself ships.
+    /// </summary>
+    private bool CanTranscode => _audioNormalizer is not null and not WavOnlyAudioNormalizer;
 
     public async Task<AudioImportResult> ImportFilesAsync(
         IEnumerable<string> filePaths,
@@ -283,9 +305,9 @@ public class AudioImportService : IAudioImportService
 
         var searchOption = options.RecursiveScan ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 
-        // Restrict the scan to Whisper-compatible formats (see WhisperCompatibleFormats)
-        // so the scan never lists files that IsSupportedFormat would reject at import.
-        foreach (var format in options.SupportedFormats.Intersect(WhisperCompatibleFormats, StringComparer.OrdinalIgnoreCase))
+        // Restrict the scan to the formats IsSupportedFormat accepts, so it
+        // never lists a file that import would then reject.
+        foreach (var format in options.SupportedFormats.Intersect(AcceptedFormats, StringComparer.OrdinalIgnoreCase))
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
@@ -323,21 +345,26 @@ public class AudioImportService : IAudioImportService
         return await ImportFilesAsync(filePaths, options, progress, cancellationToken);
     }
 
-    // The bundled Whisper STT engine only parses 16 kHz PCM WAV input, so the
-    // effective supported-format list is restricted to .wav regardless of what
-    // AudioImportOptions.SupportedFormats advertises: compressed formats
-    // (mp3/m4a/aac/ogg/flac/wma) would import successfully and then fail at
-    // transcription time. Accepting them again requires a transcoding step
-    // (future work).
-    private static readonly string[] WhisperCompatibleFormats = { ".wav" };
+    // The bundled Whisper STT engine only parses 16 kHz PCM WAV input. With a
+    // platform normalizer registered, ingestion transcodes every format in
+    // AudioImportOptions.SupportedFormats to that layout before the item is
+    // queued, so the whole advertised list is accepted. Without one, only
+    // .wav is: a compressed file would import successfully and then fail at
+    // transcription, which is a worse experience than "unsupported format"
+    // at the picker.
+    private static readonly string[] WavOnlyFormats = { ".wav" };
+
+    /// <summary>The extensions this instance accepts, before the per-call options filter.</summary>
+    private IReadOnlyList<string> AcceptedFormats =>
+        CanTranscode ? new AudioImportOptions().SupportedFormats : WavOnlyFormats;
 
     public bool IsSupportedFormat(string filePath, AudioImportOptions? options = null)
     {
         options ??= new AudioImportOptions();
         var extension = Path.GetExtension(filePath)?.ToLowerInvariant();
         return !string.IsNullOrEmpty(extension)
-            && WhisperCompatibleFormats.Contains(extension)
-            && options.SupportedFormats.Contains(extension);
+            && AcceptedFormats.Contains(extension, StringComparer.OrdinalIgnoreCase)
+            && options.SupportedFormats.Contains(extension, StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<AudioImportItem> GetFileInfoAsync(string filePath)
@@ -353,11 +380,17 @@ public class AudioImportService : IAudioImportService
         };
 
         // Duration is read straight out of the WAV header rather than from a
-        // platform media-properties API: import only accepts .wav (see
-        // WhisperCompatibleFormats), and this keeps Core free of Windows types.
+        // platform media-properties API, which keeps Core free of Windows
+        // types. A compressed import has no duration until ingestion has
+        // normalized it (ingestion fills the queue item's duration from the
+        // normalized WAV); the picker shows "Unknown" for it until then.
         try
         {
-            item.Duration = await Task.Run(() => TryReadWavDuration(filePath));
+            item.Duration = await Task.Run(() => WavHeader.TryRead(filePath)?.Duration);
+            if (item.Duration <= TimeSpan.Zero)
+            {
+                item.Duration = null;
+            }
         }
         catch (Exception ex)
         {
@@ -365,77 +398,6 @@ public class AudioImportService : IAudioImportService
         }
 
         return item;
-    }
-
-    /// <summary>
-    /// Reads the playing time of a RIFF/WAVE file from its header chunks.
-    /// Returns <see cref="TimeSpan.Zero"/> for anything it cannot parse — a
-    /// missing duration is cosmetic, so this never throws for a malformed file.
-    /// </summary>
-    private static TimeSpan TryReadWavDuration(string filePath)
-    {
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(stream);
-
-        // "RIFF" <size> "WAVE"
-        if (stream.Length < 12
-            || new string(reader.ReadChars(4)) != "RIFF")
-        {
-            return TimeSpan.Zero;
-        }
-
-        reader.ReadUInt32(); // riff chunk size (unreliable; ignored)
-        if (new string(reader.ReadChars(4)) != "WAVE")
-        {
-            return TimeSpan.Zero;
-        }
-
-        uint byteRate = 0;
-
-        // Walk the chunk list looking for "fmt " (for the byte rate) and "data"
-        // (for the payload size). Chunks are word-aligned with a pad byte.
-        while (stream.Position + 8 <= stream.Length)
-        {
-            var chunkId = new string(reader.ReadChars(4));
-            var chunkSize = reader.ReadUInt32();
-            var chunkStart = stream.Position;
-
-            if (chunkId == "fmt " && chunkSize >= 16)
-            {
-                reader.ReadUInt16(); // audio format
-                reader.ReadUInt16(); // channels
-                reader.ReadUInt32(); // sample rate
-                byteRate = reader.ReadUInt32();
-            }
-            else if (chunkId == "data")
-            {
-                if (byteRate == 0)
-                {
-                    return TimeSpan.Zero;
-                }
-
-                // A streamed writer can leave data's size as 0/0xFFFFFFFF; fall
-                // back to what is actually on disk after the header.
-                var dataSize = chunkSize;
-                var remaining = stream.Length - chunkStart;
-                if (dataSize == 0 || dataSize > remaining)
-                {
-                    dataSize = (uint)Math.Max(0, remaining);
-                }
-
-                return TimeSpan.FromSeconds((double)dataSize / byteRate);
-            }
-
-            var next = chunkStart + chunkSize + (chunkSize % 2); // word alignment
-            if (next <= chunkStart || next > stream.Length)
-            {
-                break;
-            }
-
-            stream.Position = next;
-        }
-
-        return TimeSpan.Zero;
     }
 
     private async Task<bool> CheckForDuplicateAsync(AudioImportItem item)

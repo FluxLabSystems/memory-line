@@ -43,6 +43,15 @@ public class AudioImportOptions
     public bool DeleteSourceAfterImport { get; set; }
     public bool SkipDuplicates { get; set; } = true;
     public bool RecursiveScan { get; set; } = true;
+
+    /// <summary>
+    /// The containers import accepts when a platform audio normalizer is
+    /// registered: capture ingestion transcodes each of them to the 16 kHz
+    /// WAV the transcriber reads (Services.IAudioNormalizer). Without a
+    /// normalizer — the portable stack, or a head that has none yet — import
+    /// accepts <c>.wav</c> only, whatever this list says; AudioImportService
+    /// applies that narrowing, this list is the ceiling.
+    /// </summary>
     public string[] SupportedFormats { get; set; } = { ".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac", ".wma" };
     public long MaxFileSizeBytes { get; set; } = 500 * 1024 * 1024; // 500 MB
 }

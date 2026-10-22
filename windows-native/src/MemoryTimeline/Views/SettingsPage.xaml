@@ -115,13 +115,26 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="API Key"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <PasswordBox x:Name="ApiKeyBox"
-                                Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
-                                PlaceholderText="Enter API key"
-                                HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Your API key will be stored securely"
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="ApiKeyBox"
+                                    Grid.Column="0"
+                                    Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
+                                    PlaceholderText="Enter API key"
+                                    HorizontalAlignment="Stretch"/>
+                        <!-- Save leaves a blank key box alone ("unchanged"), so removal is explicit. -->
+                        <Button Grid.Column="1"
+                               Content="Clear key"
+                               Command="{x:Bind ViewModel.ClearApiKeyCommand}"
+                               ToolTipService.ToolTip="Remove the stored Anthropic API key"/>
+                    </Grid>
+                    <TextBlock Text="Anthropic key for Claude. Stored in the local settings database on this PC; leave the box blank to keep the saved key, or use Clear key to remove it."
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <StackPanel Spacing="8">
@@ -140,13 +153,25 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="Embedding API Key (OpenAI)"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <PasswordBox x:Name="EmbeddingApiKeyBox"
-                                Password="{x:Bind ViewModel.EmbeddingApiKey, Mode=TwoWay}"
-                                PlaceholderText="Enter OpenAI API key for embeddings"
-                                HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Only needed when the embedding provider is OpenAI (cloud)"
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="EmbeddingApiKeyBox"
+                                    Grid.Column="0"
+                                    Password="{x:Bind ViewModel.EmbeddingApiKey, Mode=TwoWay}"
+                                    PlaceholderText="Enter OpenAI API key for embeddings"
+                                    HorizontalAlignment="Stretch"/>
+                        <Button Grid.Column="1"
+                               Content="Clear key"
+                               Command="{x:Bind ViewModel.ClearEmbeddingApiKeyCommand}"
+                               ToolTipService.ToolTip="Remove the stored OpenAI embedding API key"/>
+                    </Grid>
+                    <TextBlock Text="Only needed when the embedding provider is OpenAI (cloud). Leave blank to keep the saved key, or use Clear key to remove it."
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
 
                 <InfoBar IsOpen="{x:Bind ViewModel.ShowReEmbedWarning, Mode=OneWay}"
@@ -201,30 +226,51 @@
                 <TextBlock Text="Audio Recording"
                           Style="{StaticResource SubtitleTextBlockStyle}"/>
 
+                <!-- Microphone picker: persisted as audio_input_device_id on Save and
+                     read by QueueViewModel when a recording starts. -->
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Sample Rate (Hz)"
+                    <TextBlock Text="Microphone"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <NumberBox Value="{x:Bind ViewModel.AudioSampleRate, Mode=TwoWay}"
-                              Minimum="8000"
-                              Maximum="48000"
-                              SpinButtonPlacementMode="Inline"
-                              HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Higher sample rates provide better quality but larger files"
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="AudioInputDeviceComboBox"
+                                 Grid.Column="0"
+                                 ItemsSource="{x:Bind ViewModel.AudioInputDevices}"
+                                 DisplayMemberPath="Name"
+                                 SelectedItem="{x:Bind ViewModel.SelectedAudioInputDevice, Mode=TwoWay}"
+                                 HorizontalAlignment="Stretch"
+                                 PlaceholderText="System default"/>
+                        <Button Grid.Column="1"
+                               Content="Refresh"
+                               Command="{x:Bind ViewModel.RefreshAudioInputDevicesCommand}"
+                               ToolTipService.ToolTip="Re-scan audio input devices"/>
+                    </Grid>
+                    <TextBlock Text="{x:Bind ViewModel.AudioDeviceStatus, Mode=OneWay}"
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
+                    <TextBlock Text="Used for new recordings on the Queue page. 'System default' follows the Windows default input device. Applied after Save Settings."
+                              Style="{StaticResource CaptionTextBlockStyle}"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
 
+                <!-- The format is fixed, not a setting: the earlier Sample Rate /
+                     Bits Per Sample boxes were decorative (never read by the
+                     recorder) and Whisper needs exactly this format. -->
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Bits Per Sample"
+                    <TextBlock Text="Recording format"
                               Style="{StaticResource BodyTextBlockStyle}"/>
-                    <NumberBox Value="{x:Bind ViewModel.AudioBitsPerSample, Mode=TwoWay}"
-                              Minimum="8"
-                              Maximum="32"
-                              SpinButtonPlacementMode="Inline"
-                              HorizontalAlignment="Stretch"/>
-                    <TextBlock Text="Audio bit depth (8, 16, 24, or 32 bits)"
+                    <TextBlock Text="{x:Bind ViewModel.RecordingFormatSummary}"
+                              Style="{StaticResource BodyTextBlockStyle}"
+                              IsTextSelectionEnabled="True"/>
+                    <TextBlock Text="Fixed on purpose: the local Whisper transcription engine takes exactly 16 kHz, 16-bit, mono PCM, so sample rate and bit depth are not configurable. Audio imported in other formats is converted on its way into the queue."
                               Style="{StaticResource CaptionTextBlockStyle}"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              TextWrapping="Wrap"/>
                 </StackPanel>
             </StackPanel>
 

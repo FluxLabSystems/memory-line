@@ -11,6 +11,18 @@ public interface IRecordingQueueRepository : IRepository<RecordingQueue>
     Task<IEnumerable<RecordingQueue>> GetByStatusAsync(string status, CancellationToken cancellationToken = default);
     Task<RecordingQueue?> GetByIdWithPendingEventsAsync(string queueId, CancellationToken cancellationToken = default);
     Task<int> GetCountByStatusAsync(string status, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves the queue item ingested from <paramref name="sourceCaptureId"/>
+    /// from <see cref="QueueSyncState.Received"/> to
+    /// <see cref="QueueSyncState.Acknowledged"/>: the sync service has
+    /// accepted this machine's capture record, so the receipt is durable
+    /// upstream. Returns true when a row moved; false when there is no such
+    /// item or it was not in the received state (a local recording stays
+    /// <see cref="QueueSyncState.LocalOnly"/>, an acknowledged one stays
+    /// acknowledged), so a replayed delivery is a no-op.
+    /// </summary>
+    Task<bool> TryAcknowledgeSyncReceiptAsync(string sourceCaptureId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -125,5 +137,27 @@ public class RecordingQueueRepository : IRecordingQueueRepository
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         return await context.RecordingQueues
             .CountAsync(q => q.Status == status, cancellationToken);
+    }
+
+    public async Task<bool> TryAcknowledgeSyncReceiptAsync(string sourceCaptureId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourceCaptureId))
+        {
+            return false;
+        }
+
+        // Read-then-save in one context rather than ExecuteUpdate so the
+        // transition also runs on the EF InMemory provider the sync tests use.
+        await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var item = await context.RecordingQueues
+            .FirstOrDefaultAsync(q => q.SourceCaptureId == sourceCaptureId, cancellationToken);
+        if (item == null || item.SyncState != QueueSyncState.Received)
+        {
+            return false;
+        }
+
+        item.SyncState = QueueSyncState.Acknowledged;
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 }

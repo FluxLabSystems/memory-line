@@ -261,6 +261,32 @@ public class QueueServiceTests
     }
 
     [Fact]
+    public async Task GetAllQueueItemsAsync_CarriesTheSyncStateOntoTheDto()
+    {
+        // Arrange - one row per sync state, as ingestion and the outbox
+        // publisher leave them
+        var rows = new List<RecordingQueue>
+        {
+            new() { QueueId = "local", AudioFilePath = "/a.wav", Status = QueueStatus.Pending, SyncState = QueueSyncState.LocalOnly },
+            new() { QueueId = "remote", AudioFilePath = "/b.wav", Status = QueueStatus.Pending, SyncState = QueueSyncState.Received },
+            new() { QueueId = "acked", AudioFilePath = "/c.wav", Status = QueueStatus.Completed, SyncState = QueueSyncState.Acknowledged },
+            new() { QueueId = "legacy", AudioFilePath = "/d.wav", Status = QueueStatus.Completed, SyncState = null },
+        };
+        _repositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(rows);
+
+        // Act
+        var dtos = (await _queueService.GetAllQueueItemsAsync()).ToDictionary(d => d.QueueId, d => d.SyncState);
+
+        // Assert - the DTO reports what the row says, including "unknown" for
+        // rows that pre-date the sync columns
+        dtos["local"].Should().Be(QueueSyncState.LocalOnly);
+        dtos["remote"].Should().Be(QueueSyncState.Received);
+        dtos["acked"].Should().Be(QueueSyncState.Acknowledged);
+        dtos["legacy"].Should().BeNull();
+    }
+
+    [Fact]
     public async Task UpdateQueueItemStatusAsync_WithProcessingStage_PersistsStage()
     {
         // Arrange

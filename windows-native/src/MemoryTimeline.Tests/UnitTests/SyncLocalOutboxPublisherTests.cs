@@ -178,7 +178,156 @@ public class SyncLocalOutboxPublisherTests
             c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task PublishPendingAsync_AcceptedCaptureEntry_AcknowledgesTheReceivedQueueItem()
+    {
+        // Arrange - a remote capture ingested here (received) whose capture
+        // entry is still in the outbox
+        var queueRepository = new RecordingQueueRepository(_contextFactory);
+        var item = await queueRepository.AddAsync(RemoteQueueItem("capture-1"));
+        await AddEntryAsync("capture-1");
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((SyncPushRequest request, CancellationToken _) => Task.FromResult(AcceptAll(request)));
+
+        // Act
+        var delivered = await CreatePublisher(queueRepository).PublishPendingAsync();
+
+        // Assert - the service accepted the receipt, so the item says so
+        delivered.Should().Be(1);
+        (await queueRepository.GetByIdAsync(item.QueueId))!.SyncState.Should().Be(QueueSyncState.Acknowledged);
+    }
+
+    [Fact]
+    public async Task PublishPendingAsync_DuplicateCaptureResult_AcknowledgesToo()
+    {
+        // Arrange - the server already applied this sequence on an earlier
+        // push whose response was lost; it holds the record either way
+        var queueRepository = new RecordingQueueRepository(_contextFactory);
+        var item = await queueRepository.AddAsync(RemoteQueueItem("capture-1"));
+        var entry = await AddEntryAsync("capture-1");
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncPushResponse
+            {
+                Results = new List<SyncPushEntryResult>
+                {
+                    new() { ClientSequence = entry.OutboxId, Accepted = false, Duplicate = true },
+                },
+            });
+
+        // Act
+        await CreatePublisher(queueRepository).PublishPendingAsync();
+
+        // Assert
+        (await queueRepository.GetByIdAsync(item.QueueId))!.SyncState.Should().Be(QueueSyncState.Acknowledged);
+    }
+
+    [Fact]
+    public async Task PublishPendingAsync_RejectedCaptureEntry_LeavesTheQueueItemReceived()
+    {
+        // Arrange
+        var queueRepository = new RecordingQueueRepository(_contextFactory);
+        var item = await queueRepository.AddAsync(RemoteQueueItem("capture-1"));
+        var entry = await AddEntryAsync("capture-1");
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncPushResponse
+            {
+                Results = new List<SyncPushEntryResult>
+                {
+                    new() { ClientSequence = entry.OutboxId, Accepted = false, Error = "capture rejected" },
+                },
+            });
+
+        // Act
+        await CreatePublisher(queueRepository).PublishPendingAsync();
+
+        // Assert - no receipt, no acknowledgement; the entry is retried later
+        (await queueRepository.GetByIdAsync(item.QueueId))!.SyncState.Should().Be(QueueSyncState.Received);
+    }
+
+    [Fact]
+    public async Task PublishPendingAsync_AcceptedCaptureEntryForALocalRecording_LeavesItLocalOnly()
+    {
+        // Arrange - a recording made on this machine: the service now holds
+        // its capture record, but nobody is waiting to hear it arrived
+        var queueRepository = new RecordingQueueRepository(_contextFactory);
+        var local = RemoteQueueItem("capture-1");
+        local.SourcePlatform = CapturePlatform.Windows;
+        local.SyncState = QueueSyncState.LocalOnly;
+        var item = await queueRepository.AddAsync(local);
+        await AddEntryAsync("capture-1");
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((SyncPushRequest request, CancellationToken _) => Task.FromResult(AcceptAll(request)));
+
+        // Act
+        var delivered = await CreatePublisher(queueRepository).PublishPendingAsync();
+
+        // Assert
+        delivered.Should().Be(1);
+        (await queueRepository.GetByIdAsync(item.QueueId))!.SyncState.Should().Be(QueueSyncState.LocalOnly);
+    }
+
+    [Fact]
+    public async Task PublishPendingAsync_AcceptedNonCaptureEntry_TouchesNoQueueItem()
+    {
+        // Arrange - a capture_status projection for the same capture is not
+        // the capture record itself
+        var queueRepository = new RecordingQueueRepository(_contextFactory);
+        var item = await queueRepository.AddAsync(RemoteQueueItem("capture-1"));
+        await _repository.AddAsync(new SyncOutbox
+        {
+            EntityType = SyncEntityType.CaptureStatus,
+            EntityId = "capture-1",
+            Operation = SyncOutboxOperation.Upsert,
+            PayloadJson = "{\"captureId\":\"capture-1\"}",
+        });
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((SyncPushRequest request, CancellationToken _) => Task.FromResult(AcceptAll(request)));
+
+        // Act
+        await CreatePublisher(queueRepository).PublishPendingAsync();
+
+        // Assert
+        (await queueRepository.GetByIdAsync(item.QueueId))!.SyncState.Should().Be(QueueSyncState.Received);
+    }
+
+    [Fact]
+    public async Task PublishPendingAsync_WithoutAQueueRepository_StillDeliversCaptureEntries()
+    {
+        // Arrange - the construction every existing caller uses
+        await AddEntryAsync("capture-1");
+        _syncClient
+            .Setup(c => c.PushChangesAsync(It.IsAny<SyncPushRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((SyncPushRequest request, CancellationToken _) => Task.FromResult(AcceptAll(request)));
+
+        // Act
+        var delivered = await _publisher.PublishPendingAsync();
+
+        // Assert
+        delivered.Should().Be(1);
+        (await _repository.GetPendingCountAsync()).Should().Be(0);
+    }
+
     #region Helpers
+
+    private LocalOutboxPublisher CreatePublisher(IRecordingQueueRepository queueRepository) => new(
+        _repository, _syncClient.Object, _settingsStore, NullLogger<LocalOutboxPublisher>.Instance, queueRepository);
+
+    /// <summary>A queue item as remote-capture ingestion writes it: received, not yet acknowledged.</summary>
+    private static RecordingQueue RemoteQueueItem(string captureId) => new()
+    {
+        QueueId = Guid.NewGuid().ToString(),
+        AudioFilePath = "/cache/clip.wav",
+        Status = QueueStatus.Pending,
+        SourceCaptureId = captureId,
+        SourcePlatform = CapturePlatform.Ios,
+        SyncState = QueueSyncState.Received,
+        CreatedAt = DateTime.UtcNow,
+    };
 
     private async Task<SyncOutbox> AddEntryAsync(string entityId)
     {

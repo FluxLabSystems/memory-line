@@ -130,8 +130,8 @@
   <p class="doc-lede">The hardening pass’s deferred items with their current status: the captive-DbContext, fire-and-forget-embedding, EF-baseline and plaintext-key items are resolved; unit-of-work beyond approve, analytics brush bindings, CancellationToken plumbing and DateTime.Kind remain open.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>862</b> words</span>
-    <span class="doc-meta-item"><b>4</b> min read</span>
+    <span class="doc-meta-item"><b>1,030</b> words</span>
+    <span class="doc-meta-item"><b>5</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/HARDENING-FOLLOWUPS.md" target="_blank" rel="noopener noreferrer">
       windows-native/HARDENING-FOLLOWUPS.md ↗
     </a>
@@ -150,7 +150,7 @@ non-trivial refactor, a public-API/DI change spanning layers, or a team decision
 task) and run the built test assembly with <code>dotnet vstest</code></strong>, as CI does, to validate
 all applied fixes.</p>
 </blockquote>
-<blockquote><p><strong>Status key (updated 2026-10-22):</strong> ✅ resolved · ⬜ still open.</p>
+<blockquote><p><strong>Status key (updated 2026-10-22):</strong> ✅ resolved · ⬜ still open (needs a decision or work).</p>
 </blockquote>
 <h2 id="high-priority" class="anchored">High priority<a class="heading-anchor" href="#high-priority" aria-label="Link to this section">#</a></h2>
 <h3 id="1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" class="anchored">1. Captive / scope-captured <code>DbContext</code>  <em>(converged flag from 3 agents)</em> — ✅ resolved<a class="heading-anchor" href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" aria-label="Link to this section">#</a></h3>
@@ -181,7 +181,7 @@ Currently masked by an internal catch (embeddings silently fail).
 background work (ctor change → flagged rather than applied).</p>
 <p><strong>Resolution:</strong> the shared-context <code>Task.Run</code> went away with the factory rework; the
 embedding path opens its own context per operation.</p>
-<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em> — ✅ baseline regenerated (runtime path unchanged)<a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" aria-label="Link to this section">#</a></h3>
+<h3 id="3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" class="anchored">3. Migration + snapshot drift  <em>(Data agent — Critical for migration-based release)</em> — ✅ resolved (2026-10-22)<a class="heading-anchor" href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" aria-label="Link to this section">#</a></h3>
 <p><code>AppDbContextModelSnapshot</code> is an empty stub and <code>InitialCreate</code> is far behind the
 model (missing tables <code>era_categories</code>, <code>era_tags</code>, <code>milestones</code>, <code>saved_searches</code>;
 missing columns on <code>eras</code>/<code>events</code>/<code>tags</code>; missing <code>cross_references</code> FKs; missing
@@ -189,12 +189,15 @@ seed <code>InsertData</code>). Runtime is fine today because startup uses <code>
 (schema built from the model), but <strong>any migration-based deploy will fail</strong>.
 <strong>Fix:</strong> on a machine with the SDK, regenerate the baseline
 (<code>dotnet ef migrations add InitialCreate --force</code>) before shipping migrations.</p>
-<p><strong>Current state (2026-10-22):</strong> a baseline migration
+<p><strong>Resolution (2026-10-22):</strong> a baseline migration
 (<code>Data/Migrations/20261022004346_InitialCreate</code> + snapshot; 25 tables, both seeds) was
-generated with <code>dotnet ef</code> through the new <code>AppDbContextDesignTimeFactory</code>. Startup still
-uses <code>SchemaUpgrader.EnsureSchemaAsync</code> (EnsureCreated + idempotent DDL repairs) and
-nothing calls <code>Migrate()</code>; moving existing EnsureCreated-built databases onto migrations
-still needs a history-table baseline step, which remains open.</p>
+generated with <code>dotnet ef</code> through the new <code>AppDbContextDesignTimeFactory</code>, and
+<code>SchemaUpgrader.EnsureSchemaAsync</code> now runs <code>Database.MigrateAsync</code>. An unversioned
+database (built by <code>EnsureCreated</code> under an older build) is repaired by the idempotent
+DDL, baselined with <code>InitialCreate</code> (the history row is written through
+<code>IHistoryRepository</code>) and migrated forward; the first post-baseline migration is
+<code>AddCaptureLocation</code>. From here on a schema change ships as a migration only — the
+repair is frozen at the baseline shape (see <code>claude.md</code>, &quot;Adding a feature&quot;).</p>
 <h2 id="medium-priority" class="anchored">Medium priority<a class="heading-anchor" href="#medium-priority" aria-label="Link to this section">#</a></h2>
 <ul>
 <li>✅ (approve path) / ⬜ (elsewhere) <strong>Unit-of-work / atomicity</strong> — multi-repository
@@ -212,11 +215,10 @@ and the Anthropic SDK call.</li>
 <code>EventRepository.DeleteAsync</code>/<code>DeleteRangeAsync</code> remove the cross-references naming
 the event at either end in the same <code>SaveChanges</code>, proven by a file-backed SQLite test
 with <code>PRAGMA foreign_keys</code> on.</li>
-<li>⬜ <strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
-are <code>string</code> bound directly to <code>Brush</code> properties via <code>x:Bind</code> in <code>AnalyticsPage.xaml</code>.
-Expose a <code>Brush</code>/<code>SolidColorBrush</code> on the model (as the timeline DTOs do with
-<code>ColorBrush</code>) or add a string→Brush converter. <em>Not re-verified in the 2026-10 pass;
-the project&#39;s convention is now hex strings in Core + <code>HexToBrushConverter</code> in the view.</em></li>
+<li>✅ <strong>Analytics color bindings</strong> — <code>CategoryDistribution/TagCloudItem/ActivityHeatmapCell.Color</code>
+are hex strings; the four <code>x:Bind Color</code> sites in <code>AnalyticsPage.xaml</code> (category bars,
+tag cloud, person nodes, heatmap cells) now go through <code>HexToBrushConverter</code>, the
+project convention for every color that crosses the Core → view boundary (2026-10-22).</li>
 </ul>
 <h2 id="low-priority" class="anchored">Low priority<a class="heading-anchor" href="#low-priority" aria-label="Link to this section">#</a></h2>
 <ul>
@@ -227,15 +229,27 @@ port (<code>DpapiSecretProtector</code> in the head: <code>ProtectedData</code>,
 read. A backup restored under another Windows account reads those secrets as empty and
 they must be re-entered. Keys can also be removed from Settings (&quot;Clear key&quot; / Reset
 to Defaults).</li>
-<li>⬜ <strong><code>CancellationToken</code> not plumbable</strong> through <code>IRepository&lt;T&gt;</code> and specialized repo
-interfaces — add <code>CancellationToken ct = default</code> in a coordinated interface change.</li>
-<li>⬜ <strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; add a UTC
-<code>ValueConverter</code> on <code>DateTime</code> properties to avoid local/UTC comparison bugs.
-<em>Related: <code>Microsoft.Data.Sqlite.Pre10TimeZoneHandling</code> is pinned at both entry
-points; auditing the stored values is still open (see DEVELOPMENT-STATUS).</em></li>
-<li>⬜ <strong>Inclusive viewport boundaries</strong> — <code>EventLayoutEngine.GetVisibleLayouts</code> /
-<code>TimelineViewport.IsEventVisible</code> treat edge-touching (zero-area) events as visible
-on both ends. Internally consistent (tests aligned to it); confirm it&#39;s intended.</li>
+<li>✅ <strong><code>CancellationToken</code> not plumbable</strong> — resolved in the same change set (2026-10-22):
+every repository method takes <code>CancellationToken cancellationToken = default</code> and passes
+it to EF, and the Sync callers forward theirs; on the Core side queue processing
+(<code>ProcessNextItemAsync</code> / <code>ProcessAllPendingAsync</code>) takes a token that reaches the
+Whisper decode and the extraction model call, so a cancelled item goes back to Pending
+instead of failing.</li>
+<li>⬜ <strong><code>DateTime.Kind</code> round-trip</strong> — SQLite returns <code>Unspecified</code>; a UTC <code>ValueConverter</code>
+on <code>DateTime</code> properties would avoid local/UTC comparison bugs.
+<em><code>Microsoft.Data.Sqlite.Pre10TimeZoneHandling</code> is pinned at both entry points (app and
+tests) so stored values keep reading as they were written.</em> <strong>Owner decision needed</strong>
+before anything changes: either (a) add the UTC converter and audit/convert the values
+already stored under the old rules (a one-off data migration of every <code>DateTime</code> column —
+user databases hold both local and UTC values today), or (b) keep the pre-10 switch pinned
+indefinitely and document <code>Unspecified</code> as the contract. Until that call is made, no code
+change is planned here.</li>
+<li>✅ <strong>Inclusive viewport boundaries</strong> — closed: inclusive is intended. The predicate the
+timeline actually renders with is <code>TimelineCoordinateConverter.IsRangeVisible</code> (closed on
+both ends, matching the data layer&#39;s overlap query, so an edge-touching event is loaded
+and drawn consistently); the decision is recorded on it and on
+<code>TimelineViewport.IsEventVisible</code>. <code>EventLayoutEngine</code> / <code>EventLayout.cs</code> had no
+production caller and were deleted together with <code>EventLayoutEngineTests.cs</code> (2026-10).</li>
 <li>✅ <strong>Singleton <code>AnthropicLlmService</code> caches <code>_model</code></strong> at first init — a later model
 change in settings needs an app restart. <em>Resolved: <code>RoutingLlmService</code> is the
 registered <code>ILlmService</code> and re-reads provider/model/key on every call, so Settings
@@ -259,7 +273,7 @@ changes apply live.</em></li>
 <li class="toc-item toc-h2"><a href="#high-priority" data-toc-link>High priority</a></li>
 <li class="toc-item toc-h3"><a href="#1-captive--scope-captured-dbcontext--converged-flag-from-3-agents---resolved" data-toc-link>1. Captive / scope-captured DbContext  (converged flag from 3 agents) — ✅ resolved</a></li>
 <li class="toc-item toc-h3"><a href="#2-eventservicecreateeventasync-fire-and-forget-embedding--core--tests-agents---resolved" data-toc-link>2. EventService.CreateEventAsync fire-and-forget embedding  (Core + Tests agents) — ✅ resolved</a></li>
-<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---baseline-regenerated-runtime-path-unchanged" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release) — ✅ baseline regenerated (runtime path unchanged)</a></li>
+<li class="toc-item toc-h3"><a href="#3-migration--snapshot-drift--data-agent--critical-for-migration-based-release---resolved-2026-10-22" data-toc-link>3. Migration + snapshot drift  (Data agent — Critical for migration-based release) — ✅ resolved (2026-10-22)</a></li>
 <li class="toc-item toc-h2"><a href="#medium-priority" data-toc-link>Medium priority</a></li>
 <li class="toc-item toc-h2"><a href="#low-priority" data-toc-link>Low priority</a></li>
   </ul>

@@ -139,7 +139,7 @@
   <p class="doc-lede">Test structure, the DbContext factory pattern for test authors, running and filtering tests, coverage goals, performance benchmarks, templates, and CI behaviour.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>1,978</b> words</span>
+    <span class="doc-meta-item"><b>2,089</b> words</span>
     <span class="doc-meta-item"><b>9</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/TESTING.md" target="_blank" rel="noopener noreferrer">
       windows-native/TESTING.md ↗
@@ -165,7 +165,7 @@
 │   ├── ImportServiceTests.cs
 │   └── RagServiceTests.cs
 ├── Models/                     # Pure model/logic tests (no DB)
-│   ├── EventLayoutEngineTests.cs
+│   ├── TimeRulerConfigTests.cs
 │   ├── TimelineViewportTests.cs
 │   └── TimelineScaleTests.cs
 ├── Integration/                # Integration tests against a real SQLite file DB
@@ -187,7 +187,7 @@
 <li><strong>EF Core InMemory</strong> — all contexts built from the same options instance share the same in-memory store, so a factory over a uniquely named InMemory DB works. Use <code>TestDbContextFactory.CreateInMemory()</code>.</li>
 <li><strong>SQLite <code>:memory:</code></strong> — does <strong>not</strong> work with the factory, because every new connection gets a fresh, empty database. Tests that need SQLite must use a <strong>file-based temp database</strong> (<code>TestDbContextFactory.CreateSqliteFile(path)</code>), which is why the integration and performance tests create a temp <code>.db</code> file rather than an in-memory SQLite connection.</li>
 </ul>
-<p>Integration/performance tests build their schema with <code>Database.EnsureCreated()</code> (there are no EF migrations in the repo — the app uses a hand-rolled <code>SchemaUpgrader</code> at runtime instead).</p>
+<p>Integration/performance tests build their schema with <code>Database.EnsureCreated()</code> from the model. The EF migrations under <code>MemoryTimeline.Data/Migrations</code> are what the <em>app</em> applies at startup (<code>SchemaUpgrader.EnsureSchemaAsync</code> → <code>MigrateAsync</code>); the tests do not run them, so a schema change needs both a migration and (automatically) the model the tests build from.</p>
 <h2 id="running-tests" class="anchored">Running Tests<a class="heading-anchor" href="#running-tests" aria-label="Link to this section">#</a></h2>
 <blockquote><p><strong>Do not use <code>dotnet test</code></strong> (it rebuilds the WinUI app with the <code>dotnet</code> engine and fails). Build once with VS <code>msbuild.exe</code>, then run the built assembly with <code>dotnet vstest</code>.</p>
 </blockquote>
@@ -603,14 +603,26 @@ exception.<span class="tok-type">Should</span>().<span class="tok-type">BeOfType
 dir <span class="tok-flag">-Recurse</span> <span class="tok-flag">-Filter</span> <span class="tok-string">&quot;*.coverage&quot;</span>
 dir <span class="tok-flag">-Recurse</span> <span class="tok-flag">-Filter</span> <span class="tok-string">&quot;*.cobertura.xml&quot;</span></code></pre></div>
 <h2 id="test-statistics" class="anchored">Test Statistics<a class="heading-anchor" href="#test-statistics" aria-label="Link to this section">#</a></h2>
-<p>Approximate current suite (as of Phase 7):</p>
+<p>Counted from the test attributes (a <code>[Theory]</code> counts one test per <code>[InlineData]</code> row), as of
+2026-10-22:</p>
 <ul>
-<li><strong>Service tests</strong> (<code>Services/</code>): EventService, TimelineService, SettingsService</li>
-<li><strong>Unit tests</strong> (<code>UnitTests/</code>): Queue, Export, Import, Rag</li>
-<li><strong>Model tests</strong> (<code>Models/</code>): layout engine, viewport, scale</li>
-<li><strong>Integration tests</strong> (<code>Integration/</code>): ~9 database tests on a real SQLite file DB</li>
-<li><strong>Performance tests</strong> (<code>Performance/</code>): ~10 load/scalability tests</li>
-<li><strong>Coverage</strong>: target &gt; 80% (aspirational, not measured)</li>
+<li><strong>Windows suite</strong> (<code>MemoryTimeline.Tests</code>, Windows runner only): <strong>1,163 tests</strong>
+(871 <code>[Fact]</code> + 292 <code>[InlineData]</code>), up from 1,096 on the previous <code>main</code>. The 2026-10-22
+second pass adds the migration-baseline, LIKE-escaping, capture-location, sync-receipt,
+streaming, cancellation, time-ruler, duration, contact-photo, narrative-media and EXIF tests
+and removes the layout-engine tests.<ul>
+<li><code>Services/</code> — EventService, TimelineService, SettingsService, PersonService, DraftService</li>
+<li><code>UnitTests/</code> — queue, extraction, LLM providers and streaming, Ask, narrative, media, backup,
+export/import, RAG, sync client, geocoding, retry policy, settings protection</li>
+<li><code>Models/</code> — time ruler, viewport, scale, lanes, map, tokenizer, date precision, durations</li>
+<li><code>Integration/</code> — schema and seed-parity tests on a real SQLite file DB</li>
+<li><code>Performance/</code> — load/scalability tests</li>
+</ul>
+</li>
+<li><strong>Sync service</strong> (<code>services/</code>, Linux CI): 114</li>
+<li><strong>Portability</strong> (<code>MemoryTimeline.Portability.Tests</code>, macOS/Linux CI): 7</li>
+<li><strong>iOS companion:</strong> 112 · <strong>macOS app:</strong> 49</li>
+<li><strong>Coverage:</strong> target &gt; 80% (aspirational, not measured)</li>
 </ul>
 <h3 id="migration-status-of-the-test-project" class="anchored">Migration status of the test project<a class="heading-anchor" href="#migration-status-of-the-test-project" aria-label="Link to this section">#</a></h3>
 <p>All service-backed test classes have been <strong>migrated to the <code>IDbContextFactory&lt;AppDbContext&gt;</code> pattern</strong> and construct services with their <strong>current</strong> signatures — for example <code>new EventService(_repository, _contextFactory, logger)</code>, <code>new ExportService(_contextFactory, logger)</code>, <code>new ImportService(_contextFactory, logger)</code>, and <code>new RagService(embeddingService, eventService, _contextFactory, crossReferenceRepository, logger)</code> (RagService no longer takes an <code>ILlmService</code> or a raw <code>AppDbContext</code>). No test file uses the older <code>(_repository, _context, …)</code> / <code>(_context, …)</code> constructor signatures. As of this writing the <strong>only</strong> build blocker for the solution is the WinUI app&#39;s XAML/PRI resource-generation step failing under the <code>dotnet</code> build engine — the <code>MemoryTimeline.Tests</code> project fails to build <strong>only as a downstream consequence</strong> of the app project failing, not because of stale test code. Building with Visual Studio <code>msbuild.exe</code> (as CI does) is the supported path.</p>

@@ -464,20 +464,20 @@ dir -Recurse -Filter "*.cobertura.xml"
 Counted from the test attributes (a `[Theory]` counts one test per `[InlineData]` row), as of
 2026-10-22:
 
-- **Windows suite** (`MemoryTimeline.Tests`, Windows runner only): **1,096 tests on `main`**
-  (832 `[Fact]` + 264 `[InlineData]`). The 2026-10-22 follow-up change set adds streaming,
-  cancellation, time-ruler, duration, contact-photo, narrative-media and EXIF tests and removes
-  the layout-engine tests (848 + 289 = 1,137 on that branch before merge; the merged total is
-  reconciled when the parallel branches land).
+- **Windows suite** (`MemoryTimeline.Tests`, Windows runner only): **1,163 tests**
+  (871 `[Fact]` + 292 `[InlineData]`), up from 1,096 on the previous `main`. The 2026-10-22
+  second pass adds the migration-baseline, LIKE-escaping, capture-location, sync-receipt,
+  streaming, cancellation, time-ruler, duration, contact-photo, narrative-media and EXIF tests
+  and removes the layout-engine tests.
   - `Services/` — EventService, TimelineService, SettingsService, PersonService, DraftService
   - `UnitTests/` — queue, extraction, LLM providers and streaming, Ask, narrative, media, backup,
     export/import, RAG, sync client, geocoding, retry policy, settings protection
   - `Models/` — time ruler, viewport, scale, lanes, map, tokenizer, date precision, durations
   - `Integration/` — schema and seed-parity tests on a real SQLite file DB
   - `Performance/` — load/scalability tests
-- **Sync service** (`services/`, Linux CI): 91
-- **Portability** (`MemoryTimeline.Portability.Tests`, macOS/Linux CI): 5
-- **iOS companion:** 108 · **macOS app:** 39
+- **Sync service** (`services/`, Linux CI): 114
+- **Portability** (`MemoryTimeline.Portability.Tests`, macOS/Linux CI): 7
+- **iOS companion:** 112 · **macOS app:** 49
 - **Coverage:** target > 80% (aspirational, not measured)
 
 ### Migration status of the test project

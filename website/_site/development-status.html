@@ -149,8 +149,8 @@
   <p class="doc-lede">Phase-by-phase status, the 2026-08 F1–F12 feature wave with per-feature detail and deferred items, known limitations, and success criteria.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Everyone</span>
-    <span class="doc-meta-item"><b>6,968</b> words</span>
-    <span class="doc-meta-item"><b>32</b> min read</span>
+    <span class="doc-meta-item"><b>7,156</b> words</span>
+    <span class="doc-meta-item"><b>33</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/DEVELOPMENT-STATUS.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEVELOPMENT-STATUS.md ↗
     </a>
@@ -159,7 +159,7 @@
 </header>
 <div class="doc-grid">
   <article class="prose">
-<p><strong>Last Updated:</strong> 2026-10-21<br><strong>Current Phase:</strong> Phase 7 - Testing &amp; Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring pass, landed)<br><strong>Overall Progress:</strong> Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress<br><strong>Status:</strong> 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing  </p>
+<p><strong>Last Updated:</strong> 2026-10-22<br><strong>Current Phase:</strong> Phase 7 - Testing &amp; Deployment (plus the 2026-08 feature-spec wave and the 2026-10 head wiring and follow-up passes, landed)<br><strong>Overall Progress:</strong> Phases 0-6 complete; F1–F12 feature spec implemented; iOS companion Phases 0-3 landed, plus the Windows side of Phase 4 (assistant turns answered through Ask) and the read-only projections / pending-event decisions the macOS app uses; toolchain rolled to .NET 10 + Windows App SDK 2.3.1; Phase 7 in progress<br><strong>Status:</strong> 🔄 IN PROGRESS — builds green in CI, end-to-end runtime validation ongoing  </p>
 <hr>
 <h2 id="head-wiring-pass-2026-10" class="anchored">Head wiring pass (2026-10)<a class="heading-anchor" href="#head-wiring-pass-2026-10" aria-label="Link to this section">#</a></h2>
 <p><strong>Date:</strong> 2026-10-21</p>
@@ -353,9 +353,13 @@ whose raw exception text can contain file paths or provider detail.</p>
 <a href="https://github.com/FluxLabSystems/memory-line/blob/main/shared-contracts/openapi/memory-line-sync-v1.yaml" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/openapi/memory-line-sync-v1.yaml</code></a>
 (v1.2, additive) and
 <a href="https://github.com/FluxLabSystems/memory-line/blob/main/shared-contracts/json-schema/capture-status-payload.v1.json" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/json-schema/capture-status-payload.v1.json</code></a>.</p>
-<p><strong>Next step:</strong> Phase 4 — voice assistant (assistant sessions and streaming
-turns, STT/TTS, memory retrieval, current trip context, interruption and
-cancellation).</p>
+<p><strong>Phase 4 status:</strong> the contracts (assistant sessions, turns, chunks) and the
+Windows responder are in — <code>AssistantTurnResponder</code> answers a pending
+<code>assistant_turn</code> pulled from the feed through the Ask pipeline and pushes the
+completed turn back through the outbox. Still ahead on the companion side:
+STT/TTS, current trip context, interruption and cancellation, and streamed
+<code>assistant_turn_chunk</code>s (the responder answers whole, because the change
+payload that reaches Windows does not carry the turn&#39;s <code>stream</code> flag).</p>
 <hr>
 <h2 id="ios-roadtrip-companion--phase-1-sync-service--windows-sync-client-2026-08" class="anchored">iOS roadtrip companion — Phase 1: sync service &amp; Windows sync client (2026-08)<a class="heading-anchor" href="#ios-roadtrip-companion--phase-1-sync-service--windows-sync-client-2026-08" aria-label="Link to this section">#</a></h2>
 <p><strong>Date:</strong> 2026-08-07</p>
@@ -521,21 +525,26 @@ history + history dialog, scheduled daily/weekly backups, and a real Clear Cache
 </ul>
 <p><strong>Infrastructure fixes in the same wave:</strong> the SQLite pragma interceptor no longer
 rewrites <code>journal_mode</code> on read-only connections; CI triggers on the feature branch;
-<code>app_settings</code> seed parity is three-way (33 keys, <code>AppDbContext</code> seed = <code>SchemaUpgrader</code>
+<code>app_settings</code> seed parity is three-way (29 keys today, <code>AppDbContext</code> seed = <code>SchemaUpgrader</code>
 backfill = <code>SettingKeys</code>).</p>
 <p><strong>Explicitly deferred (not implemented, by design):</strong> PhotoImportPage bulk-import
 wizard; map tile basemaps (the map is a plain offline canvas); a location chip on
-timeline events; real LLM token streaming (responses arrive whole); PDF narrative
-export (Markdown/HTML only); vertical scrolling within swimlanes; reorderable lanes;
-an EXIF test against a real binary image fixture; a Merge restore mode (restore is
-replace-only, with a pre-restore safety backup); DirectML execution provider for the
-ONNX embedder (CPU is used).</p>
+timeline events; PDF narrative export (Markdown/HTML only); vertical scrolling within
+swimlanes; reorderable lanes; a Merge restore mode (restore is replace-only, with a
+pre-restore safety backup); DirectML execution provider for the ONNX embedder (CPU is
+used). <em>Closed since (2026-10-22): real LLM token streaming (Ask now streams from the
+provider — SSE for OpenAI-compatible endpoints, <code>StreamClaudeMessageAsync</code> for
+Anthropic) and the EXIF GPS test, which now attaches a JPEG built in memory with a
+real GPS IFD; narrative export references attached media when asked; contacts can
+have a photo; the People page shows the profile&#39;s connections.</em></p>
 <p><strong>Honest caveats:</strong> all of the above is code-complete and CI-green, but <strong>runtime
 validation on a real Windows machine is still pending</strong> — none of the new features have
-been exercised end-to-end outside tests. A <strong>baseline EF migration now exists</strong>
-(<code>Data/Migrations/20261022004346_InitialCreate</code>), but every schema addition still ships
-through <code>SchemaUpgrader</code>&#39;s idempotent DDL at runtime; API keys and sync tokens are
-DPAPI-protected through <code>ISecretProtector</code>.</p>
+been exercised end-to-end outside tests. The <strong>EF migration baseline is in use</strong>
+(<code>Data/Migrations/20261022004346_InitialCreate</code>): startup migrates
+(<code>SchemaUpgrader.EnsureSchemaAsync</code> → <code>Database.MigrateAsync</code>; <code>EnsureCreated</code> is gone),
+a database created before the baseline is repaired and baselined on first start, and
+new schema changes ship as migrations (<code>AddCaptureLocation</code> is the first); API keys and
+sync tokens are DPAPI-protected through <code>ISecretProtector</code>.</p>
 <hr>
 <h2 id="post-audit-hardening-2026-07" class="anchored">Post-audit hardening (2026-07)<a class="heading-anchor" href="#post-audit-hardening-2026-07" aria-label="Link to this section">#</a></h2>
 <p><strong>Date:</strong> 2026-07-10</p>
@@ -573,9 +582,9 @@ silently closing.</li>
 <li>Data access converted to <strong>per-operation contexts</strong> via
 <code>IDbContextFactory&lt;AppDbContext&gt;</code>; the shared-context <code>Task.Run</code> for embeddings
 removed/rescoped; search input debounced/cancellable; <code>Tag.Name</code>→<code>TagName</code>.</li>
-<li>Startup now uses <code>SchemaUpgrader.EnsureSchemaAsync</code> (EnsureCreated + idempotent
-drift repair); stale EF migrations were deleted (regenerating a real migration
-baseline is a follow-up).</li>
+<li>Startup now uses <code>SchemaUpgrader.EnsureSchemaAsync</code>; the stale EF migrations were
+deleted and, since 2026-10-22, a fresh baseline is applied with <code>MigrateAsync</code>
+(existing databases are baselined on first start).</li>
 <li>STT replaced with <strong>local Whisper</strong> (Whisper.net, ggml base model, offline after
 first model download), transcribing the recorded file instead of the live mic.</li>
 <li>Atomic approve (event + tags/people/locations in one transaction) with timeline
@@ -1100,9 +1109,9 @@ removed the shared-context foundation defect.</li>
 <li>CI workflow <code>.github/workflows/windows-native-build.yml</code> added: builds <code>Release|x64</code>
 on <code>windows-latest</code> and runs the test suite. <strong>The solution builds green in CI.</strong></li>
 </ul>
-<p><strong>Still ahead:</strong> end-to-end runtime validation on real hardware; regenerating the EF
-migration baseline; performance validation; MSIX packaging + code signing; Microsoft Store
-submission. (The tests now gate CI; see 7.1 for what exists.)</p>
+<p><strong>Still ahead:</strong> end-to-end runtime validation on real hardware; performance validation;
+MSIX packaging + code signing; Microsoft Store submission. (The tests now gate CI; see 7.1
+for what exists. The EF migration baseline is in use since 2026-10-22.)</p>
 <h3 id="objectives" class="anchored">Objectives<a class="heading-anchor" href="#objectives" aria-label="Link to this section">#</a></h3>
 <ol>
 <li><p><strong>Comprehensive Testing</strong></p>
@@ -1415,9 +1424,9 @@ submission) has neither a start nor a target date.</p>
 <li><strong>Total Projects:</strong> 7 (Main App, Core, Data, Sync, Tests, Portability.Tests, plus the shared SyncContracts project referenced from <code>shared-contracts/dotnet</code>)</li>
 <li><strong>Total Code Files:</strong> 250+ (<code>.cs</code>/<code>.xaml</code>, excluding build output)</li>
 <li><strong>Total Lines of Code:</strong> ~70,000+ (including XAML and tests)</li>
-<li><strong>Data Models:</strong> 20</li>
-<li><strong>Core Service Interfaces:</strong> 30</li>
-<li><strong>Repositories:</strong> 15</li>
+<li><strong>Data Models:</strong> 23 entity files</li>
+<li><strong>Core Service Interfaces:</strong> 35</li>
+<li><strong>Repositories:</strong> 18 classes</li>
 <li><strong>ViewModels:</strong> 14</li>
 <li><strong>Views (XAML Pages):</strong> 12</li>
 <li><strong>Test Files:</strong> unit/integration/performance suites in <code>MemoryTimeline.Tests</code> (run in CI; coverage targets still Phase 7)</li>
@@ -1442,8 +1451,10 @@ build green in CI but are not yet validated end-to-end on real hardware (Phase 7
 in progress)</li>
 <li><strong>Automated tests:</strong> unit/integration/performance suites exist and gate CI; AudioService
 tests, UI tests (WinAppDriver) and coverage reporting are still absent (Phase 7)</li>
-<li><strong>EF migrations:</strong> Stale migrations deleted; a real migration baseline still needs
-regenerating — all 2026-08 schema additions ship via <code>SchemaUpgrader.EnsureSchemaAsync</code></li>
+<li><strong>EF migrations:</strong> the baseline (<code>20261022004346_InitialCreate</code>) is in use — startup
+migrates, databases created before it are baselined on first start, and schema changes
+now ship as migrations (<code>AddCaptureLocation</code> is the first); <code>SchemaUpgrader</code>&#39;s drift
+repair is frozen at the baseline shape</li>
 <li><strong>API keys:</strong> DPAPI-protected at rest through <code>ISecretProtector</code> (CurrentUser scope); a backup restored under another Windows account must have its keys re-entered</li>
 <li><strong>Performance:</strong> Not yet validated with 5000+ events (Phase 7)</li>
 <li><strong>MSIX Package / Store Submission:</strong> Not created or submitted yet (Phase 7)</li>
@@ -1451,7 +1462,7 @@ regenerating — all 2026-08 schema additions ship via <code>SchemaUpgrader.Ensu
 DirectML/NPU registration is deliberately deferred (can throw on non-DX12 machines)</li>
 <li><strong>PDF Export:</strong> Not implemented — narrative export ships Markdown/HTML only</li>
 <li><strong>Deferred F1–F12 items:</strong> See the deferred list in the 2026-08 section above
-(photo-import wizard, tile basemaps, token streaming, Merge restore mode, etc.)</li>
+(photo-import wizard, tile basemaps, timeline location chip, Merge restore mode, etc.)</li>
 </ol>
 <h3 id="future-enhancements" class="anchored">Future Enhancements<a class="heading-anchor" href="#future-enhancements" aria-label="Link to this section">#</a></h3>
 <ol>
@@ -1505,8 +1516,9 @@ approve → timeline; embeddings/connections; export/import; settings persistenc
 </li>
 <li><p><strong>Data-layer / migrations</strong></p>
 <ul>
-<li>Regenerate a real EF migration baseline (stale migrations were deleted; startup
-currently uses <code>SchemaUpgrader.EnsureSchemaAsync</code>).</li>
+<li><del>Regenerate a real EF migration baseline</del> — done (2026-10-22): startup applies the
+migrations, existing databases are baselined on first start, and schema changes ship
+as migrations from here on.</li>
 </ul>
 </li>
 <li><p><strong>Security &amp; config hardening</strong></p>

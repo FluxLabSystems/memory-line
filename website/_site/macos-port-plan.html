@@ -375,6 +375,26 @@ routing Ask through the service&#39;s assistant contract (§5), so the Mac runs 
 spike is the fallback only if a responder ever has to run <em>on</em> the Mac instead of on Windows.</p>
 <p>The rule is written up in <a href="developer-guide.html"><code>claude.md</code></a> under &quot;Keeping Core portable&quot;.</p>
 <hr>
+<h3 id="34-the-mac-registers-as-macos--first-class-since-contract-v15" class="anchored">3.4 The Mac registers as <code>macos</code> — first-class since contract v1.5<a class="heading-anchor" href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" aria-label="Link to this section">#</a></h3>
+<p><code>DeviceRegisterRequest.platform</code> was constrained to <code>[ios, windows, other]</code> until contract
+v1.5 added <code>macos</code> (<code>shared-contracts/openapi/memory-line-sync-v1.yaml</code>, mirrored by
+<code>DeviceService.AllowedPlatforms</code>, which still rejects anything outside the enum with a 400).
+The Mac app sends <code>&quot;macos&quot;</code> (<code>MacAppEnvironment.devicePlatform</code>, pinned by a test); a Mac
+paired before v1.5 keeps the <code>other</code> its device row was stored with, and <code>other</code> remains a
+valid value. Windows Settings → Sync shows the platform string as stored.</p>
+<p>Two smaller traps in the same call, both already handled in <code>MacAppEnvironment.pair</code>:</p>
+<ul>
+<li>The Swift DTO <strong>defaults <code>platform</code> to <code>&quot;ios&quot;</code></strong>. Using the memberwise initializer
+without passing it registers a Mac as an iPhone, silently and permanently — the value is
+stored on the device row.</li>
+<li><code>displayName</code> on iOS is <code>UIDevice.current.name</code>; the Mac uses the host name with the
+Bonjour <code>.local</code> suffix trimmed. This is what the user sees in Windows Settings → Sync,
+so a blank or <code>studio.local</code>-shaped name is a real papercut.</li>
+</ul>
+<p>Making <code>macos</code> first-class meant changing the OpenAPI enum, <code>AllowedPlatforms</code> and the Swift
+literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
+string and needed no change.</p>
+<hr>
 <h2 id="4-platform-capabilities-the-mac-needs" class="anchored">4. Platform capabilities the Mac needs<a class="heading-anchor" href="#4-platform-capabilities-the-mac-needs" aria-label="Link to this section">#</a></h2>
 <p>Ordered by how much they block everything else.</p>
 <h3 id="41-capture-recording" class="anchored">4.1 Capture (recording)<a class="heading-anchor" href="#41-capture-recording" aria-label="Link to this section">#</a></h3>
@@ -521,26 +541,6 @@ called out (finding #10, the .NET test suite that ran with <code>continue-on-err
 do compile there. If it ever fails on a native-asset restore rather than a compile error,
 the fix belongs in the package reference, not in a retreat from the <code>net10.0</code> target.</p>
 <hr>
-<h3 id="34-the-mac-registers-as-macos--first-class-since-contract-v15" class="anchored">3.4 The Mac registers as <code>macos</code> — first-class since contract v1.5<a class="heading-anchor" href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" aria-label="Link to this section">#</a></h3>
-<p><code>DeviceRegisterRequest.platform</code> was constrained to <code>[ios, windows, other]</code> until contract
-v1.5 added <code>macos</code> (<code>shared-contracts/openapi/memory-line-sync-v1.yaml</code>, mirrored by
-<code>DeviceService.AllowedPlatforms</code>, which still rejects anything outside the enum with a 400).
-The Mac app sends <code>&quot;macos&quot;</code> (<code>MacAppEnvironment.devicePlatform</code>, pinned by a test); a Mac
-paired before v1.5 keeps the <code>other</code> its device row was stored with, and <code>other</code> remains a
-valid value. Windows Settings → Sync shows the platform string as stored.</p>
-<p>Two smaller traps in the same call, both already handled in <code>MacAppEnvironment.pair</code>:</p>
-<ul>
-<li>The Swift DTO <strong>defaults <code>platform</code> to <code>&quot;ios&quot;</code></strong>. Using the memberwise initializer
-without passing it registers a Mac as an iPhone, silently and permanently — the value is
-stored on the device row.</li>
-<li><code>displayName</code> on iOS is <code>UIDevice.current.name</code>; the Mac uses the host name with the
-Bonjour <code>.local</code> suffix trimmed. This is what the user sees in Windows Settings → Sync,
-so a blank or <code>studio.local</code>-shaped name is a real papercut.</li>
-</ul>
-<p>Making <code>macos</code> first-class meant changing the OpenAPI enum, <code>AllowedPlatforms</code> and the Swift
-literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
-string and needed no change.</p>
-<hr>
 <h2 id="7-open-questions" class="anchored">7. Open questions<a class="heading-anchor" href="#7-open-questions" aria-label="Link to this section">#</a></h2>
 <ul>
 <li><strong>Distribution:</strong> Mac App Store (sandbox already assumed) or Developer ID + Sparkle?
@@ -600,6 +600,7 @@ been added without one.</li>
 <li class="toc-item toc-h3"><a href="#31-code-sharing-synchronized-folder-not-a-swift-package" data-toc-link>3.1 Code sharing: synchronized folder, not a Swift package</a></li>
 <li class="toc-item toc-h3"><a href="#32-keychain-the-mac-needs-its-own-item-and-a-modern-keychain--done" data-toc-link>3.2 Keychain: the Mac needs its own item and a modern keychain — done</a></li>
 <li class="toc-item toc-h3"><a href="#33-the-c-business-layer-does-come-to-macos--this-section-was-wrong" data-toc-link>3.3 The C# business layer DOES come to macOS — this section was wrong</a></li>
+<li class="toc-item toc-h3"><a href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" data-toc-link>3.4 The Mac registers as macos — first-class since contract v1.5</a></li>
 <li class="toc-item toc-h2"><a href="#4-platform-capabilities-the-mac-needs" data-toc-link>4. Platform capabilities the Mac needs</a></li>
 <li class="toc-item toc-h3"><a href="#41-capture-recording" data-toc-link>4.1 Capture (recording)</a></li>
 <li class="toc-item toc-h3"><a href="#42-upload-and-status-sync--pull-side-done" data-toc-link>4.2 Upload and status sync — pull side done</a></li>
@@ -608,7 +609,6 @@ been added without one.</li>
 <li class="toc-item toc-h2"><a href="#5-phasing" data-toc-link>5. Phasing</a></li>
 <li class="toc-item toc-h3"><a href="#the-decision-that-gated-phases-35--resolved-by-a-fourth-option" data-toc-link>The decision that gated phases 3–5 — resolved, by a fourth option</a></li>
 <li class="toc-item toc-h2"><a href="#6-verification" data-toc-link>6. Verification</a></li>
-<li class="toc-item toc-h3"><a href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" data-toc-link>3.4 The Mac registers as macos — first-class since contract v1.5</a></li>
 <li class="toc-item toc-h2"><a href="#7-open-questions" data-toc-link>7. Open questions</a></li>
   </ul>
   <a class="toc-top" href="#main">↑ Back to top</a>

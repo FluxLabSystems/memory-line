@@ -141,8 +141,8 @@
   <p class="doc-lede">Building Release|x64, runtime data layout, MSIX packaging, code signing, Microsoft Store submission, and side-loading.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Maintainers</span>
-    <span class="doc-meta-item"><b>2,067</b> words</span>
-    <span class="doc-meta-item"><b>9</b> min read</span>
+    <span class="doc-meta-item"><b>2,137</b> words</span>
+    <span class="doc-meta-item"><b>10</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEPLOYMENT.md ↗
     </a>
@@ -236,8 +236,8 @@ This means: use a <strong>.NET 10 SDK, 10.0.3xx or newer</strong>. An older 10.0
 <td>Startup / unhandled-exception log</td>
 </tr>
 </tbody></table></div>
-<p><strong>Schema / migrations:</strong> the EF Core migrations were removed in favour of a hand-rolled <code>SchemaUpgrader</code> that creates/updates the schema at startup. There is currently <strong>no migrations baseline</strong>, so <code>dotnet ef migrations add</code> / <code>dotnet ef database update</code> are <strong>not applicable</strong> to this project right now (regenerating a real migration baseline is a follow-up task).</p>
-<p><strong>External services:</strong> speech-to-text is <strong>local</strong> (Whisper.net, offline after the one-time model download). LLM event extraction uses the Anthropic API and embeddings use the OpenAI API, so those features require API keys and network access.</p>
+<p><strong>Schema / migrations:</strong> the schema is created and upgraded at startup by <code>SchemaUpgrader.EnsureSchemaAsync</code>, which applies the EF Core migrations under <code>MemoryTimeline.Data/Migrations</code> (<code>Database.MigrateAsync</code>; baseline <code>20261022004346_InitialCreate</code>, regenerated 2026-10-22). A database created by an older build (no <code>__EFMigrationsHistory</code>) is repaired, baselined and migrated forward on first start, so no manual <code>dotnet ef database update</code> is needed on a user machine. Developers add schema changes with <code>dotnet ef migrations add &lt;Name&gt; --project windows-native/src/MemoryTimeline.Data</code> (the design-time factory makes this work without the app).</p>
+<p><strong>External services:</strong> speech-to-text is <strong>local</strong> (Whisper.net, offline after the one-time model download). LLM features (extraction, Ask, narratives, recall wording) use <strong>Anthropic Claude or any OpenAI-compatible endpoint</strong> such as Ollama / LM Studio (chosen in Settings; a key is only needed for Anthropic). Embeddings <strong>default to the local ONNX model</strong> (<code>all-MiniLM-L6-v2</code>, no key, no network after its one-time download); OpenAI embeddings are optional. So the app can run with no cloud account at all when a local LLM endpoint is used.</p>
 <hr>
 <h2 id="running-tests" class="anchored">Running Tests<a class="heading-anchor" href="#running-tests" aria-label="Link to this section">#</a></h2>
 <blockquote><p><strong>Do not use <code>dotnet test</code>.</strong> <code>dotnet test</code> rebuilds the solution — including the WinUI app — with the <code>dotnet</code> MSBuild engine, which hits the same WinUI PRI/XAML failure described above. Instead, build the solution once with <code>msbuild.exe</code> (see <a href="#building-the-application">Building the Application</a>) and run the <strong>already-built</strong> test assembly with <code>dotnet vstest</code>. This is exactly what CI does.</p>

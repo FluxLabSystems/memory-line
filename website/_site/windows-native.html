@@ -145,8 +145,8 @@
   <p class="doc-lede">The main reference for the WinUI 3 app: pipeline, features, quick start, project structure, clean-architecture layers, DI composition, database schema, configuration, and troubleshooting.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,366</b> words</span>
-    <span class="doc-meta-item"><b>15</b> min read</span>
+    <span class="doc-meta-item"><b>3,435</b> words</span>
+    <span class="doc-meta-item"><b>16</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/README.md" target="_blank" rel="noopener noreferrer">
       windows-native/README.md ↗
     </a>
@@ -380,7 +380,7 @@ cd memory-line/windows-native/src
 │   │   ├── Models/                  # EF Core entities
 │   │   ├── Repositories/            # Repository pattern (stateless over the factory)
 │   │   ├── AppDbContext.cs          # EF Core database context
-│   │   └── SchemaUpgrader.cs        # EnsureCreated + idempotent schema-drift repair
+│   │   └── SchemaUpgrader.cs        # applies the EF migrations (+ baseline repair for older DBs)
 │   │
 │   ├── MemoryTimeline.Tests/        # Unit &amp; integration tests
 │   │   ├── UnitTests/
@@ -399,9 +399,11 @@ cd memory-line/windows-native/src
 ├── DEVELOPMENT-HISTORY.md           # Consolidated phase reports
 ├── TESTING.md                       # Testing guide
 └── DEPLOYMENT.md                    # Deployment guide</pre></figure>
-<div class="callout callout-note"><div class="callout-body"><p><strong>Note:</strong> there is intentionally <strong>no</strong> <code>MemoryTimeline.Data/Migrations/</code> folder — the stale EF
-Migrations baseline was deleted, and schema is currently created/repaired by <code>SchemaUpgrader</code>.
-Regenerating a proper EF migration baseline is a tracked follow-up.</p>
+<div class="callout callout-note"><div class="callout-body"><p><strong>Note:</strong> <code>MemoryTimeline.Data/Migrations/</code> holds the EF Core migration history, regenerated
+from scratch on 2026-10-22 (<code>20261022004346_InitialCreate</code> baseline; <code>AddCaptureLocation</code> is
+the first change after it). Startup applies it through <code>SchemaUpgrader.EnsureSchemaAsync</code>
+(<code>Database.MigrateAsync</code>); a database created before the baseline is repaired and baselined
+on first start. A schema change ships as a migration (<code>dotnet ef migrations add &lt;Name&gt; --project MemoryTimeline.Data</code>), never as new DDL in <code>SchemaUpgrader</code>.</p>
 </div></div>
 <hr>
 <h2 id="architecture" class="anchored">Architecture<a class="heading-anchor" href="#architecture" aria-label="Link to this section">#</a></h2>
@@ -435,10 +437,11 @@ request scope, so every repository and service opens a short-lived context per o
 app-lifetime context shared across all features — the root cause of intermittent &quot;second
 operation on this context&quot; failures. Because the factory is stateless and thread-safe,
 repositories and most Core services are registered as <strong>Singletons</strong>.</li>
-<li><strong><code>SchemaUpgrader</code> instead of raw <code>EnsureCreated</code>.</strong> On startup, <code>App.OnLaunched</code> calls
-<code>MemoryTimeline.Data.SchemaUpgrader.EnsureSchemaAsync</code>, which runs <code>EnsureCreated</code> and then
-idempotently repairs schema drift (missing tables/columns) on databases created by older builds
-— a stopgap until a full EF migration baseline is regenerated.</li>
+<li><strong><code>SchemaUpgrader</code> applies the EF migrations.</strong> On startup, <code>App.OnLaunched</code> calls
+<code>MemoryTimeline.Data.SchemaUpgrader.EnsureSchemaAsync</code>, which runs <code>Database.MigrateAsync</code>
+against <code>MemoryTimeline.Data/Migrations</code>; a database with no <code>__EFMigrationsHistory</code> (built
+by <code>EnsureCreated</code> under an older build) is first run through the idempotent drift repair,
+labelled with the <code>20261022004346_InitialCreate</code> baseline, then migrated forward.</li>
 <li><strong>MVVM with a message bus.</strong> Cross-feature updates (e.g. &quot;event created&quot; → refresh the timeline)
 flow through <code>WeakReferenceMessenger</code> rather than tight coupling between view models.</li>
 <li><strong>Errors are surfaced, not swallowed.</strong> Failures propagate to visible <code>InfoBar</code>/status
@@ -519,12 +522,15 @@ removed in favor of the Core one.</p>
 <p>Access goes through <code>IDbContextFactory&lt;AppDbContext&gt;</code> — a short-lived context per operation.
 Connection configuration lives in <code>AppDbContext.OnConfiguring</code>.</p>
 <h3 id="schema-overview" class="anchored">Schema Overview<a class="heading-anchor" href="#schema-overview" aria-label="Link to this section">#</a></h3>
-<p><strong>Core tables:</strong> <code>events</code> (with <code>date_precision</code>, <code>earliest_possible</code>/<code>latest_possible</code>, <code>last_viewed_at</code>/<code>view_count</code>), <code>eras</code>, <code>era_categories</code>, <code>era_tags</code>, <code>milestones</code>, <code>tags</code>, <code>people</code> (contact fields + <code>merged_into_id</code> merge tombstone), <code>person_aliases</code>, <code>locations</code> (optional <code>latitude</code>/<code>longitude</code>, <code>place_type</code>, <code>canonical_name</code>, <code>geocoded_at</code>)<br><strong>Junction tables:</strong> <code>event_tags</code>, <code>event_people</code>, <code>event_locations</code><br><strong>Processing tables:</strong> <code>recording_queue</code> (audio <em>and text</em> sources — <code>source_type</code>, <code>source_label</code>, persisted <code>transcript</code>), <code>pending_events</code> (extracted events awaiting review, mirroring the precision columns)<br><strong>Attachments &amp; history:</strong> <code>event_media</code> (managed media copies, EXIF, thumbnails, content hash), <code>event_revisions</code> (append-only edit history), <code>recall_prompts</code> (guided-recall questions)<br><strong>RAG tables:</strong> <code>event_embeddings</code> (vector embeddings + per-row <code>embedding_dimension</code>), <code>cross_references</code> (event relationships)<br><strong>UX tables:</strong> <code>drafts</code>, <code>saved_searches</code><br><strong>Settings:</strong> <code>app_settings</code> (key/value; keys defined in <code>SettingKeys</code>; 33 seeded keys kept in three-way parity between the <code>AppDbContext</code> seed, the <code>SchemaUpgrader</code> backfill, and <code>SettingKeys</code>)  </p>
+<p><strong>Core tables:</strong> <code>events</code> (with <code>date_precision</code>, <code>earliest_possible</code>/<code>latest_possible</code>, <code>last_viewed_at</code>/<code>view_count</code>), <code>eras</code>, <code>era_categories</code>, <code>era_tags</code>, <code>milestones</code>, <code>tags</code>, <code>people</code> (contact fields + <code>merged_into_id</code> merge tombstone), <code>person_aliases</code>, <code>locations</code> (optional <code>latitude</code>/<code>longitude</code>, <code>place_type</code>, <code>canonical_name</code>, <code>geocoded_at</code>)<br><strong>Junction tables:</strong> <code>event_tags</code>, <code>event_people</code>, <code>event_locations</code><br><strong>Processing tables:</strong> <code>recording_queue</code> (audio <em>and text</em> sources — <code>source_type</code>, <code>source_label</code>, persisted <code>transcript</code>), <code>pending_events</code> (extracted events awaiting review, mirroring the precision columns)<br><strong>Attachments &amp; history:</strong> <code>event_media</code> (managed media copies, EXIF, thumbnails, content hash), <code>event_revisions</code> (append-only edit history), <code>recall_prompts</code> (guided-recall questions)<br><strong>RAG tables:</strong> <code>event_embeddings</code> (vector embeddings + per-row <code>embedding_dimension</code>), <code>cross_references</code> (event relationships)<br><strong>UX tables:</strong> <code>drafts</code>, <code>saved_searches</code><br><strong>Settings:</strong> <code>app_settings</code> (key/value; keys defined in <code>SettingKeys</code>; 29 seeded keys kept in three-way parity between the <code>AppDbContext</code> seed, the <code>SchemaUpgrader</code> backfill, and <code>SettingKeys</code>)  </p>
 <p>Name uniqueness on <code>people</code>/<code>tags</code>/<code>locations</code> is <strong>case-insensitive</strong> (<code>COLLATE NOCASE</code> unique indexes); <code>SchemaUpgrader</code> defensively merges case-variant duplicates on older databases (backfilling contact columns) before rebuilding each index.</p>
-<h3 id="schema-creation--drift-repair" class="anchored">Schema creation &amp; drift repair<a class="heading-anchor" href="#schema-creation--drift-repair" aria-label="Link to this section">#</a></h3>
-<p>The schema is created and repaired at startup by <code>SchemaUpgrader.EnsureSchemaAsync</code>
-(<code>EnsureCreated</code> + idempotent DDL repairs). There is <strong>no EF Migrations folder</strong> — regenerating a
-proper EF migration history is a tracked follow-up (see <a href="#roadmap--known-follow-ups">Roadmap</a>).</p>
+<h3 id="schema-creation--migrations" class="anchored">Schema creation &amp; migrations<a class="heading-anchor" href="#schema-creation--migrations" aria-label="Link to this section">#</a></h3>
+<p>The schema is created and upgraded at startup by <code>SchemaUpgrader.EnsureSchemaAsync</code>, which
+applies the EF Core migrations under <code>MemoryTimeline.Data/Migrations</code> (<code>Database.MigrateAsync</code>).
+A database created before the baseline (no <code>__EFMigrationsHistory</code>) is run through the
+idempotent drift repair, baselined with <code>20261022004346_InitialCreate</code>, then migrated forward.
+New schema changes ship as migrations (<code>dotnet ef migrations add &lt;Name&gt;</code> from
+<code>MemoryTimeline.Data</code>, through <code>AppDbContextDesignTimeFactory</code>), not as new DDL in the repair.</p>
 <hr>
 <h2 id="api-keys--configuration" class="anchored">API Keys &amp; Configuration<a class="heading-anchor" href="#api-keys--configuration" aria-label="Link to this section">#</a></h2>
 <h3 id="api-keys--ai-providers" class="anchored">API Keys &amp; AI providers<a class="heading-anchor" href="#api-keys--ai-providers" aria-label="Link to this section">#</a></h3>
@@ -553,9 +559,11 @@ offers a <strong>re-embed all events</strong> flow after a provider switch.</p>
 <strong><code>app_settings</code></strong> database table. Keys are unified behind a <strong><code>SettingKeys</code></strong> constants class
 (snake_case keys) so writers and readers never drift; the LLM client <strong>re-reads configuration
 live</strong>, so provider/model/key changes apply <strong>without a restart</strong>.</p>
-<div class="callout callout-note"><div class="callout-body"><p><strong>Security note:</strong> API keys are stored in the <code>app_settings</code> table <strong>today</strong>. Encrypting them at
-rest with <strong>Windows DPAPI</strong> (<code>ProtectedData</code>) is a tracked hardening follow-up. (They are <strong>not</strong>
-stored in Windows Credential Manager.)</p>
+<div class="callout callout-note"><div class="callout-body"><p><strong>Security note:</strong> API keys and sync tokens are stored in the <code>app_settings</code> table
+<strong>DPAPI-protected</strong> (<code>ISecretProtector</code> → <code>DpapiSecretProtector</code>: <code>ProtectedData</code>, current-user
+scope, <code>dpapi:v1:</code> prefix; legacy plaintext rows are re-written protected on first read). A
+backup restored under another Windows account reads them as empty and they must be re-entered.
+(They are <strong>not</strong> stored in Windows Credential Manager.)</p>
 </div></div>
 <p>The embedding service reports availability via <code>IsAvailableAsync</code>; with the local ONNX default
 Connections/Ask work with no key at all (after a one-time ~90 MB model download), and if the
@@ -701,13 +709,11 @@ validation is ongoing.</p>
 <h2 id="roadmap--known-follow-ups" class="anchored">Roadmap / known follow-ups<a class="heading-anchor" href="#roadmap--known-follow-ups" aria-label="Link to this section">#</a></h2>
 <ul>
 <li><strong>End-to-end runtime validation</strong> of the pipeline and the F1–F12 feature wave on Windows.</li>
-<li><strong>Encrypt API keys at rest</strong> (Windows DPAPI / <code>ProtectedData</code>).</li>
-<li><strong>Regenerate EF Core migrations</strong> to replace the <code>SchemaUpgrader</code> stopgap with a proper
-migration history.</li>
 <li><strong>Deferred F1–F12 items</strong> — photo-import wizard, map tile basemaps, timeline location chip,
-LLM token streaming, PDF narrative export, and more; see the deferred list in
-<a href="development-status.html"><code>DEVELOPMENT-STATUS.md</code></a>.</li>
-<li><strong>Whisper model options</strong> (larger models for accuracy; language selection UI).</li>
+PDF narrative export, vertical swimlane scrolling, reorderable lanes; see the deferred list in
+<a href="development-status.html"><code>DEVELOPMENT-STATUS.md</code></a>. (Done since: DPAPI-protected keys, the EF
+migration baseline with migrating startup, Whisper model/language options, real LLM token
+streaming.)</li>
 <li><strong>MSIX packaging and Microsoft Store submission</strong> (Phase 7).</li>
 </ul>
 <hr>
@@ -834,7 +840,7 @@ than swallowing them.</li>
 <li class="toc-item toc-h2"><a href="#database" data-toc-link>Database</a></li>
 <li class="toc-item toc-h3"><a href="#sqlite-with-entity-framework-core-8" data-toc-link>SQLite with Entity Framework Core 8</a></li>
 <li class="toc-item toc-h3"><a href="#schema-overview" data-toc-link>Schema Overview</a></li>
-<li class="toc-item toc-h3"><a href="#schema-creation--drift-repair" data-toc-link>Schema creation &amp; drift repair</a></li>
+<li class="toc-item toc-h3"><a href="#schema-creation--migrations" data-toc-link>Schema creation &amp; migrations</a></li>
 <li class="toc-item toc-h2"><a href="#api-keys--configuration" data-toc-link>API Keys &amp; Configuration</a></li>
 <li class="toc-item toc-h3"><a href="#api-keys--ai-providers" data-toc-link>API Keys &amp; AI providers</a></li>
 <li class="toc-item toc-h3"><a href="#settings-storage" data-toc-link>Settings storage</a></li>

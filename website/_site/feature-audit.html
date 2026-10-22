@@ -132,7 +132,7 @@
   <p class="doc-lede">Root causes of three reported bugs, the shared-DbContext foundation defect underneath them, a per-feature audit, and the dependency-ordered master fix plan.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>2,943</b> words</span>
+    <span class="doc-meta-item"><b>2,954</b> words</span>
     <span class="doc-meta-item"><b>13</b> min read</span>
     <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/FEATURE-AUDIT.md" target="_blank" rel="noopener noreferrer">
       windows-native/FEATURE-AUDIT.md ↗
@@ -163,7 +163,7 @@ say what. In short:</p>
 </tr>
 <tr>
 <td>Part 1 foundation</td>
-<td>✅ <code>AddDbContextFactory</code> everywhere, Singleton services; <code>SchemaUpgrader</code> replaced raw <code>EnsureCreated</code> (a real migration baseline is still a follow-up)</td>
+<td>✅ <code>AddDbContextFactory</code> everywhere, Singleton services; <code>SchemaUpgrader</code> replaced raw <code>EnsureCreated</code> and, since 2026-10-22, applies the EF migration baseline (<code>MigrateAsync</code>)</td>
 </tr>
 <tr>
 <td>2.3 Search</td>
@@ -194,7 +194,8 @@ say what. In short:</p>
 <td>✅ unified <code>INotificationService</code>, <code>AddQuickActionsAsync</code> at launch, activation handling, <code>await _host.StopAsync()</code>; <strong>2026-10:</strong> <code>MainViewModel</code> + nav badges implemented, Jump List recent events + real quick actions wired, Windows Timeline service removed as dead code</td>
 </tr>
 </tbody></table></div>
-<p>Still open from the plan: regenerating the EF migration baseline (see <code>HARDENING-FOLLOWUPS.md</code>).</p>
+<p>Nothing from the plan is still open: the EF migration baseline landed on 2026-10-22 and startup
+migrates (see <code>HARDENING-FOLLOWUPS.md</code> §3).</p>
 </div></div>
 <hr>
 <h2 id="part-0--root-causes-of-the-three-reported-bugs" class="anchored">Part 0 — Root causes of the three reported bugs<a class="heading-anchor" href="#part-0--root-causes-of-the-three-reported-bugs" aria-label="Link to this section">#</a></h2>
@@ -244,7 +245,7 @@ Frame instead of refreshing, which no-ops when window dimensions are unchanged
 (<code>MainWindow.xaml.cs:132-140</code> → <code>TimelineViewModel.cs:704-723</code>).</p>
 <hr>
 <h2 id="part-1--the-foundation-defect-underneath-everything-confirmed-by-all-5-agents" class="anchored">Part 1 — The foundation defect underneath everything (CONFIRMED by all 5 agents)<a class="heading-anchor" href="#part-1--the-foundation-defect-underneath-everything-confirmed-by-all-5-agents" aria-label="Link to this section">#</a></h2>
-<blockquote><p><strong>Status:</strong> ✅ resolved — <code>App.xaml.cs</code> registers <code>AddDbContextFactory&lt;AppDbContext&gt;()</code>, every repository/service opens a context per operation and is a Singleton, and the shared-context <code>Task.Run</code> is gone. <code>EnsureCreated</code> was replaced by <code>SchemaUpgrader.EnsureSchemaAsync</code>; the migration baseline itself is still to be regenerated.</p>
+<blockquote><p><strong>Status:</strong> ✅ resolved — <code>App.xaml.cs</code> registers <code>AddDbContextFactory&lt;AppDbContext&gt;()</code>, every repository/service opens a context per operation and is a Singleton, and the shared-context <code>Task.Run</code> is gone. <code>EnsureCreated</code> was replaced by <code>SchemaUpgrader.EnsureSchemaAsync</code>, which now applies the regenerated EF migration baseline (<code>20261022004346_InitialCreate</code>) with <code>MigrateAsync</code>.</p>
 </blockquote>
 <h3 id="one-shared-never-disposed-appdbcontext-for-the-entire-app" class="anchored">One shared, never-disposed <code>AppDbContext</code> for the entire app<a class="heading-anchor" href="#one-shared-never-disposed-appdbcontext-for-the-entire-app" aria-label="Link to this section">#</a></h3>
 <ul>

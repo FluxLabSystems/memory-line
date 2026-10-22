@@ -146,8 +146,11 @@ public partial class App : Application
 
                     // iOS companion Phase 0: capture ingestion (design §7.2). Every
                     // recording — local or from another device — enters the queue
-                    // through this seam. The Phase 0 resolver only handles local
-                    // file-path locators; Phase 1 swaps in a sync download client.
+                    // through this seam. The local-file resolver is the production
+                    // resolver, not a placeholder: remote captures are downloaded
+                    // by the sync layer (ArtifactTransferClient, driven by
+                    // RemoteChangeApplier) to a local file first, and that path is
+                    // the storage locator ingestion resolves here.
                     services.AddSingleton<IArtifactResolver, LocalFileArtifactResolver>();
                     // Design §8.5: ingestion normalizes any non-16 kHz-WAV source
                     // (an iPhone's AAC .m4a, an imported MP3) through this port

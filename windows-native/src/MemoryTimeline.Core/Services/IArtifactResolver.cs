@@ -31,8 +31,12 @@ public class ArtifactResolution
 }
 
 /// <summary>
-/// Phase 0 resolver: the storage locator is a local file path (test client or
-/// same-machine handoff). Replaced by a sync-service download client in Phase 1.
+/// The production resolver: the storage locator is a local file path. Local
+/// recordings and imports hand their file over directly, and a capture from
+/// another device is downloaded by the sync layer (ArtifactTransferClient,
+/// driven by RemoteChangeApplier) to a local file BEFORE ingestion, so its
+/// locator is a local path too. Phase 1 added the download step in front of
+/// this resolver rather than replacing it.
 /// </summary>
 public class LocalFileArtifactResolver : IArtifactResolver
 {

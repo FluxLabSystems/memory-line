@@ -807,7 +807,6 @@ public partial class TimelineViewModel : ObservableObject
 
         // Track assignment for non-overlapping display
         var tracks = new List<List<EraBarDto>>();
-        const double barHeight = 4.0;
         const double trackSpacing = 8.0;
 
         foreach (var era in eras.OrderBy(e => e.StartDate))

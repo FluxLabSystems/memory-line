@@ -78,7 +78,7 @@ public class AdvancedSearchService : IAdvancedSearchService
             results.TotalCount = await query.CountAsync();
 
             // Apply sorting
-            query = ApplySorting(query, filter.SortBy);
+            query = ApplySorting(query, filter);
 
             // Apply pagination
             var skip = (filter.PageNumber - 1) * filter.PageSize;
@@ -199,9 +199,9 @@ public class AdvancedSearchService : IAdvancedSearchService
         return query;
     }
 
-    private IQueryable<Event> ApplySorting(IQueryable<Event> query, string sortBy)
+    private static IQueryable<Event> ApplySorting(IQueryable<Event> query, SearchFilter filter)
     {
-        return sortBy switch
+        return filter.SortBy switch
         {
             SearchSortOptions.DateDesc => query.OrderByDescending(e => e.StartDate),
             SearchSortOptions.DateAsc => query.OrderBy(e => e.StartDate),
@@ -209,9 +209,36 @@ public class AdvancedSearchService : IAdvancedSearchService
             SearchSortOptions.TitleDesc => query.OrderByDescending(e => e.Title),
             SearchSortOptions.CreatedDesc => query.OrderByDescending(e => e.CreatedAt),
             SearchSortOptions.CreatedAsc => query.OrderBy(e => e.CreatedAt),
-            SearchSortOptions.Relevance => query.OrderByDescending(e => e.StartDate), // Default for now
+            SearchSortOptions.Relevance => ApplyRelevanceOrder(query, filter.SearchTerm),
             _ => query.OrderByDescending(e => e.StartDate)
         };
+    }
+
+    /// <summary>
+    /// Relevance: where the term matches, then recency. An exact title match
+    /// outranks a title that merely contains the term, which outranks a match
+    /// in the description or the free-text location, which outranks one buried
+    /// in the transcript; ties fall back to the newest first. Without a term
+    /// there is nothing to be relevant to, and the order is simply by date.
+    /// The score is a sum of conditionals, which EF translates to CASE
+    /// expressions and evaluates in the database.
+    /// </summary>
+    private static IQueryable<Event> ApplyRelevanceOrder(IQueryable<Event> query, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return query.OrderByDescending(e => e.StartDate);
+        }
+
+        var term = searchTerm.ToLower();
+        return query
+            .OrderByDescending(e =>
+                (e.Title.ToLower() == term ? 8 : 0)
+                + (e.Title.ToLower().Contains(term) ? 4 : 0)
+                + (e.Description != null && e.Description.ToLower().Contains(term) ? 2 : 0)
+                + (e.Location != null && e.Location.ToLower().Contains(term) ? 2 : 0)
+                + (e.RawTranscript != null && e.RawTranscript.ToLower().Contains(term) ? 1 : 0))
+            .ThenByDescending(e => e.StartDate);
     }
 
     public async Task<SearchFacets> GetFacetsAsync(SearchFilter? baseFilter = null)

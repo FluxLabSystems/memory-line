@@ -20,13 +20,15 @@ namespace MemoryTimeline.ViewModels;
 /// unlocated-places manager (pin drop + optional geocoding) and the geocoding
 /// privacy toggle.
 ///
-/// DEFERRED (F10): the spec's per-event location chip on the timeline (pin
-/// glyph on event bubbles that jumps to the Map page) is intentionally not
-/// implemented this wave - TimelineControl was just reworked by F8 (spans,
-/// lanes, uncertainty layers) and is off-limits to this feature. When it is
-/// picked up, subscribe the chip to this page via
-/// NavigationService.NavigateTo("Map", eventId) and center the viewport on
-/// that event's located place.
+/// DEFERRED (F10, still open 2026-10): the spec's per-event location chip on
+/// the timeline (a pin glyph on event bubbles that jumps to the Map page) is
+/// not implemented. The pieces it needs are all absent today: TimelineEventDto
+/// carries only the location NAME (no coordinates or "located" flag), the
+/// bubble templates in TimelineControl have no secondary hit target, and this
+/// page takes no navigation parameter. When it is picked up: add a located
+/// flag to the DTO, navigate with NavigationService.NavigateTo("Map", eventId),
+/// read the parameter in MapPage.OnNavigatedTo after InitializeAsync, and
+/// center the viewport on the pin whose event references include that id.
 /// </summary>
 public partial class MapViewModel : ObservableObject
 {

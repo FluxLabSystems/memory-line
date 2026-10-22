@@ -471,6 +471,38 @@ public class NarrativeServiceTests : IDisposable
     #region Cancellation
 
     [Fact]
+    public async Task GenerateAsync_CopiesIncludeMediaOntoTheNarrative()
+    {
+        // Arrange: the export reads the choice from the Narrative, so the
+        // request flag must land there — on empty narratives too.
+        await SeedEventAsync("evt-1", "A day", new DateTime(2020, 1, 5));
+        SetupSectionProse();
+
+        // Act
+        var withMedia = await _service.GenerateAsync(new NarrativeRequest
+        {
+            Scope = NarrativeScope.Selection,
+            SelectedEventIds = new List<string> { "evt-1" }
+        });
+        var withoutMedia = await _service.GenerateAsync(new NarrativeRequest
+        {
+            Scope = NarrativeScope.Selection,
+            SelectedEventIds = new List<string> { "evt-1" },
+            IncludeMedia = false
+        });
+        var empty = await _service.GenerateAsync(new NarrativeRequest
+        {
+            Scope = NarrativeScope.Selection,
+            SelectedEventIds = new List<string> { "no-such-event" }
+        });
+
+        // Assert
+        withMedia.IncludeMedia.Should().BeTrue("the request default includes media");
+        withoutMedia.IncludeMedia.Should().BeFalse();
+        empty.IncludeMedia.Should().BeTrue("the zero-event narrative carries the flag as well");
+    }
+
+    [Fact]
     public async Task GenerateAsync_PreCancelledToken_ThrowsWithoutLlmCall()
     {
         // Arrange

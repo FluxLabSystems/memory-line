@@ -92,6 +92,29 @@ public sealed class MergeCandidate
 }
 
 /// <summary>
+/// A living person who shares events with the profiled person.
+/// </summary>
+/// <param name="PersonId">The co-occurring person's id.</param>
+/// <param name="Name">Their display name.</param>
+/// <param name="SharedEvents">How many events both people are linked to.</param>
+public sealed record PersonCoOccurrence(string PersonId, string Name, int SharedEvents)
+{
+    /// <summary>"1 shared memory" / "N shared memories", for display.</summary>
+    public string SharedEventsDisplay => SharedEvents == 1 ? "1 shared memory" : $"{SharedEvents} shared memories";
+}
+
+/// <summary>
+/// A location of the profiled person's events, with how many of them happened there.
+/// </summary>
+/// <param name="Name">The location's name.</param>
+/// <param name="Count">Number of the person's events linked to it.</param>
+public sealed record PersonLocationCount(string Name, int Count)
+{
+    /// <summary>"1 memory" / "N memories", for display.</summary>
+    public string CountDisplay => Count == 1 ? "1 memory" : $"{Count} memories";
+}
+
+/// <summary>
 /// Aggregated profile of one person: identity, linked events, first/last
 /// appearance, top co-occurring people, top shared locations, and aliases.
 /// </summary>
@@ -109,11 +132,11 @@ public sealed class PersonProfile
     /// <summary>Start date of the latest linked event, or null.</summary>
     public DateTime? LastSeen { get; init; }
 
-    /// <summary>Up to five living people sharing the most events, most shared first.</summary>
-    public List<(string PersonId, string Name, int SharedEvents)> TopCoOccurring { get; init; } = new();
+    /// <summary>Up to five living people sharing the most events, most shared first (ties by name).</summary>
+    public List<PersonCoOccurrence> TopCoOccurring { get; init; } = new();
 
-    /// <summary>Up to five locations of the person's events, most frequent first.</summary>
-    public List<(string Name, int Count)> TopLocations { get; init; } = new();
+    /// <summary>Up to five locations of the person's events, most frequent first (ties by name).</summary>
+    public List<PersonLocationCount> TopLocations { get; init; } = new();
 
     /// <summary>The person's aliases, ordered case-insensitively.</summary>
     public List<string> Aliases { get; init; } = new();
@@ -1091,8 +1114,8 @@ public class PersonService : IPersonService
             DateTime? firstSeen = eventRows.Count == 0 ? null : eventRows.Min(e => e.StartDate);
             DateTime? lastSeen = eventRows.Count == 0 ? null : eventRows.Max(e => e.StartDate);
 
-            var topCoOccurring = new List<(string PersonId, string Name, int SharedEvents)>();
-            var topLocations = new List<(string Name, int Count)>();
+            var topCoOccurring = new List<PersonCoOccurrence>();
+            var topLocations = new List<PersonLocationCount>();
 
             if (eventIds.Count > 0)
             {
@@ -1109,7 +1132,7 @@ public class PersonService : IPersonService
                     .ToListAsync();
                 topCoOccurring = coCounts
                     .Join(coPeople, c => c.PersonId, p => p.PersonId,
-                        (c, p) => (p.PersonId, p.Name, SharedEvents: c.Count))
+                        (c, p) => new PersonCoOccurrence(p.PersonId, p.Name, c.Count))
                     .OrderByDescending(x => x.SharedEvents)
                     .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                     .Take(5)
@@ -1128,7 +1151,7 @@ public class PersonService : IPersonService
                     .ToListAsync();
                 topLocations = locationCounts
                     .Join(locations, c => c.LocationId, l => l.LocationId,
-                        (c, l) => (l.Name, c.Count))
+                        (c, l) => new PersonLocationCount(l.Name, c.Count))
                     .OrderByDescending(x => x.Count)
                     .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                     .Take(5)

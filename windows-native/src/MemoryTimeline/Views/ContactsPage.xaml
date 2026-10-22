@@ -469,13 +469,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Statistics (first/last appearance + shared-memory count).
-                             DEFERRED: IPersonService.GetProfileAsync additionally
-                             aggregates top co-occurring people and top locations;
-                             those two lists are not surfaced in this pane yet -
-                             the F9 UI scope pinned aliases/merge/story here, and
-                             the aggregates wait for a dedicated relationships
-                             card rather than cramming this row. -->
+                        <!-- Statistics (first/last appearance + shared-memory count);
+                             the profile's co-occurrence/location aggregates have
+                             their own Connections card below. -->
                         <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                 CornerRadius="8" Padding="16">
                             <Grid>
@@ -506,6 +502,80 @@
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                 </StackPanel>
                             </Grid>
+                        </Border>
+
+                        <!-- Connections: the people this person shares the most
+                             memories with and the places those memories happened
+                             (IPersonService.GetProfileAsync aggregates, five each).
+                             Hidden entirely when there is nothing to show. -->
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                CornerRadius="8" Padding="16"
+                                Visibility="{x:Bind ViewModel.HasConnections, Mode=OneWay}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Connections" Style="{StaticResource SubtitleTextBlockStyle}"/>
+
+                                <StackPanel Spacing="4"
+                                            Visibility="{x:Bind ViewModel.HasCoOccurring, Mode=OneWay}">
+                                    <TextBlock Text="Often together with" FontSize="12"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <ListView ItemsSource="{x:Bind ViewModel.SelectedPersonCoOccurring, Mode=OneWay}"
+                                              SelectionMode="None"
+                                              IsItemClickEnabled="True"
+                                              ItemClick="CoOccurring_ItemClick">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate x:DataType="coreServices:PersonCoOccurrence">
+                                                <Grid ColumnSpacing="12" Padding="4,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Grid.Column="0" Glyph="&#xE77B;" FontSize="14"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                              VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Name}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{x:Bind SharedEventsDisplay}"
+                                                               FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </StackPanel>
+
+                                <StackPanel Spacing="4"
+                                            Visibility="{x:Bind ViewModel.HasTopLocations, Mode=OneWay}">
+                                    <TextBlock Text="Places" FontSize="12"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <ItemsControl ItemsSource="{x:Bind ViewModel.SelectedPersonTopLocations, Mode=OneWay}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="coreServices:PersonLocationCount">
+                                                <Grid ColumnSpacing="12" Padding="4,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <FontIcon Grid.Column="0" Glyph="&#xE707;" FontSize="14"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                              VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{x:Bind Name}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{x:Bind CountDisplay}"
+                                                               FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </StackPanel>
                         </Border>
 
                         <!-- Linked events -->

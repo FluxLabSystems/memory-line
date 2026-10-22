@@ -467,6 +467,15 @@ public sealed partial class ContactsPage : Page
         RemovePhotoButton.IsEnabled = false;
     }
 
+    /// <summary>A co-occurring person in the Connections card selects that person.</summary>
+    private async void CoOccurring_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is PersonCoOccurrence person)
+        {
+            await ViewModel.SelectPersonByIdAsync(person.PersonId);
+        }
+    }
+
     private void EditorColorGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingEditor)

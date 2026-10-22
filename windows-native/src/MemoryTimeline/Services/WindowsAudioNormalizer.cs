@@ -64,8 +64,7 @@ public sealed class WindowsAudioNormalizer : IAudioNormalizer
             // Audio properties are replaced with the transcriber's exact layout
             // so the resampler and the channel mixer do the work here, once.
             var profile = MediaEncodingProfile.CreateWav(AudioEncodingQuality.Auto);
-            profile.Audio = AudioEncodingProperties.CreatePcm(
-                sampleRate: 16000, channelCount: 1, bitsPerSample: 16);
+            profile.Audio = AudioEncodingProperties.CreatePcm(16000, 1, 16); // sampleRate, channelCount, bitsPerSample
 
             var transcoder = new MediaTranscoder();
             var prepared = await transcoder.PrepareFileTranscodeAsync(source, destination, profile);

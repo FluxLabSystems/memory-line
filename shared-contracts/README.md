@@ -81,6 +81,12 @@ Purely additive.
   latitude outside [-90, 90] or a longitude outside [-180, 180] is 400
   `validation_error`, the rule `POST /trips/{tripId}/route-context` already
   applies.
+- **`macos` joins the platform enums** (`DeviceRegisterRequest.platform`,
+  `DeviceInfo.platform`, `Capture.sourcePlatform`,
+  `CaptureChangePayload.sourcePlatform`), the service's `DeviceService`
+  accepts it, and the capture-envelope JSON schema's `sourcePlatform` lists
+  it, so the Mac app registers as itself instead of `other`
+  (`docs/design/MACOS-PORT-PLAN.md` §3.4). The exact string is `macos`.
 
 ### v1.4 (2026-10-21) — the YAML catches up with the shipped service
 

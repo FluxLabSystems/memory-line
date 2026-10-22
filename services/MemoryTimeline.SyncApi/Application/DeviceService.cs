@@ -21,7 +21,12 @@ public sealed class DeviceService : IDeviceService
     /// <summary>Idempotency scope for the unauthenticated register endpoint (no device ID exists yet).</summary>
     private const string RegisterIdempotencyScope = "__register__";
 
-    private static readonly string[] AllowedPlatforms = ["windows", "ios", "other"];
+    /// <summary>
+    /// The platform enum of DeviceRegisterRequest/DeviceInfo in the OpenAPI
+    /// contract. macos arrived in v1.5 so the Mac app registers as itself;
+    /// a new value is added here and to the YAML enums in the same commit.
+    /// </summary>
+    private static readonly string[] AllowedPlatforms = ["windows", "ios", "macos", "other"];
 
     private readonly IDbContextFactory<SyncDbContext> _contextFactory;
     private readonly ISyncTokenService _tokens;
@@ -61,7 +66,7 @@ public sealed class DeviceService : IDeviceService
         {
             return ServiceResult<DeviceRegisterResponse>.Fail(
                 StatusCodes.Status400BadRequest, SyncApiErrorCodes.ValidationError,
-                "platform must be one of: windows, ios, other.");
+                "platform must be one of: windows, ios, macos, other.");
         }
 
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

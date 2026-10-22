@@ -24,7 +24,7 @@
     },
     "sourcePlatform": {
       "type": "string",
-      "enum": ["ios", "windows", "other"],
+      "enum": ["ios", "windows", "macos", "other"],
       "default": "ios",
       "description": "Originating platform."
     },

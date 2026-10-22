@@ -200,6 +200,27 @@ public class SyncRemoteChangeApplierTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyAsync_MacosOriginatedCapture_IsIngestedAsAMacCapture()
+    {
+        // Arrange - a Mac is a companion like the phone, not this machine
+        var change = CreateCaptureChange(out var payload, out var content);
+        payload.SourcePlatform = CapturePlatform.Macos;
+        change.PayloadJson = JsonSerializer.Serialize(payload, WireJson);
+        _transferClient.Content = content;
+
+        // Act
+        var result = await _applier.ApplyAsync(change);
+
+        // Assert
+        result.Should().Be(ChangeApplicationResult.Applied);
+        await using var context = _contextFactory.CreateDbContext();
+        var queueItem = await context.RecordingQueues.SingleAsync();
+        queueItem.SourcePlatform.Should().Be(CapturePlatform.Macos);
+        queueItem.SyncState.Should().Be(QueueSyncState.Received);
+        (await context.Captures.SingleAsync()).SourcePlatform.Should().Be(CapturePlatform.Macos);
+    }
+
+    [Fact]
     public async Task ApplyAsync_WindowsOriginatedCapture_IsSkippedAsEcho()
     {
         // Arrange - defense against our own changes echoing back from the server

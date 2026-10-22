@@ -1243,7 +1243,7 @@ components:
           format: uuid
         sourcePlatform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         captureType:
           type: string
           enum: [memory, idea, trip_log, reminder, question, unclassified]
@@ -1613,7 +1613,7 @@ components:
           format: uuid
         sourcePlatform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         captureType:
           type: string
           enum: [memory, idea, trip_log, reminder, question, unclassified]
@@ -2251,7 +2251,7 @@ components:
           description: Owner pairing code proving the caller may join this sync domain.
         platform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         displayName:
           type: string
         appVersion:
@@ -2316,7 +2316,7 @@ components:
           format: uuid
         platform:
           type: string
-          enum: [ios, windows, other]
+          enum: [ios, windows, macos, other]
         displayName:
           type: string
         lastSeenAtUtc:

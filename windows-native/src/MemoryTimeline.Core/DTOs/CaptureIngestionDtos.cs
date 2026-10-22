@@ -13,7 +13,7 @@ public class RemoteCaptureEnvelope
 
     public string? SourceDeviceId { get; set; }
 
-    /// <summary>Originating platform, e.g. "ios".</summary>
+    /// <summary>Originating platform: ios, macos, windows or other (the contract's sourcePlatform enum).</summary>
     public string SourcePlatform { get; set; } = "ios";
 
     /// <summary>memory | idea | trip_log | reminder | question | unclassified.</summary>

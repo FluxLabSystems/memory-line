@@ -89,12 +89,17 @@ public class Capture
 }
 
 /// <summary>
-/// Platform a capture originated on.
+/// Platform a capture originated on. Mirrors the sourcePlatform / platform
+/// enums in shared-contracts/openapi/memory-line-sync-v1.yaml, the
+/// capture-envelope JSON schema and the service's DeviceService
+/// .AllowedPlatforms; a new value goes into all of them together.
 /// </summary>
 public static class CapturePlatform
 {
     public const string Windows = "windows";
     public const string Ios = "ios";
+    /// <summary>The macOS app (contract v1.5); before that it registered as <see cref="Other"/>.</summary>
+    public const string Macos = "macos";
     public const string Other = "other";
 }
 

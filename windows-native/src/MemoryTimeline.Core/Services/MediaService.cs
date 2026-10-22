@@ -44,6 +44,10 @@ public static class MediaAttachmentRules
     public static readonly string SupportedExtensionsDisplay =
         string.Join(", ", AllowedExtensions.Select(e => e.Extension));
 
+    /// <summary>The image extensions of the allowlist (with leading dot), for file pickers.</summary>
+    public static readonly IReadOnlyList<string> ImageExtensions =
+        AllowedExtensions.Where(e => e.Type == MediaType.Image).Select(e => e.Extension).ToList();
+
     /// <summary>
     /// Maps a file extension (with or without leading dot, any casing) to its
     /// <see cref="MediaType"/>, or null when the extension is not allowlisted.
@@ -124,6 +128,9 @@ public class MediaService : IMediaService
     internal static readonly TimeSpan CleanupGraceWindow = TimeSpan.FromMinutes(5);
 
     private const string ThumbsDirectoryName = ".thumbs";
+
+    /// <summary>Folder under the media root that holds people photos (see <see cref="ImportPersonPhotoAsync"/>).</summary>
+    public const string PeoplePhotosDirectoryName = "people";
 
     private readonly IEventMediaRepository _mediaRepository;
     private readonly IDbContextFactory<AppDbContext> _contextFactory;
@@ -454,6 +461,61 @@ public class MediaService : IMediaService
     }
 
     /// <inheritdoc />
+    public async Task<string> ImportPersonPhotoAsync(string sourceFilePath, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(sourceFilePath) || !File.Exists(sourceFilePath))
+        {
+            throw new FileNotFoundException("The chosen photo could not be found.", sourceFilePath);
+        }
+
+        var extension = Path.GetExtension(sourceFilePath);
+        if (MediaAttachmentRules.GetMediaTypeForExtension(extension) != MediaType.Image)
+        {
+            throw new InvalidOperationException(
+                $"'{Path.GetFileName(sourceFilePath)}' is not a supported image. Use one of: " +
+                string.Join(", ", MediaAttachmentRules.ImageExtensions) + ".");
+        }
+
+        var relativePath = Path.Combine(PeoplePhotosDirectoryName, Guid.NewGuid().ToString("N") + extension.ToLowerInvariant());
+        var absolutePath = Path.Combine(MediaRoot, relativePath);
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(MediaRoot, PeoplePhotosDirectoryName));
+            await using var source = File.OpenRead(sourceFilePath);
+            await using var destination = new FileStream(absolutePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await source.CopyToAsync(destination, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            TryDeleteFile(absolutePath);
+            throw;
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException)
+        {
+            TryDeleteFile(absolutePath);
+            throw new InvalidOperationException(
+                $"Could not copy '{Path.GetFileName(sourceFilePath)}' into the media library at '{MediaRoot}': {ex.Message}", ex);
+        }
+
+        _logger.LogInformation("Imported person photo {Source} as {Relative}", sourceFilePath, relativePath);
+        return relativePath;
+    }
+
+    /// <inheritdoc />
+    public string? GetAbsolutePersonPhotoPath(string? photoPath)
+    {
+        if (string.IsNullOrWhiteSpace(photoPath))
+        {
+            return null;
+        }
+
+        return Path.IsPathRooted(photoPath) ? photoPath : Path.Combine(MediaRoot, photoPath);
+    }
+
+    /// <inheritdoc />
     public Task<List<EventMedia>> GetForEventAsync(string eventId)
         => _mediaRepository.GetForEventAsync(eventId);
 
@@ -656,6 +718,21 @@ public class MediaService : IMediaService
                 .Where(r => !string.IsNullOrEmpty(r.ThumbnailPath))
                 .Select(r => NormalizeRelativePath(r.ThumbnailPath!))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // People photos live under the same root (people/{guid}{ext}) and
+            // are referenced by people.photo_path, not event_media: keep every
+            // file a person row still points at. A stored absolute path under
+            // the root is mapped back to its relative form first.
+            var peoplePhotos = await context.People
+                .AsNoTracking()
+                .Where(p => p.PhotoPath != null && p.PhotoPath != "")
+                .Select(p => p.PhotoPath!)
+                .ToListAsync(ct);
+            foreach (var photo in peoplePhotos)
+            {
+                var relativePhoto = Path.IsPathRooted(photo) ? Path.GetRelativePath(MediaRoot, photo) : photo;
+                liveFiles.Add(NormalizeRelativePath(relativePhoto));
+            }
         }
 
         var graceCutoffUtc = DateTime.UtcNow - CleanupGraceWindow;

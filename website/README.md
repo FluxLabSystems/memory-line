@@ -79,10 +79,14 @@ npm --prefix website run build
 npm --prefix website run serve
 ```
 
-`npm run build` accepts `--out DIR` if you want the output somewhere else.
+To write the output somewhere else, pass the flag through npm with a `--`
+separator: `npm run build -- --out DIR` (or call the script directly,
+`node build.mjs --out DIR`).
 
 > **Note:** `_site/` is generated output. Rebuild and commit it whenever you change a
-> markdown document, or the published site will drift from the source.
+> markdown document, or the published site will drift from the source. The footer's
+> "generated" date comes from the newest git commit touching the site's sources, not
+> from the clock, so rebuilding unchanged sources produces a byte-identical `_site`.
 
 ---
 

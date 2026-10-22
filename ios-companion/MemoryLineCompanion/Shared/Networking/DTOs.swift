@@ -36,7 +36,7 @@ struct TokenRefreshResponse: Codable, Sendable {
 
 // MARK: - Captures
 
-struct LocationContext: Codable, Sendable {
+struct LocationContext: Codable, Equatable, Sendable {
     var latitude: Double
     var longitude: Double
     var horizontalAccuracyM: Double?

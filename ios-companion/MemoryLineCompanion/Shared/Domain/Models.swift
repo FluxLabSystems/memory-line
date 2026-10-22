@@ -92,6 +92,12 @@ struct CaptureRecord: Identifiable, Equatable, Sendable {
     /// Artifact ID minted for the upload (stable across retries).
     var artifactId: String?
     var uploadedAt: Date?
+    /// The single location snapshot taken at capture start when the location
+    /// opt-in is on (design §14.4); nil otherwise, and always nil on the Mac.
+    /// Persisted in the `capture_location` side table, not a `captures`
+    /// column, so that table's positional column mapping and `user_version`
+    /// stay as they were. Defaulted so existing memberwise-init callers compile.
+    var location: LocationContext? = nil
 
     static func newLocal(
         type: CaptureType,
@@ -132,6 +138,8 @@ enum AppSettingsKey {
     static let spokenConfirmation = "spoken_confirmation"        // bool, default true
     static let defaultCaptureType = "default_capture_type"
     static let onDeviceTranscription = "on_device_transcription" // bool, Phase 4 placeholder (design §22.4)
+    static let captureLocation = "capture_location"              // bool, default false — opt-in snapshot (design §14.4)
+    static let captureLocationPrecise = "capture_location_precise" // bool, default false — coarse snapshot unless on
 }
 
 /// Contract between the app and the widget extension. The widget process cannot

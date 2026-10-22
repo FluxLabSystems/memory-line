@@ -11,6 +11,7 @@
  * from a web server.
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,7 +118,7 @@ async function main() {
     minutes: Math.round(totalWords / WORDS_PER_MINUTE),
   };
 
-  const buildTime = new Date().toISOString().slice(0, 10);
+  const buildTime = generatedDate(docPages);
 
   // Fill the landing-page counters from the corpus we just rendered.
   const statValues = {
@@ -233,6 +234,41 @@ ${renderToc(page.toc)}
       `${totals.words.toLocaleString('en-US')} words) → ${path.relative(process.cwd(), outDir) || outDir} in ${seconds}s`
   );
   if (missing) console.log(`  ${missing} configured source file(s) were missing and were skipped.`);
+}
+
+/**
+ * The footer's "generated" date: the commit date (YYYY-MM-DD) of the newest
+ * git commit touching anything the build reads — the configured markdown
+ * sources plus the generator itself (templates, styles, scripts, config).
+ *
+ * Deriving it from git rather than the clock makes the output a pure function
+ * of the sources: rebuilding unchanged sources on another day yields a
+ * byte-identical _site, so two documentation PRs built on different days no
+ * longer conflict in every page's footer. Falls back to today's date when git
+ * is unavailable or this is not a checkout (an exported tarball, a CI image
+ * without git), and `_site` itself is deliberately not an input — committing a
+ * rebuild must not move the date.
+ */
+function generatedDate(docPages) {
+  const today = new Date().toISOString().slice(0, 10);
+  const inputs = [
+    ...docPages.map((p) => p.source),
+    'website/build.mjs',
+    'website/site.config.mjs',
+    'website/package.json',
+    'website/lib',
+    'website/assets',
+  ];
+  try {
+    const out = execFileSync('git', ['-C', repoRoot, 'log', '-1', '--format=%cs', '--', ...inputs], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10_000,
+    }).trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : today;
+  } catch {
+    return today;
+  }
 }
 
 /** Split a rendered document into H2 sections for the search index. */

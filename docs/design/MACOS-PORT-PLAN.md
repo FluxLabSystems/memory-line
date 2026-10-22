@@ -304,12 +304,14 @@ the fix belongs in the package reference, not in a retreat from the `net10.0` ta
 
 ---
 
-### 3.4 The Mac registers as `other`, because the contract has no `macos`
+### 3.4 The Mac registers as `macos` — first-class since contract v1.5
 
-`DeviceRegisterRequest.platform` is constrained to `[ios, windows, other]` by
-`shared-contracts/openapi/memory-line-sync-v1.yaml`, and the server enforces it —
-`DeviceService.AllowedPlatforms` rejects anything else with a 400. So the Mac app sends
-`"other"` today.
+`DeviceRegisterRequest.platform` was constrained to `[ios, windows, other]` until contract
+v1.5 added `macos` (`shared-contracts/openapi/memory-line-sync-v1.yaml`, mirrored by
+`DeviceService.AllowedPlatforms`, which still rejects anything outside the enum with a 400).
+The Mac app sends `"macos"` (`MacAppEnvironment.devicePlatform`, pinned by a test); a Mac
+paired before v1.5 keeps the `other` its device row was stored with, and `other` remains a
+valid value. Windows Settings → Sync shows the platform string as stored.
 
 Two smaller traps in the same call, both already handled in `MacAppEnvironment.pair`:
 
@@ -320,15 +322,14 @@ Two smaller traps in the same call, both already handled in `MacAppEnvironment.p
   Bonjour `.local` suffix trimmed. This is what the user sees in Windows Settings → Sync,
   so a blank or `studio.local`-shaped name is a real papercut.
 
-Making `macos` first-class means changing the OpenAPI enum, `AllowedPlatforms`, and any UI
-that renders a platform label — worth doing before the Mac ships, not worth doing now.
+Making `macos` first-class meant changing the OpenAPI enum, `AllowedPlatforms` and the Swift
+literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
+string and needed no change.
 
 ---
 
 ## 7. Open questions
 
-- **Add `macos` to the device-platform enum?** See §3.4. Touches the OpenAPI contract, the
-  server's `AllowedPlatforms`, and the Swift DTO's default. Until then the Mac is `other`.
 - **Distribution:** Mac App Store (sandbox already assumed) or Developer ID + Sparkle?
   Affects whether the sandbox exceptions in §4 stay viable.
 - **Minimum macOS version.** Currently 14.0 (Sonoma), chosen to match the iOS 17 baseline
@@ -351,6 +352,8 @@ that renders a platform label — worth doing before the Mac ships, not worth do
 
 **Answered since this list was written:**
 
+- ~~Add `macos` to the device-platform enum?~~ Done in contract v1.5 — see §3.4. The Mac
+  registers as `macos`; `other` stays valid for Macs paired before the change.
 - ~~Does the Mac record at all?~~ Yes — Phase 2 shipped a recorder, input-device selection
   and menu-bar quick capture.
 - ~~How does the C# business logic reach the Mac?~~ It does not run there; Windows publishes

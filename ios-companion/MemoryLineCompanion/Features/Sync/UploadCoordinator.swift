@@ -350,7 +350,9 @@ final class UploadCoordinator {
                 tripId: nil,
                 titleHint: capture.titleHint,
                 userNote: capture.userNote,
-                locationContext: nil,
+                // Present only when the location opt-in was on at capture
+                // start (design §14.4); the snapshot is never logged (§14.5).
+                locationContext: capture.location,
                 clientSchemaVersion: 1))
 
             // 2. Stable artifact ID, persisted BEFORE initiate so retries

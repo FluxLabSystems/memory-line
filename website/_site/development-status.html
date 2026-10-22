@@ -42,7 +42,7 @@
         <svg class="icon-sun" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="4" fill="currentColor"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6 16 16M16 4l-1.4 1.4M5.4 14.6 4 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <svg class="icon-moon" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z" fill="currentColor"/></svg>
       </button>
-      <a class="icon-btn" href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
+      <a class="icon-btn" href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
         <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
     </div>
@@ -151,7 +151,7 @@
     <span class="doc-meta-item"><b>For</b> Everyone</span>
     <span class="doc-meta-item"><b>6,968</b> words</span>
     <span class="doc-meta-item"><b>32</b> min read</span>
-    <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/windows-native/DEVELOPMENT-STATUS.md" target="_blank" rel="noopener noreferrer">
+    <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/windows-native/DEVELOPMENT-STATUS.md" target="_blank" rel="noopener noreferrer">
       windows-native/DEVELOPMENT-STATUS.md ↗
     </a>
   </div>
@@ -350,9 +350,9 @@ reason are stored but never logged on any tier. <code>failureReason</code> is fi
 publisher text keyed on the failure stage — never <code>RecordingQueue.ErrorMessage</code>,
 whose raw exception text can contain file paths or provider detail.</p>
 <p><strong>Contracts:</strong>
-<a href="https://github.com/ethanbissbort/memory-line/blob/main/shared-contracts/openapi/memory-line-sync-v1.yaml" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/openapi/memory-line-sync-v1.yaml</code></a>
+<a href="https://github.com/FluxLabSystems/memory-line/blob/main/shared-contracts/openapi/memory-line-sync-v1.yaml" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/openapi/memory-line-sync-v1.yaml</code></a>
 (v1.2, additive) and
-<a href="https://github.com/ethanbissbort/memory-line/blob/main/shared-contracts/json-schema/capture-status-payload.v1.json" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/json-schema/capture-status-payload.v1.json</code></a>.</p>
+<a href="https://github.com/FluxLabSystems/memory-line/blob/main/shared-contracts/json-schema/capture-status-payload.v1.json" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../shared-contracts/json-schema/capture-status-payload.v1.json</code></a>.</p>
 <p><strong>Next step:</strong> Phase 4 — voice assistant (assistant sessions and streaming
 turns, STT/TTS, memory retrieval, current trip context, interruption and
 cancellation).</p>
@@ -375,7 +375,7 @@ validation, §11.4) into a filesystem artifact store; and an append-only
 suppression), per-device idempotent <code>POST /sync/push</code> (push receipts keyed
 on client sequence), and <code>POST /sync/ack</code>. SQLite metadata + artifact blobs
 live under one configurable data directory. Operator guide:
-<a href="https://github.com/ethanbissbort/memory-line/blob/main/services/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../services/README.md</code></a>.</li>
+<a href="https://github.com/FluxLabSystems/memory-line/blob/main/services/README.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../services/README.md</code></a>.</li>
 <li><strong>Windows sync client</strong> — new <code>MemoryTimeline.Sync</code> project in the WinUI
 solution. <code>SyncBackgroundWorker</code> runs a periodic (30 s) pull → apply →
 ack → publish-outbox loop; <code>RemoteChangeApplier</code> turns each pulled capture
@@ -442,7 +442,7 @@ durable local queue, background upload, capture history/status).</p>
 <p><strong>Date:</strong> 2026-08-06</p>
 <p>Phase 0 of the iOS roadtrip companion plan (a separate track from the app phases
 below; see
-<a href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md</code></a>,
+<a href="https://github.com/FluxLabSystems/memory-line/blob/main/docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>../docs/design/IOS-ROADTRIP-COMPANION-SYSTEM-DESIGN.md</code></a>,
 section 19) landed:</p>
 <ul>
 <li><strong>Device-neutral capture schema</strong> — new <code>captures</code>, <code>capture_artifacts</code>, and
@@ -1623,7 +1623,7 @@ longer in the tree)</li>
       <div class="footer-links">
         <a href="index.html">Home</a>
         <a href="documentation-map.html">All documentation</a>
-        <a href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
       <div class="footer-note">
         This site is generated from the markdown in the repository — edit the source files and rebuild.

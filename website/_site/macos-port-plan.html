@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>macOS port plan · Memory Timeline docs</title>
-<meta name="description" content="Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.">
+<meta name="description" content="Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and how the archive reaches the Mac — Windows publishes read-only projections over the sync feed and Ask goes through the service’s assistant contract, so no C# runs on the Mac.">
 <meta property="og:title" content="macOS port plan · Memory Timeline docs">
-<meta property="og:description" content="Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.">
+<meta property="og:description" content="Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and how the archive reaches the Mac — Windows publishes read-only projections over the sync feed and Ask goes through the service’s assistant contract, so no C# runs on the Mac.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%231d1b18%22%2F%3E%3Cpath%20d%3D%22M4%2021h24%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%2F%3E%3Ccircle%20cx%3D%229%22%20cy%3D%2221%22%20r%3D%223.1%22%20fill%3D%22%23e0873f%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2214%22%20r%3D%223.6%22%20fill%3D%22%23f0b46e%22%2F%3E%3Ccircle%20cx%3D%2225%22%20cy%3D%2218%22%20r%3D%222.6%22%20fill%3D%22%236ec2b8%22%2F%3E%3Cpath%20d%3D%22M9%2021%2017%2014%2025%2018%22%20stroke%3D%22%238b8175%22%20stroke-width%3D%221.2%22%20fill%3D%22none%22%20stroke-linejoin%3D%22round%22%20opacity%3D%22.8%22%2F%3E%3C%2Fsvg%3E">
 <link rel="stylesheet" href="assets/styles.css">
@@ -42,7 +42,7 @@
         <svg class="icon-sun" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><circle cx="10" cy="10" r="4" fill="currentColor"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6 16 16M16 4l-1.4 1.4M5.4 14.6 4 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <svg class="icon-moon" viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z" fill="currentColor"/></svg>
       </button>
-      <a class="icon-btn" href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
+      <a class="icon-btn" href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer" aria-label="View the repository on GitHub" title="Repository on GitHub">
         <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
     </div>
@@ -131,12 +131,12 @@
     <span>Design notes</span>
   </nav>
   <h1>macOS port plan</h1>
-  <p class="doc-lede">Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and the undecided question of how the C# service layer reaches the Mac.</p>
+  <p class="doc-lede">Bringing Memory Line to macOS as a native SwiftUI app: what the iOS companion already shares, the Keychain and device-platform traps, the phased order of work, and how the archive reaches the Mac — Windows publishes read-only projections over the sync feed and Ask goes through the service’s assistant contract, so no C# runs on the Mac.</p>
   <div class="doc-meta">
     <span class="doc-meta-item"><b>For</b> Developers</span>
-    <span class="doc-meta-item"><b>3,105</b> words</span>
+    <span class="doc-meta-item"><b>3,145</b> words</span>
     <span class="doc-meta-item"><b>14</b> min read</span>
-    <a class="doc-meta-item doc-source" href="https://github.com/ethanbissbort/memory-line/blob/main/docs/design/MACOS-PORT-PLAN.md" target="_blank" rel="noopener noreferrer">
+    <a class="doc-meta-item doc-source" href="https://github.com/FluxLabSystems/memory-line/blob/main/docs/design/MACOS-PORT-PLAN.md" target="_blank" rel="noopener noreferrer">
       docs/design/MACOS-PORT-PLAN.md ↗
     </a>
   </div>
@@ -148,7 +148,7 @@
 projection, review decisions); phase 5&#39;s Ask pane is a thin client over the service&#39;s assistant
 endpoints, answered by the Windows client&#39;s <code>AssistantTurnResponder</code> (narrative not started);
 phase 6 (packaging) not started
-<strong>Target:</strong> a native <strong>SwiftUI</strong> macOS app under <a href="https://github.com/ethanbissbort/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>, sharing code with the iOS companion<br><strong>Last updated:</strong> 2026-10-21  </p>
+<strong>Target:</strong> a native <strong>SwiftUI</strong> macOS app under <a href="https://github.com/FluxLabSystems/memory-line/tree/main/macos-native" target="_blank" rel="noopener noreferrer" class="external-link repo-link"><code>macos-native/</code></a>, sharing code with the iOS companion<br><strong>Last updated:</strong> 2026-10-21  </p>
 <hr>
 <blockquote><p><strong>Scope changed 2026-08-08.</strong> This plan was written for macOS as a <em>companion</em> to a
 Windows-owned archive. The target is now <strong>parity</strong>: Windows and macOS are peers, either
@@ -521,11 +521,13 @@ called out (finding #10, the .NET test suite that ran with <code>continue-on-err
 do compile there. If it ever fails on a native-asset restore rather than a compile error,
 the fix belongs in the package reference, not in a retreat from the <code>net10.0</code> target.</p>
 <hr>
-<h3 id="34-the-mac-registers-as-other-because-the-contract-has-no-macos" class="anchored">3.4 The Mac registers as <code>other</code>, because the contract has no <code>macos</code><a class="heading-anchor" href="#34-the-mac-registers-as-other-because-the-contract-has-no-macos" aria-label="Link to this section">#</a></h3>
-<p><code>DeviceRegisterRequest.platform</code> is constrained to <code>[ios, windows, other]</code> by
-<code>shared-contracts/openapi/memory-line-sync-v1.yaml</code>, and the server enforces it —
-<code>DeviceService.AllowedPlatforms</code> rejects anything else with a 400. So the Mac app sends
-<code>&quot;other&quot;</code> today.</p>
+<h3 id="34-the-mac-registers-as-macos--first-class-since-contract-v15" class="anchored">3.4 The Mac registers as <code>macos</code> — first-class since contract v1.5<a class="heading-anchor" href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" aria-label="Link to this section">#</a></h3>
+<p><code>DeviceRegisterRequest.platform</code> was constrained to <code>[ios, windows, other]</code> until contract
+v1.5 added <code>macos</code> (<code>shared-contracts/openapi/memory-line-sync-v1.yaml</code>, mirrored by
+<code>DeviceService.AllowedPlatforms</code>, which still rejects anything outside the enum with a 400).
+The Mac app sends <code>&quot;macos&quot;</code> (<code>MacAppEnvironment.devicePlatform</code>, pinned by a test); a Mac
+paired before v1.5 keeps the <code>other</code> its device row was stored with, and <code>other</code> remains a
+valid value. Windows Settings → Sync shows the platform string as stored.</p>
 <p>Two smaller traps in the same call, both already handled in <code>MacAppEnvironment.pair</code>:</p>
 <ul>
 <li>The Swift DTO <strong>defaults <code>platform</code> to <code>&quot;ios&quot;</code></strong>. Using the memberwise initializer
@@ -535,13 +537,12 @@ stored on the device row.</li>
 Bonjour <code>.local</code> suffix trimmed. This is what the user sees in Windows Settings → Sync,
 so a blank or <code>studio.local</code>-shaped name is a real papercut.</li>
 </ul>
-<p>Making <code>macos</code> first-class means changing the OpenAPI enum, <code>AllowedPlatforms</code>, and any UI
-that renders a platform label — worth doing before the Mac ships, not worth doing now.</p>
+<p>Making <code>macos</code> first-class meant changing the OpenAPI enum, <code>AllowedPlatforms</code> and the Swift
+literal together, which is what v1.5 did; the Windows paired-devices list renders the stored
+string and needed no change.</p>
 <hr>
 <h2 id="7-open-questions" class="anchored">7. Open questions<a class="heading-anchor" href="#7-open-questions" aria-label="Link to this section">#</a></h2>
 <ul>
-<li><strong>Add <code>macos</code> to the device-platform enum?</strong> See §3.4. Touches the OpenAPI contract, the
-server&#39;s <code>AllowedPlatforms</code>, and the Swift DTO&#39;s default. Until then the Mac is <code>other</code>.</li>
 <li><strong>Distribution:</strong> Mac App Store (sandbox already assumed) or Developer ID + Sparkle?
 Affects whether the sandbox exceptions in §4 stay viable.</li>
 <li><strong>Minimum macOS version.</strong> Currently 14.0 (Sonoma), chosen to match the iOS 17 baseline
@@ -564,6 +565,8 @@ approve memories into an archive, so the iOS timeline is read-only.</li>
 </ul>
 <p><strong>Answered since this list was written:</strong></p>
 <ul>
+<li><del>Add <code>macos</code> to the device-platform enum?</del> Done in contract v1.5 — see §3.4. The Mac
+registers as <code>macos</code>; <code>other</code> stays valid for Macs paired before the change.</li>
 <li><del>Does the Mac record at all?</del> Yes — Phase 2 shipped a recorder, input-device selection
 and menu-bar quick capture.</li>
 <li><del>How does the C# business logic reach the Mac?</del> It does not run there; Windows publishes
@@ -605,7 +608,7 @@ been added without one.</li>
 <li class="toc-item toc-h2"><a href="#5-phasing" data-toc-link>5. Phasing</a></li>
 <li class="toc-item toc-h3"><a href="#the-decision-that-gated-phases-35--resolved-by-a-fourth-option" data-toc-link>The decision that gated phases 3–5 — resolved, by a fourth option</a></li>
 <li class="toc-item toc-h2"><a href="#6-verification" data-toc-link>6. Verification</a></li>
-<li class="toc-item toc-h3"><a href="#34-the-mac-registers-as-other-because-the-contract-has-no-macos" data-toc-link>3.4 The Mac registers as other, because the contract has no macos</a></li>
+<li class="toc-item toc-h3"><a href="#34-the-mac-registers-as-macos--first-class-since-contract-v15" data-toc-link>3.4 The Mac registers as macos — first-class since contract v1.5</a></li>
 <li class="toc-item toc-h2"><a href="#7-open-questions" data-toc-link>7. Open questions</a></li>
   </ul>
   <a class="toc-top" href="#main">↑ Back to top</a>
@@ -620,7 +623,7 @@ been added without one.</li>
       <div class="footer-links">
         <a href="index.html">Home</a>
         <a href="documentation-map.html">All documentation</a>
-        <a href="https://github.com/ethanbissbort/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/FluxLabSystems/memory-line" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
       <div class="footer-note">
         This site is generated from the markdown in the repository — edit the source files and rebuild.

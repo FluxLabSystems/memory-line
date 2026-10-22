@@ -1,9 +1,9 @@
 # Memory Line iOS Roadtrip Companion — System Design
 
-**Status:** Accepted — Phases 0–3 implemented (Windows, sync service, iOS, macOS); Phase 4 implemented on the service (sessions, turns, idle-session reaper) with a macOS Ask client and no Windows responder yet; Phase 5 trip/detour endpoints implemented on the service as persistence and lifecycle, with no place provider; §22 decisions resolved 2026-08-07  
+**Status:** Accepted — Phases 0–3 implemented (Windows, sync service, iOS, macOS); Phase 4 implemented end to end (service sessions, turns and idle-session reaper; Ask clients on macOS and iOS; the Windows client's `AssistantTurnResponder` answers — only the `windows` responder mode is deployed, and `provider`/`on_device` turns fail at once with a reason); Phase 5 trip/detour endpoints implemented on the service, with Google Places and Apple Maps adapters selectable by configuration (default: none); §22 decisions resolved 2026-08-07; status last updated 2026-10-22  
 **Date:** 2026-08-06  
-**Repository:** `ethanbissbort/memory-line`  
-**Target branch:** `design/ios-roadtrip-companion`
+**Repository:** `FluxLabSystems/memory-line`  
+**Target branch:** `main` (the original `design/ios-roadtrip-companion` branch has long been merged)
 
 ---
 
@@ -1377,8 +1377,11 @@ before Phase 1"):
    "driving task" category entitlement application as an optional later step.
 
 7. **Artifact retention on the sync service: 14 days after Windows
-   acknowledges archival, or sooner under storage pressure.** (Follow-up for
-   the Phase 1 service, which currently retains artifacts indefinitely.)
+   acknowledges archival, or sooner under storage pressure.** (Implemented:
+   the service's retention sweep — `ArtifactRetentionService`, configured by
+   `ArtifactRetentionDays` and `ArtifactStorageBudgetBytes` — purges an
+   acknowledged artifact's bytes and keeps its row as `purged`, so a late
+   download answers 410 rather than a retryable error.)
 
 8. **Pending transcripts and the assistant: excluded by default.** The
    assistant searches approved events only; pending transcripts participate

@@ -17,8 +17,12 @@ public interface ILlmService
     /// </summary>
     /// <param name="transcript">The transcript text to analyze</param>
     /// <param name="context">Additional context (e.g., existing events, tags)</param>
+    /// <param name="cancellationToken">
+    /// Aborts the in-flight model call; propagates as
+    /// <see cref="OperationCanceledException"/>, never as a failed result.
+    /// </param>
     /// <returns>Extraction result with detected events</returns>
-    Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context);
+    Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Runs a single free-form completion against the configured model.

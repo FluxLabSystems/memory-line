@@ -21,6 +21,18 @@ public interface ISpeechToTextService
     Task<TranscriptionResult> TranscribeAsync(string audioFilePath, IProgress<double>? progress);
 
     /// <summary>
+    /// Transcribes an audio file to text with progress reporting and
+    /// cancellation. Cancelling aborts the decode and propagates as
+    /// <see cref="OperationCanceledException"/> rather than as a failed
+    /// result, so a cancelled queue item is put back rather than marked failed.
+    /// </summary>
+    /// <param name="audioFilePath">Path to the audio file</param>
+    /// <param name="progress">Progress reporter (0.0 to 1.0)</param>
+    /// <param name="cancellationToken">Aborts the in-flight transcription</param>
+    /// <returns>Transcription result</returns>
+    Task<TranscriptionResult> TranscribeAsync(string audioFilePath, IProgress<double>? progress, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Gets the name of the STT engine.
     /// </summary>
     string EngineName { get; }

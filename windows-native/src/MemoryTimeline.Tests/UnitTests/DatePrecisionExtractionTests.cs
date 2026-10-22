@@ -72,7 +72,7 @@ public class DatePrecisionExtractionTests : IDisposable
         // Four extracted events covering valid, mixed-case, missing,
         // and garbage precision strings
         _llmServiceMock
-            .Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+            .Setup(s => s.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EventExtractionResult
             {
                 Success = true,

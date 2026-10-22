@@ -59,14 +59,20 @@ public interface IQueueService
     Task<int> GetQueueCountByStatusAsync(string status);
 
     /// <summary>
-    /// Processes the next pending item in the queue.
+    /// Processes the next pending item in the queue. Returns at once when
+    /// processing is already in progress. Cancellation aborts the in-flight
+    /// transcription/extraction, puts the item back to Pending and propagates
+    /// as <see cref="OperationCanceledException"/>.
     /// </summary>
-    Task ProcessNextItemAsync();
+    Task ProcessNextItemAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Processes all pending items in the queue.
+    /// Processes all pending items in the queue, one after another. Returns
+    /// at once when processing is already in progress. Cancellation aborts
+    /// the item in flight (put back to Pending), leaves the rest untouched
+    /// and propagates as <see cref="OperationCanceledException"/>.
     /// </summary>
-    Task ProcessAllPendingAsync();
+    Task ProcessAllPendingAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retries a failed queue item.

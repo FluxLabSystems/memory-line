@@ -64,9 +64,12 @@ public class OpenAiCompatibleLlmService : ILlmService
     /// transport/parse failures return an unsuccessful result, mirroring the
     /// Anthropic path.
     /// </summary>
-    public async Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context)
+    public async Task<EventExtractionResult> ExtractEventsAsync(
+        string transcript, ExtractionContext? context, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Configuration is validated OUTSIDE the failure-to-result catch so the
         // ConfigurationException reaches the queue's non-retryable handling.
@@ -97,7 +100,7 @@ public class OpenAiCompatibleLlmService : ILlmService
                 Stream = false
             };
 
-            var (content, usage) = await SendChatCompletionAsync(endpoint, request, CancellationToken.None);
+            var (content, usage) = await SendChatCompletionAsync(endpoint, request, cancellationToken);
 
             var jsonResponse = LlmPromptSupport.ExtractJsonFromText(content);
             if (string.IsNullOrEmpty(jsonResponse))
@@ -156,6 +159,12 @@ public class OpenAiCompatibleLlmService : ILlmService
                 result.Events.Count, result.OverallConfidence);
 
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller cancelled: not a failed extraction, so it must not
+            // become an unsuccessful result the queue would retry.
+            throw;
         }
         catch (Exception ex)
         {

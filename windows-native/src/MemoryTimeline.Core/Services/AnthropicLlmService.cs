@@ -67,12 +67,14 @@ public class AnthropicLlmService : ILlmService
     /// <summary>
     /// Extracts events from transcript with context.
     /// </summary>
-    public async Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context)
+    public async Task<EventExtractionResult> ExtractEventsAsync(
+        string transcript, ExtractionContext? context, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogInformation("Starting event extraction from transcript ({Length} chars)", transcript.Length);
 
             // Initialize client if needed
@@ -117,7 +119,7 @@ public class AnthropicLlmService : ILlmService
             var client = _client;
             var response = await _retry.ExecuteAsync(
                 async token => await client.Messages.GetClaudeMessageAsync(parameters, token),
-                CancellationToken.None);
+                cancellationToken);
 
             _logger.LogInformation("Received response from Claude API");
 
@@ -181,6 +183,12 @@ public class AnthropicLlmService : ILlmService
                 result.Events.Count, result.OverallConfidence);
 
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller cancelled: not a failed extraction, so it must not
+            // become an unsuccessful result the queue would retry.
+            throw;
         }
         catch (Exception ex)
         {

@@ -103,10 +103,11 @@ public class RoutingLlmService : ILlmService
         return ExtractEventsAsync(transcript, null);
     }
 
-    public async Task<EventExtractionResult> ExtractEventsAsync(string transcript, ExtractionContext? context)
+    public async Task<EventExtractionResult> ExtractEventsAsync(
+        string transcript, ExtractionContext? context, CancellationToken cancellationToken = default)
     {
         var inner = await ResolveCurrentAsync();
-        var result = await inner.ExtractEventsAsync(transcript, context);
+        var result = await inner.ExtractEventsAsync(transcript, context, cancellationToken);
 
         // Prefer real token usage; fall back to a prompt-size estimate.
         // (long: EstimateTokens and RecordCall both work in long.)

@@ -37,7 +37,7 @@ public class TextExtractionTests : IDisposable
 
         _llmMock = new Mock<ILlmService>();
         _llmMock
-            .Setup(l => l.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()))
+            .Setup(l => l.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EventExtractionResult
             {
                 Success = true,
@@ -103,9 +103,9 @@ public class TextExtractionTests : IDisposable
 
         // Assert — STT never ran, the stored text went straight to the LLM
         count.Should().Be(1);
-        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>()), Times.Never);
+        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>(), It.IsAny<IProgress<double>?>(), It.IsAny<CancellationToken>()), Times.Never);
         _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>(), It.IsAny<IProgress<double>?>()), Times.Never);
-        _llmMock.Verify(l => l.ExtractEventsAsync(PastedText, It.IsAny<ExtractionContext?>()), Times.Once);
+        _llmMock.Verify(l => l.ExtractEventsAsync(PastedText, It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()), Times.Once);
         progress.Reports.Should().Contain(r => r.Item2 == "Using saved text...");
 
         // Pending event persisted with the text and NO phantom audio path
@@ -138,8 +138,8 @@ public class TextExtractionTests : IDisposable
         // Assert
         await act.Should().ThrowAsync<Exception>()
             .WithMessage("*has no stored text*");
-        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>()), Times.Never);
-        _llmMock.Verify(l => l.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>()), Times.Never);
+        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>(), It.IsAny<IProgress<double>?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _llmMock.Verify(l => l.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public class TextExtractionTests : IDisposable
             Status = QueueStatus.Pending
         });
         _sttMock
-            .Setup(s => s.TranscribeAsync(audioPath))
+            .Setup(s => s.TranscribeAsync(audioPath, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TranscriptionResult { Success = true, Text = WhisperText });
 
         // Act — first attempt transcribes and must persist the transcript
@@ -178,9 +178,67 @@ public class TextExtractionTests : IDisposable
         // Assert — Whisper ran exactly ONCE across both runs; the retry reused
         // the persisted transcript and still reached extraction
         secondCount.Should().Be(1);
-        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>()), Times.Once);
-        _llmMock.Verify(l => l.ExtractEventsAsync(WhisperText, It.IsAny<ExtractionContext?>()), Times.Exactly(2));
+        _sttMock.Verify(s => s.TranscribeAsync(It.IsAny<string>(), null, It.IsAny<CancellationToken>()), Times.Once);
+        _llmMock.Verify(l => l.ExtractEventsAsync(WhisperText, It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
         progress.Reports.Should().Contain(r => r.Item2 == "Using saved transcript...");
+    }
+
+    [Fact]
+    public async Task ProcessRecordingAsync_ForwardsTheCancellationTokenToSpeechToTextAndExtraction()
+    {
+        // Arrange — an audio source; the caller's token must reach both calls
+        const string audioPath = @"C:\audio\cancel.wav";
+        await _queueRepository.AddAsync(new RecordingQueue
+        {
+            QueueId = "audio-cancel",
+            SourceType = QueueSourceType.Audio,
+            AudioFilePath = audioPath,
+            Status = QueueStatus.Pending
+        });
+        using var cts = new CancellationTokenSource();
+        _sttMock
+            .Setup(s => s.TranscribeAsync(audioPath, null, cts.Token))
+            .ReturnsAsync(new TranscriptionResult { Success = true, Text = WhisperText });
+
+        // Act
+        var count = await _extractionService.ProcessRecordingAsync("audio-cancel", null, cts.Token);
+
+        // Assert
+        count.Should().Be(1);
+        _sttMock.Verify(s => s.TranscribeAsync(audioPath, null, cts.Token), Times.Once);
+        _llmMock.Verify(l => l.ExtractEventsAsync(WhisperText, It.IsAny<ExtractionContext?>(), cts.Token), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessRecordingAsync_CancelledDuringTranscription_PropagatesWithoutExtracting()
+    {
+        // Arrange — Whisper observes the cancellation mid-decode
+        const string audioPath = @"C:\audio\cancel-mid.wav";
+        await _queueRepository.AddAsync(new RecordingQueue
+        {
+            QueueId = "audio-cancel-mid",
+            SourceType = QueueSourceType.Audio,
+            AudioFilePath = audioPath,
+            Status = QueueStatus.Pending
+        });
+        using var cts = new CancellationTokenSource();
+        _sttMock
+            .Setup(s => s.TranscribeAsync(audioPath, null, It.IsAny<CancellationToken>()))
+            .Returns<string, IProgress<double>?, CancellationToken>((_, _, token) =>
+            {
+                cts.Cancel();
+                token.ThrowIfCancellationRequested();
+                return Task.FromResult(new TranscriptionResult());
+            });
+
+        // Act
+        var act = () => _extractionService.ProcessRecordingAsync("audio-cancel-mid", null, cts.Token);
+
+        // Assert — cancellation propagates as itself and the LLM is never called
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _llmMock.Verify(
+            l => l.ExtractEventsAsync(It.IsAny<string>(), It.IsAny<ExtractionContext?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     public void Dispose()

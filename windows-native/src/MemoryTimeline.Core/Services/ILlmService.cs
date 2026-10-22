@@ -34,6 +34,22 @@ public interface ILlmService
     Task<string> CompleteAsync(string systemPrompt, string userPrompt, int maxTokens = 2000, CancellationToken ct = default);
 
     /// <summary>
+    /// Streams a single free-form completion as the model writes it. Each
+    /// item is the next piece of response text (a token or a few), in order;
+    /// concatenating every item gives the untrimmed text that
+    /// <see cref="CompleteAsync"/> would have returned for the same prompts.
+    /// Used by "Ask your timeline" so an answer appears while it is being
+    /// generated instead of arriving whole.
+    /// </summary>
+    /// <param name="systemPrompt">System-level instructions for the model</param>
+    /// <param name="userPrompt">The user-turn content</param>
+    /// <param name="maxTokens">Maximum tokens for the response</param>
+    /// <param name="ct">Cancellation token; cancelling aborts the in-flight stream</param>
+    /// <exception cref="ConfigurationException">No API key / endpoint is configured</exception>
+    /// <exception cref="InvalidOperationException">The stream ended without any text</exception>
+    IAsyncEnumerable<string> StreamCompletionAsync(string systemPrompt, string userPrompt, int maxTokens = 2000, CancellationToken ct = default);
+
+    /// <summary>
     /// Gets the name of the LLM provider.
     /// </summary>
     string ProviderName { get; }

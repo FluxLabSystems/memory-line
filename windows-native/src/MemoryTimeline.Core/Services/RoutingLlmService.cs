@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace MemoryTimeline.Core.Services;
 
@@ -130,6 +132,33 @@ public class RoutingLlmService : ILlmService
                 + LlmUsageTracker.EstimateTokens(response));
 
         return response;
+    }
+
+    /// <summary>
+    /// Streams through the provider selected at the moment the stream is
+    /// opened. Usage is recorded once the stream has been read to its end
+    /// (an abandoned stream records nothing — the estimate would be a guess).
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamCompletionAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens = 2000,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var inner = await ResolveCurrentAsync();
+        var streamed = new StringBuilder();
+
+        await foreach (var chunk in inner.StreamCompletionAsync(systemPrompt, userPrompt, maxTokens, ct).WithCancellation(ct))
+        {
+            streamed.Append(chunk);
+            yield return chunk;
+        }
+
+        _usageTracker.RecordCall(
+            inner.ProviderName,
+            LlmUsageTracker.EstimateTokens(systemPrompt)
+                + LlmUsageTracker.EstimateTokens(userPrompt)
+                + LlmUsageTracker.EstimateTokens(streamed.ToString()));
     }
 
     /// <summary>

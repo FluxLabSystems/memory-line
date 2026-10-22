@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System.Diagnostics;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -216,7 +217,120 @@ public class OpenAiCompatibleLlmService : ILlmService
         return content.Trim();
     }
 
+    /// <summary>
+    /// Streams a completion over the chat-completions SSE protocol
+    /// (<c>"stream": true</c>): the response body is a sequence of
+    /// <c>data: {chunk}</c> lines whose <c>choices[0].delta.content</c> carries
+    /// the next piece of text, terminated by <c>data: [DONE]</c>. Lines that
+    /// are not data (comments, event names, blanks) and chunks that do not
+    /// parse are skipped rather than failing the whole answer. Only the
+    /// request itself is retried; once the stream has opened, a transport
+    /// failure surfaces to the caller, because replaying a half-delivered
+    /// answer would repeat text.
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamCompletionAsync(
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens = 2000,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var (endpoint, model) = await ReadConfigurationAsync();
+
+        var messages = new List<ChatMessage>();
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            messages.Add(new ChatMessage { Role = "system", Content = systemPrompt });
+        }
+        messages.Add(new ChatMessage { Role = "user", Content = userPrompt });
+
+        var generation = await LlmPromptSupport.ReadGenerationSettingsAsync(_settingsService);
+
+        var request = new ChatCompletionRequest
+        {
+            Model = model,
+            Messages = messages,
+            Temperature = generation.Temperature,
+            MaxTokens = maxTokens,
+            Stream = true
+        };
+
+        _logger.LogInformation(
+            "Sending streaming completion request to OpenAI-compatible endpoint {Endpoint} ({Length} chars)",
+            endpoint, userPrompt.Length);
+
+        // ResponseHeadersRead: the body is consumed incrementally below, so the
+        // client must not buffer it. A fresh request per attempt, as elsewhere.
+        using var response = await _retry.ExecuteAsync(
+            async token =>
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = JsonContent.Create(request)
+                };
+                return await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
+            },
+            ct);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(stream);
+
+        var yieldedAny = false;
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (!line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var data = line.Substring("data:".Length).Trim();
+            if (data.Length == 0)
+            {
+                continue;
+            }
+
+            if (data == "[DONE]")
+            {
+                break;
+            }
+
+            var delta = TryReadStreamDelta(data);
+            if (string.IsNullOrEmpty(delta))
+            {
+                continue;
+            }
+
+            yieldedAny = true;
+            yield return delta;
+        }
+
+        if (!yieldedAny)
+        {
+            throw new InvalidOperationException("The model returned an empty response.");
+        }
+    }
+
     #region Private Methods
+
+    /// <summary>
+    /// The text delta of one SSE chunk, or null when the chunk carries none
+    /// (the role-only opening chunk, a finish chunk) or does not parse.
+    /// </summary>
+    private string? TryReadStreamDelta(string json)
+    {
+        try
+        {
+            var chunk = JsonSerializer.Deserialize<ChatCompletionChunk>(json);
+            return chunk?.Choices?.FirstOrDefault()?.Delta?.Content;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Skipping unparseable streaming chunk from the OpenAI-compatible endpoint");
+            return null;
+        }
+    }
 
     /// <summary>
     /// Re-reads the base URL and model from settings (applies without restart).
@@ -308,6 +422,31 @@ public class OpenAiCompatibleLlmService : ILlmService
 
         [JsonPropertyName("finish_reason")]
         public string? FinishReason { get; set; }
+    }
+
+    /// <summary>One <c>data:</c> line of a streamed chat completion.</summary>
+    private sealed class ChatCompletionChunk
+    {
+        [JsonPropertyName("choices")]
+        public List<ChatChunkChoice>? Choices { get; set; }
+    }
+
+    private sealed class ChatChunkChoice
+    {
+        [JsonPropertyName("delta")]
+        public ChatChunkDelta? Delta { get; set; }
+
+        [JsonPropertyName("finish_reason")]
+        public string? FinishReason { get; set; }
+    }
+
+    private sealed class ChatChunkDelta
+    {
+        [JsonPropertyName("role")]
+        public string? Role { get; set; }
+
+        [JsonPropertyName("content")]
+        public string? Content { get; set; }
     }
 
     private sealed class ChatUsage

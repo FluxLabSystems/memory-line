@@ -6,9 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 
 namespace MemoryTimeline.Core.Services;
 
@@ -80,7 +82,28 @@ public class MemoryQueryService : IMemoryQueryService
     }
 
     /// <inheritdoc />
-    public async Task<MemoryAnswer> AskAsync(string question, MemoryQueryOptions? options = null, CancellationToken ct = default)
+    public Task<MemoryAnswer> AskAsync(string question, MemoryQueryOptions? options = null, CancellationToken ct = default)
+        => AskCoreAsync(question, options, partialAnswer: null, ct);
+
+    /// <inheritdoc />
+    public Task<MemoryAnswer> AskAsync(string question, MemoryQueryOptions? options, IProgress<string> partialAnswer, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(partialAnswer);
+        return AskCoreAsync(question, options, partialAnswer, ct);
+    }
+
+    /// <summary>
+    /// The Ask pipeline. With a <paramref name="partialAnswer"/> sink the
+    /// grounded answer is streamed from the provider and reported as display
+    /// text while it arrives; without one it is requested whole. Both end in
+    /// the same post-processing, so the returned <see cref="MemoryAnswer"/> is
+    /// identical in shape either way.
+    /// </summary>
+    private async Task<MemoryAnswer> AskCoreAsync(
+        string question,
+        MemoryQueryOptions? options,
+        IProgress<string>? partialAnswer,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(question))
         {
@@ -153,10 +176,12 @@ public class MemoryQueryService : IMemoryQueryService
         {
             // Nothing to ground an answer in: refuse honestly without an LLM call.
             _logger.LogInformation("Ask retrieval found no events for question; returning refusal");
+            const string refusal = "I couldn't find anything about that in your timeline archive.";
+            partialAnswer?.Report(refusal);
             return new MemoryAnswer
             {
                 Question = question,
-                Answer = "I couldn't find anything about that in your timeline archive.",
+                Answer = refusal,
                 AnsweredFromArchive = false,
                 Confidence = 0,
                 RetrievedEventIds = retrievedIds,
@@ -164,33 +189,17 @@ public class MemoryQueryService : IMemoryQueryService
             };
         }
 
-        // (c) Grounded answer: one LLM call restricted to the retrieved events.
-        var rawAnswer = await RequestGroundedAnswerAsync(question, retrieved, includeTranscripts, plan.AnswerMode, ct);
+        // (c) Grounded answer: one LLM call restricted to the retrieved events,
+        // streamed when the caller wants to watch it arrive.
+        var (systemPrompt, userPrompt) = BuildGroundedAnswerPrompts(question, retrieved, includeTranscripts, plan.AnswerMode);
+        var rawAnswer = partialAnswer == null
+            ? await _llmService.CompleteAsync(systemPrompt, userPrompt, AnswerMaxTokens, ct)
+            : await StreamGroundedAnswerAsync(systemPrompt, userPrompt, retrievedIds, partialAnswer, ct);
         var parsed = ParseGroundedAnswer(rawAnswer);
 
         // (d) Post-process: enforce citation integrity in code, never trusting
         // the model — only retrieved ids survive as citations.
-        var retrievedSet = new HashSet<string>(retrievedIds, StringComparer.Ordinal);
-        var citationOrder = new List<string>();
-        foreach (Match match in CitationMarkerRegex.Matches(parsed.Answer ?? string.Empty))
-        {
-            var id = match.Groups[1].Value;
-            if (retrievedSet.Contains(id) && !citationOrder.Contains(id))
-            {
-                citationOrder.Add(id);
-            }
-        }
-
-        var displayAnswer = CitationMarkerRegex.Replace(parsed.Answer ?? string.Empty, match =>
-        {
-            var id = match.Groups[1].Value;
-            var index = citationOrder.IndexOf(id);
-            // Valid markers become [n] references matching the citation list
-            // order; fabricated/unretrieved ids are stripped entirely.
-            return index >= 0 ? $" [{index + 1}]" : string.Empty;
-        });
-        displayAnswer = Regex.Replace(displayAnswer, " {2,}", " ");
-        displayAnswer = Regex.Replace(displayAnswer, " +([.,!?;:])", "$1").Trim();
+        var displayAnswer = BuildDisplayAnswer(parsed.Answer, retrievedIds, out var citationOrder);
 
         var eventById = retrieved.ToDictionary(e => e.EventId, StringComparer.Ordinal);
         var citations = citationOrder
@@ -220,17 +229,83 @@ public class MemoryQueryService : IMemoryQueryService
         MemoryQueryOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // True token streaming is a follow-up: the only Anthropic.SDK surface
-        // proven in this codebase is the non-streaming GetClaudeMessageAsync
-        // call shape, so the grounded answer is computed in full and replayed
-        // in word-sized chunks.
-        var answer = await AskAsync(question, options, ct);
-
-        foreach (var chunk in SplitIntoWordChunks(answer.Answer))
+        // The progress-reporting pipeline writes display chunks into a
+        // channel as the provider streams them; this enumerator drains it.
+        var channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
         {
-            ct.ThrowIfCancellationRequested();
+            SingleReader = true,
+            SingleWriter = true
+        });
+
+        var askTask = RunAsync();
+
+        await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
+        {
             yield return chunk;
         }
+
+        // Surfaces failures (no provider configured, cancellation, ...) to the consumer.
+        await askTask;
+
+        async Task RunAsync()
+        {
+            try
+            {
+                await AskCoreAsync(question, options, new ChannelProgress(channel.Writer), ct);
+            }
+            finally
+            {
+                channel.Writer.TryComplete();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The display text for a grounded answer and the order in which its
+    /// valid citations appear: markers whose id was retrieved become [n]
+    /// references (numbered by first appearance), every other marker is
+    /// stripped, and the whitespace left behind is tidied. Internal and pure
+    /// so the streaming rewriter can be checked against it.
+    /// </summary>
+    internal static string BuildDisplayAnswer(string? answer, IReadOnlyCollection<string> retrievedIds, out List<string> citationOrder)
+    {
+        var retrievedSet = new HashSet<string>(retrievedIds, StringComparer.Ordinal);
+        var order = new List<string>();
+        foreach (Match match in CitationMarkerRegex.Matches(answer ?? string.Empty))
+        {
+            var id = match.Groups[1].Value;
+            if (retrievedSet.Contains(id) && !order.Contains(id))
+            {
+                order.Add(id);
+            }
+        }
+
+        var displayAnswer = CitationMarkerRegex.Replace(answer ?? string.Empty, match =>
+        {
+            var id = match.Groups[1].Value;
+            var index = order.IndexOf(id);
+            // Valid markers become [n] references matching the citation list
+            // order; fabricated/unretrieved ids are stripped entirely.
+            return index >= 0 ? $" [{index + 1}]" : string.Empty;
+        });
+        displayAnswer = Regex.Replace(displayAnswer, " {2,}", " ");
+        displayAnswer = Regex.Replace(displayAnswer, " +([.,!?;:])", "$1").Trim();
+
+        citationOrder = order;
+        return displayAnswer;
+    }
+
+    /// <summary>Relays streamed chunks into the channel behind <see cref="AskStreamingAsync"/>.</summary>
+    private sealed class ChannelProgress : IProgress<string>
+    {
+        private readonly ChannelWriter<string> _writer;
+
+        public ChannelProgress(ChannelWriter<string> writer)
+        {
+            _writer = writer;
+        }
+
+        public void Report(string value) => _writer.TryWrite(value);
     }
 
     /// <summary>
@@ -276,8 +351,9 @@ public class MemoryQueryService : IMemoryQueryService
     }
 
     /// <summary>
-    /// Splits text into word-sized chunks (each keeping its trailing space) for
-    /// the streaming display. Shared with the Ask UI.
+    /// Splits text into word-sized chunks (each keeping its trailing space).
+    /// A display helper for callers that replay a finished answer; the Ask
+    /// page no longer needs it now that the answer streams from the provider.
     /// </summary>
     public static IEnumerable<string> SplitIntoWordChunks(string? text)
     {
@@ -581,12 +657,64 @@ public class MemoryQueryService : IMemoryQueryService
 
     #region Answering
 
-    private async Task<string> RequestGroundedAnswerAsync(
+    /// <summary>
+    /// Streams the grounded-answer call and reports display text as it
+    /// arrives: the raw model text is run through
+    /// <see cref="JsonAnswerFieldStreamer"/> (so only the "answer" field's
+    /// value is shown, decoded) and <see cref="CitationMarkerStreamRewriter"/>
+    /// (so markers become [n] references the moment they complete). Returns
+    /// the complete raw response for the usual parse. When the model did not
+    /// produce the JSON shape, the whole response is reported once at the end,
+    /// mirroring <see cref="ParseGroundedAnswer"/>'s fallback.
+    /// </summary>
+    private async Task<string> StreamGroundedAnswerAsync(
+        string systemPrompt,
+        string userPrompt,
+        IReadOnlyCollection<string> retrievedIds,
+        IProgress<string> partialAnswer,
+        CancellationToken ct)
+    {
+        var raw = new StringBuilder();
+        var field = new JsonAnswerFieldStreamer();
+        var rewriter = new CitationMarkerStreamRewriter(retrievedIds);
+
+        await foreach (var piece in _llmService.StreamCompletionAsync(systemPrompt, userPrompt, AnswerMaxTokens, ct).WithCancellation(ct))
+        {
+            raw.Append(piece);
+
+            var answerText = field.Append(piece);
+            if (answerText.Length == 0)
+            {
+                continue;
+            }
+
+            var display = rewriter.Append(answerText);
+            if (display.Length > 0)
+            {
+                partialAnswer.Report(display);
+            }
+        }
+
+        var tail = new StringBuilder();
+        if (!field.FoundAnswerField)
+        {
+            tail.Append(rewriter.Append(raw.ToString().Trim()));
+        }
+
+        tail.Append(rewriter.Flush());
+        if (tail.Length > 0)
+        {
+            partialAnswer.Report(tail.ToString());
+        }
+
+        return raw.ToString();
+    }
+
+    private static (string SystemPrompt, string UserPrompt) BuildGroundedAnswerPrompts(
         string question,
         List<Event> retrieved,
         bool includeTranscripts,
-        string? answerMode,
-        CancellationToken ct)
+        string? answerMode)
     {
         const string systemPrompt = """
             You are answering a question about the user's personal memory archive. You are given the ONLY events you may use.
@@ -609,7 +737,7 @@ public class MemoryQueryService : IMemoryQueryService
 
         var userPrompt = $"# Archive events (the only allowed sources):\n{contextBlock}\n\n# Question:\n{question}{modeHint}";
 
-        return await _llmService.CompleteAsync(systemPrompt, userPrompt, AnswerMaxTokens, ct);
+        return (systemPrompt, userPrompt);
     }
 
     private static string SerializeEventsForPrompt(List<Event> events, bool includeTranscripts)

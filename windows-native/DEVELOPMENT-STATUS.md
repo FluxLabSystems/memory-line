@@ -235,8 +235,10 @@ Phase 0 entry below for the groundwork it builds on) landed:
   `JsonSerializerDefaults.Web`).
 - **CI** — new Linux workflow `.github/workflows/sync-api-build.yml` builds
   `services/MemoryTimeline.Services.sln` and runs the SyncApi test suite with
-  the dotnet CLI on `ubuntu-latest`; the Windows workflow now also triggers
-  on this branch and on `shared-contracts/dotnet/**` changes.
+  the dotnet CLI on `ubuntu-latest`, on pull requests and on pushes to `main`
+  (path-filtered to `services/**`, `shared-contracts/**` and the workflow
+  itself); the Windows workflow runs on pull requests and `main` and also for
+  `shared-contracts/dotnet/**` changes.
 
 **Exit criterion status:** implemented and integration-tested at the service
 level — a test client can register, create a capture, upload its audio
@@ -244,23 +246,28 @@ artifact, and the Windows pull → ingest path dedupes it into review exactly
 once. End-to-end validation against a real iPhone awaits the Phase 2 iOS
 client.
 
-**Known follow-ups (from the post-fix verification pass):**
+**Known follow-ups (from the post-fix verification pass) — status as of 2026-10-22:**
 
-- The `RefreshTokenHash` concurrency token applies to every device-row update;
-  ack/revoke racing a concurrent refresh can surface a retryable 500 (only
-  refresh has reload-and-retry today).
-- Crash-orphaned `*.tmp` assembly files in the service's artifact store are
-  never swept (in-process failures clean up after themselves).
-- The register endpoint reads the `Idempotency-Key` header directly and does
-  not enforce the 128-char limit the authenticated-route filter applies.
-- Service schema is `EnsureCreated` (no migrations); pre-release upgrades
-  across schema changes require deleting `sync.db` (see services/README.md).
+- ✅ The `RefreshTokenHash` concurrency token applies to every device-row update;
+  ack, revoke and the capture complete/retry touch now reload and retry
+  (`DeviceRowConcurrency`, three attempts) instead of surfacing a 500 when they
+  race a concurrent refresh.
+- ✅ Crash-orphaned `*.tmp` assembly files in the service's artifact store are
+  swept by `RetentionSweepHostedService` once they are older than
+  `TemporaryFileGraceMinutes` (60).
+- ✅ The register endpoint shares the authenticated-route `Idempotency-Key`
+  reader and rejects keys longer than 128 characters with 400.
+- Service schema is still `EnsureCreated` plus idempotent startup DDL (no
+  migrations); the startup DDL now also creates the capture_status, assistant
+  and trip tables, so upgrades across those phases no longer require deleting
+  `sync.db` (see services/README.md).
 - Sync tokens are stored in the Windows app's settings table like the other
   keys; DPAPI-at-rest remains the tracked hardening follow-up.
-- Per the resolved design §22 decisions (2026-08-07): the service needs an
-  artifact retention sweep (delete artifacts 14 days after Windows
-  acknowledges archival, or sooner under storage pressure) — artifacts are
-  currently retained indefinitely.
+- ✅ Artifact retention per the resolved design §22 decisions: artifact bytes are
+  purged 14 days after Windows acknowledges a `completed` capture_status
+  (`ArtifactRetentionDays`), or oldest-acknowledged-first under
+  `ArtifactStorageBudgetBytes`; the row survives as `purged` and downloads
+  answer a permanent 410.
 
 **Design decisions:** all §22 open decisions were resolved by the owner on
 2026-08-07 — self-hosted only, no user accounts (pairing-code device model),
